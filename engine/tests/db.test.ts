@@ -15,7 +15,7 @@ describe('openDb', () => {
     dir = mkdtempSync(join(tmpdir(), 'workbench-db-'));
     const db = openDb(join(dir, 'test.db'));
     const tables = db
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name != 'sqlite_sequence' ORDER BY name")
       .all()
       .map((r: any) => r.name);
     expect(tables).toEqual([
