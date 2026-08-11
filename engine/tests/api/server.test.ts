@@ -64,7 +64,7 @@ describe('projects routes', () => {
 });
 
 describe('todos routes', () => {
-  it('creates a todo via POST — the Raycast quick-add target', async () => {
+  it('creates a todo via POST, the Raycast quick-add target', async () => {
     const res = await auth(request(app).post('/todos')).send({ text: 'renew SSL cert' });
     expect(res.status).toBe(201);
     expect(res.body.text).toBe('renew SSL cert');
