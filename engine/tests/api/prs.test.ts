@@ -1,0 +1,80 @@
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import request from 'supertest';
+import Database from 'better-sqlite3';
+import { openDb } from '../../src/db.js';
+import { createProject } from '../../src/projects.js';
+import { createTicket } from '../../src/tickets.js';
+import { recordPr } from '../../src/prs.js';
+import * as prChat from '../../src/prChat.js';
+import * as git from '../../src/git.js';
+import { createServer } from '../../src/api/server.js';
+
+vi.mock('../../src/prChat.js');
+vi.mock('../../src/git.js');
+
+const TOKEN = 'test-token';
+let db: Database.Database;
+let app: ReturnType<typeof createServer>;
+let prId: number;
+
+function auth(req: request.Test): request.Test {
+  return req.set('Authorization', `Bearer ${TOKEN}`);
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  db = openDb(':memory:');
+  app = createServer(db, TOKEN);
+  const projectId = createProject(db, {
+    name: 'demo', repoPath: '/repos/demo', defaultBranch: 'main',
+    githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null,
+  }).id;
+  const ticketId = createTicket(db, {
+    source: 'github', sourceId: 'GH-1', projectId, title: 't', body: 'b', url: 'u', analysis: null,
+  }).id;
+  prId = recordPr(db, { ticketId, projectId, branch: 'fix/gh-1', number: 5, url: 'https://x/pull/5', status: 'open' }).id;
+});
+
+describe('GET /prs/:id/diff', () => {
+  it('opens the worktree, returns the diff, and cleans up', async () => {
+    vi.mocked(git.openWorktree).mockResolvedValue('/repos/demo/.worktrees/fix-gh-1');
+    vi.mocked(git.getDiff).mockResolvedValue('--- a/x.ts\n+++ b/x.ts');
+    vi.mocked(git.removeWorktree).mockResolvedValue(undefined);
+
+    const res = await auth(request(app).get(`/prs/${prId}/diff`));
+
+    expect(res.body).toEqual({ diff: '--- a/x.ts\n+++ b/x.ts' });
+    expect(git.removeWorktree).toHaveBeenCalledWith('/repos/demo', '/repos/demo/.worktrees/fix-gh-1');
+  });
+});
+
+describe('POST /prs/:id/messages', () => {
+  it('routes through sendPrMessage and returns its result', async () => {
+    vi.mocked(prChat.sendPrMessage).mockResolvedValue({ action: 'revised', reply: 'done' });
+    const res = await auth(request(app).post(`/prs/${prId}/messages`)).send({ text: 'also guard email' });
+    expect(res.body).toEqual({ action: 'revised', reply: 'done' });
+    expect(prChat.sendPrMessage).toHaveBeenCalledWith(db, prId, 'also guard email');
+  });
+});
+
+describe('POST /prs/:id/merge', () => {
+  it('calls sendPrMessage with the canonical merge phrase, the same path as the chat trigger', async () => {
+    vi.mocked(prChat.sendPrMessage).mockResolvedValue({ action: 'merged', reply: 'Merged https://x/pull/5.' });
+    const res = await auth(request(app).post(`/prs/${prId}/merge`));
+    expect(res.body.action).toBe('merged');
+    expect(prChat.sendPrMessage).toHaveBeenCalledWith(db, prId, 'merge it');
+  });
+
+  it('rejects a merge while a chat revision is already running on the same PR', async () => {
+    let resolveChat: (v: any) => void;
+    vi.mocked(prChat.sendPrMessage).mockReturnValueOnce(new Promise((r) => { resolveChat = r; }));
+
+    const chatCall = auth(request(app).post(`/prs/${prId}/messages`)).send({ text: 'x' }).then();
+    await new Promise((r) => setTimeout(r, 10));
+    const mergeCall = await auth(request(app).post(`/prs/${prId}/merge`));
+
+    expect(mergeCall.status).toBe(409);
+    resolveChat!({ action: 'revised', reply: 'ok' });
+    await chatCall;
+  });
+});

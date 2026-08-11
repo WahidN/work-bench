@@ -3,6 +3,8 @@ import type Database from 'better-sqlite3';
 import { registerTodayRoutes } from './routes/today.js';
 import { registerProjectsRoutes } from './routes/projects.js';
 import { registerTodosRoutes } from './routes/todos.js';
+import { registerTicketsRoutes } from './routes/tickets.js';
+import { registerPrsRoutes } from './routes/prs.js';
 
 export function createServer(db: Database.Database, apiToken: string): express.Express {
   const app = express();
@@ -19,6 +21,8 @@ export function createServer(db: Database.Database, apiToken: string): express.E
   registerTodayRoutes(app, db);
   registerProjectsRoutes(app, db);
   registerTodosRoutes(app, db);
+  registerTicketsRoutes(app, db);
+  registerPrsRoutes(app, db);
 
   return app;
 }
