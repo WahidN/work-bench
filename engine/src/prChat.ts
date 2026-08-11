@@ -10,9 +10,13 @@ import type { Pr, Project, Ticket } from './types.js';
 
 const MERGE_PHRASES = ['merge it', 'merge this', 'go ahead and merge'];
 
+// Merging must be a direct, explicit user action, so the whole message has to be
+// the merge phrase. A substring match would fire on "don't merge this yet".
+// Only trailing dots and exclamation marks are stripped, never a question mark:
+// "merge it?" is a question, not an instruction.
 export function isMergeRequest(message: string): boolean {
-  const normalized = message.trim().toLowerCase();
-  return MERGE_PHRASES.some((phrase) => normalized.includes(phrase));
+  const normalized = message.trim().toLowerCase().replace(/[.!\s]+$/, '');
+  return MERGE_PHRASES.includes(normalized);
 }
 
 export interface PrChatResult {

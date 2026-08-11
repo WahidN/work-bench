@@ -41,14 +41,24 @@ beforeEach(() => {
 });
 
 describe('isMergeRequest', () => {
-  it('matches common merge phrasing case-insensitively', () => {
+  it('matches the exact merge phrases case-insensitively and with trailing punctuation', () => {
     expect(isMergeRequest('merge it')).toBe(true);
-    expect(isMergeRequest('Merge It please')).toBe(true);
+    expect(isMergeRequest('  Merge It  ')).toBe(true);
+    expect(isMergeRequest('merge it.')).toBe(true);
+    expect(isMergeRequest('Merge this!')).toBe(true);
     expect(isMergeRequest('go ahead and merge')).toBe(true);
   });
 
   it('does not match a revision instruction', () => {
     expect(isMergeRequest('also guard the email field')).toBe(false);
+  });
+
+  it('does not match a negated or conditional instruction that mentions merging', () => {
+    expect(isMergeRequest("don't merge this yet, first fix the typo")).toBe(false);
+    expect(isMergeRequest('do not merge it until CI passes')).toBe(false);
+    expect(isMergeRequest('before we merge this, add a test')).toBe(false);
+    expect(isMergeRequest('why did you merge this?')).toBe(false);
+    expect(isMergeRequest('merge it?')).toBe(false);
   });
 });
 
