@@ -46,6 +46,18 @@ describe('GET /prs/:id/diff', () => {
     expect(res.body).toEqual({ diff: '--- a/x.ts\n+++ b/x.ts' });
     expect(git.removeWorktree).toHaveBeenCalledWith('/repos/demo', '/repos/demo/.worktrees/fix-gh-1');
   });
+
+  it('returns 500 and still cleans up when getDiff throws', async () => {
+    vi.mocked(git.openWorktree).mockResolvedValue('/repos/demo/.worktrees/fix-gh-1');
+    vi.mocked(git.getDiff).mockRejectedValue(new Error('git diff failed'));
+    vi.mocked(git.removeWorktree).mockResolvedValue(undefined);
+
+    const res = await auth(request(app).get(`/prs/${prId}/diff`));
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toContain('git diff failed');
+    expect(git.removeWorktree).toHaveBeenCalledWith('/repos/demo', '/repos/demo/.worktrees/fix-gh-1');
+  });
 });
 
 describe('POST /prs/:id/messages', () => {

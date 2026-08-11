@@ -21,11 +21,14 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
     const project = getProject(db, pr.projectId);
     if (!project) { res.status(404).json({ error: 'project not found' }); return; }
 
-    const worktreePath = await openWorktree(project, pr.branch);
+    let worktreePath: string | null = null;
     try {
+      worktreePath = await openWorktree(project, pr.branch);
       res.json({ diff: await getDiff(worktreePath, project.defaultBranch) });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
     } finally {
-      await removeWorktree(project.repoPath, worktreePath);
+      if (worktreePath) await removeWorktree(project.repoPath, worktreePath);
     }
   });
 
