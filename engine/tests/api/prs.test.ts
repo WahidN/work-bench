@@ -4,7 +4,8 @@ import Database from 'better-sqlite3';
 import { openDb } from '../../src/db.js';
 import { createProject } from '../../src/projects.js';
 import { createTicket } from '../../src/tickets.js';
-import { recordPr } from '../../src/prs.js';
+import { recordPr, updatePrStatus } from '../../src/prs.js';
+import { acquireJob } from '../../src/jobs.js';
 import * as prChat from '../../src/prChat.js';
 import * as git from '../../src/git.js';
 import { createServer } from '../../src/api/server.js';
@@ -57,6 +58,37 @@ describe('GET /prs/:id/diff', () => {
     expect(res.status).toBe(500);
     expect(res.body.error).toContain('git diff failed');
     expect(git.removeWorktree).toHaveBeenCalledWith('/repos/demo', '/repos/demo/.worktrees/fix-gh-1');
+  });
+
+  it('returns 409 and never touches the worktree while another PR job holds the lock', async () => {
+    acquireJob(db, 'pr-chat', 'pr', prId);
+
+    const res = await auth(request(app).get(`/prs/${prId}/diff`));
+
+    expect(res.status).toBe(409);
+    expect(git.openWorktree).not.toHaveBeenCalled();
+    expect(git.removeWorktree).not.toHaveBeenCalled();
+  });
+
+  it('releases the lock after a successful diff so the next request works', async () => {
+    vi.mocked(git.openWorktree).mockResolvedValue('/repos/demo/.worktrees/fix-gh-1');
+    vi.mocked(git.getDiff).mockResolvedValue('d');
+    vi.mocked(git.removeWorktree).mockResolvedValue(undefined);
+
+    await auth(request(app).get(`/prs/${prId}/diff`));
+    const second = await auth(request(app).get(`/prs/${prId}/diff`));
+
+    expect(second.status).toBe(200);
+  });
+
+  it('refuses the diff of a merged PR instead of reopening a deleted branch', async () => {
+    updatePrStatus(db, prId, 'merged', 5);
+
+    const res = await auth(request(app).get(`/prs/${prId}/diff`));
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain('already merged');
+    expect(git.openWorktree).not.toHaveBeenCalled();
   });
 });
 

@@ -7,7 +7,8 @@ import {
 } from './git.js';
 import { implementFix } from './implement.js';
 import { reviewDiff, reviewPasses, averageScore } from './review.js';
-import type { ReviewScore } from './types.js';
+import { acquireJob, finishJob } from './jobs.js';
+import type { Job, ReviewScore } from './types.js';
 
 const MAX_REVIEW_ROUNDS = 3;
 
@@ -37,6 +38,17 @@ export async function runFixPipeline(db: Database.Database, ticketId: number): P
   const branch = `fix/${ticket.source}-${ticket.id}`;
   const worktreePath = await createFixWorktree(project, branch);
 
+  // This pipeline is locked on the ticket, but as soon as recordPr runs the PR
+  // is visible to the PR routes, which reach for the same worktree. Hold the
+  // PR-side lock too, for as long as this pipeline still uses the worktree.
+  let prJob: Job | null = null;
+  let completed = false;
+  const releasePrLock = (status: 'done' | 'failed', error: string | null = null): void => {
+    if (!prJob) return;
+    finishJob(db, prJob.id, status, error);
+    prJob = null;
+  };
+
   try {
     const messages = listTicketMessages(db, ticketId);
     await implementFix(worktreePath, ticket, messages);
@@ -57,6 +69,9 @@ export async function runFixPipeline(db: Database.Database, ticketId: number): P
       number: numberMatch ? Number(numberMatch[1]) : null, url: prUrl, status: 'open',
     });
 
+    prJob = acquireJob(db, 'pr-chat', 'pr', pr.id);
+    if (!prJob) console.warn(`Could not lock PR ${pr.id} right after creating it; continuing without the PR lock.`);
+
     let lastScore: ReviewScore | null = null;
     for (let round = 1; round <= MAX_REVIEW_ROUNDS; round++) {
       const diff = await getDiff(worktreePath, project.defaultBranch);
@@ -67,6 +82,7 @@ export async function runFixPipeline(db: Database.Database, ticketId: number): P
         updatePrStatus(db, pr.id, 'open', averageScore(score));
         addPrMessage(db, pr.id, 'assistant', passComment(score, round));
         updateTicketStatus(db, ticketId, 'in_review', pr.id);
+        completed = true;
         return { ticketStatus: 'in_review', prId: pr.id };
       }
 
@@ -82,8 +98,12 @@ export async function runFixPipeline(db: Database.Database, ticketId: number): P
     updatePrStatus(db, pr.id, 'needs_attention', lastScore ? averageScore(lastScore) : null);
     addPrMessage(db, pr.id, 'assistant', failComment(lastScore!));
     updateTicketStatus(db, ticketId, 'needs_attention', pr.id);
+    completed = true;
     return { ticketStatus: 'needs_attention', prId: pr.id };
   } finally {
+    // Covers every exit path (both returns and any throw): the PR lock is only
+    // released once the worktree this pipeline owns is really gone.
     await removeWorktree(project.repoPath, worktreePath);
+    releasePrLock(completed ? 'done' : 'failed', completed ? null : 'fix pipeline did not finish');
   }
 }

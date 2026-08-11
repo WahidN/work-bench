@@ -3,7 +3,8 @@ import Database from 'better-sqlite3';
 import { openDb } from '../src/db.js';
 import { createProject } from '../src/projects.js';
 import { createTicket, getTicket } from '../src/tickets.js';
-import { getPr, listPrMessages } from '../src/prs.js';
+import { getPr, listPrs, listPrMessages } from '../src/prs.js';
+import { acquireJob } from '../src/jobs.js';
 import * as git from '../src/git.js';
 import * as implement from '../src/implement.js';
 import * as review from '../src/review.js';
@@ -70,6 +71,34 @@ describe('runFixPipeline', () => {
     expect(git.markPrDraft).toHaveBeenCalled();
     const messages = listPrMessages(db, result.prId);
     expect(messages[messages.length - 1].content).toContain('still broken');
+  });
+
+  it('holds a PR-side lock from the moment the PR row exists until the worktree is gone', async () => {
+    let resolveReview: (score: any) => void;
+    vi.mocked(review.reviewDiff).mockReturnValueOnce(new Promise((r) => { resolveReview = r; }));
+    vi.mocked(review.reviewPasses).mockReturnValue(true);
+    vi.mocked(review.averageScore).mockReturnValue(5);
+
+    const pipeline = runFixPipeline(db, ticketId);
+    await new Promise((r) => setTimeout(r, 10));
+
+    const pr = listPrs(db)[0];
+    expect(pr).toBeDefined();
+    expect(acquireJob(db, 'pr-chat', 'pr', pr.id)).toBeNull();
+
+    resolveReview!({ correctness: 5, completeness: 5, quality: 5, tests: 5, regressionRisk: 5, findings: [] });
+    await pipeline;
+
+    expect(acquireJob(db, 'pr-chat', 'pr', pr.id)).not.toBeNull();
+  });
+
+  it('releases the PR lock when the pipeline throws mid-review', async () => {
+    vi.mocked(review.reviewDiff).mockRejectedValue(new Error('review blew up'));
+
+    await expect(runFixPipeline(db, ticketId)).rejects.toThrow('review blew up');
+
+    const pr = listPrs(db)[0];
+    expect(acquireJob(db, 'pr-chat', 'pr', pr.id)).not.toBeNull();
   });
 
   it('throws when the implement session produces no changes, but still cleans up the worktree', async () => {

@@ -16,19 +16,32 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
   });
 
   app.get('/prs/:id/diff', async (req, res) => {
-    const pr = getPr(db, Number(req.params.id));
+    const prId = Number(req.params.id);
+    const pr = getPr(db, prId);
     if (!pr) { res.status(404).json({ error: 'not found' }); return; }
+    if (pr.status === 'merged') {
+      res.status(409).json({ error: 'PR already merged, diff no longer available' });
+      return;
+    }
     const project = getProject(db, pr.projectId);
     if (!project) { res.status(404).json({ error: 'project not found' }); return; }
 
+    // Building the diff opens (and force-removes) the PR's worktree, the same
+    // directory a fix pipeline or PR chat may still be using. Take the PR lock.
+    const job = acquireJob(db, 'pr-chat', 'pr', prId);
+    if (!job) { res.status(409).json({ error: 'already working on this' }); return; }
+
     let worktreePath: string | null = null;
+    let failure: string | null = null;
     try {
       worktreePath = await openWorktree(project, pr.branch);
       res.json({ diff: await getDiff(worktreePath, project.defaultBranch) });
     } catch (err) {
-      res.status(500).json({ error: String(err) });
+      failure = String(err);
+      res.status(500).json({ error: failure });
     } finally {
       if (worktreePath) await removeWorktree(project.repoPath, worktreePath);
+      finishJob(db, job.id, failure ? 'failed' : 'done', failure);
     }
   });
 
