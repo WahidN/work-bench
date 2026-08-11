@@ -1,5 +1,0 @@
-# Allow build scripts for better-sqlite3 and esbuild
-# better-sqlite3 needs to compile native bindings for SQLite
-# esbuild needs to build its platform-specific binary during postinstall
-allow-scripts=all
-require-approval-for-scripts=false
