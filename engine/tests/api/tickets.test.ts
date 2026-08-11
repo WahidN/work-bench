@@ -3,7 +3,8 @@ import request from 'supertest';
 import Database from 'better-sqlite3';
 import { openDb } from '../../src/db.js';
 import { createProject } from '../../src/projects.js';
-import { createTicket } from '../../src/tickets.js';
+import { createTicket, updateTicketStatus } from '../../src/tickets.js';
+import { recordPr } from '../../src/prs.js';
 import * as ticketChat from '../../src/ticketChat.js';
 import * as fixPipeline from '../../src/fixPipeline.js';
 import { createServer } from '../../src/api/server.js';
@@ -68,5 +69,23 @@ describe('POST /tickets/:id/create-pr', () => {
     const res = await auth(request(app).post(`/tickets/${ticketId}/create-pr`));
     expect(res.status).toBe(500);
     expect(res.body.error).toContain('implement session produced no changes');
+  });
+
+  it('refuses a second run once the ticket already has a PR', async () => {
+    const pr = recordPr(db, {
+      ticketId, projectId: 1, branch: 'fix/gh-1', number: 5, url: 'https://x/pull/5', status: 'open',
+    });
+    updateTicketStatus(db, ticketId, 'in_review', pr.id);
+
+    const res = await auth(request(app).post(`/tickets/${ticketId}/create-pr`));
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain('already has a PR');
+    expect(fixPipeline.runFixPipeline).not.toHaveBeenCalled();
+  });
+
+  it('404s for an unknown ticket', async () => {
+    const res = await auth(request(app).post('/tickets/999/create-pr'));
+    expect(res.status).toBe(404);
   });
 });

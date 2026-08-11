@@ -34,6 +34,15 @@ export function registerTicketsRoutes(app: Express, db: Database.Database): void
 
   app.post('/tickets/:id/create-pr', async (req, res) => {
     const ticketId = Number(req.params.id);
+    const ticket = getTicket(db, ticketId);
+    if (!ticket) { res.status(404).json({ error: 'not found' }); return; }
+    // The job lock only stops concurrent calls. A second call after the first
+    // finished would reset the branch and record a duplicate PR row.
+    if (ticket.prId !== null || ticket.status === 'in_review' || ticket.status === 'done') {
+      res.status(409).json({ error: 'ticket already has a PR' });
+      return;
+    }
+
     const job = acquireJob(db, 'fix', 'ticket', ticketId);
     if (!job) { res.status(409).json({ error: 'already working on this' }); return; }
 
