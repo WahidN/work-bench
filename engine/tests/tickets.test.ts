@@ -6,6 +6,7 @@ import {
   createTicket, getTicket, findTicketBySource, updateTicketStatus,
   addTicketMessage, listTicketMessages, listTickets,
 } from '../src/tickets.js';
+import { recordPr } from '../src/prs.js';
 
 let db: Database.Database;
 let projectId: number;
@@ -41,8 +42,11 @@ describe('tickets', () => {
     const created = createTicket(db, {
       source: 'github', sourceId: 'GH-demo#1', projectId, title: 't', body: 'b', url: 'u', analysis: null,
     });
-    const updated = updateTicketStatus(db, created.id, 'in_review', 5);
-    expect(updated).toEqual({ ...created, status: 'in_review', prId: 5 });
+    const pr = recordPr(db, {
+      ticketId: created.id, projectId, branch: 'fix/demo', number: 1, url: 'https://x', status: 'open',
+    });
+    const updated = updateTicketStatus(db, created.id, 'in_review', pr.id);
+    expect(updated).toEqual({ ...created, status: 'in_review', prId: pr.id });
   });
 
   it('records and lists chat messages in order', () => {
