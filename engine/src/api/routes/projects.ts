@@ -12,7 +12,19 @@ export function registerProjectsRoutes(app: Express, db: Database.Database): voi
   });
 
   app.post('/projects', (req, res) => {
-    res.status(201).json(createProject(db, req.body));
+    const { name, repoPath, defaultBranch } = req.body ?? {};
+    for (const [field, value] of Object.entries({ name, repoPath, defaultBranch })) {
+      if (typeof value !== 'string' || !value.trim()) {
+        res.status(400).json({ error: `${field} is required` });
+        return;
+      }
+    }
+    res.status(201).json(createProject(db, {
+      name, repoPath, defaultBranch,
+      githubRepo: req.body.githubRepo ?? null,
+      jiraProjectKey: req.body.jiraProjectKey ?? null,
+      sentryProjectSlug: req.body.sentryProjectSlug ?? null,
+    }));
   });
 
   app.patch('/projects/:id', (req, res) => {
@@ -22,7 +34,15 @@ export function registerProjectsRoutes(app: Express, db: Database.Database): voi
   });
 
   app.delete('/projects/:id', (req, res) => {
-    deleteProject(db, Number(req.params.id));
+    try {
+      deleteProject(db, Number(req.params.id));
+    } catch (err) {
+      if (String(err).includes('FOREIGN KEY constraint failed')) {
+        res.status(409).json({ error: 'project still has tickets or todos referencing it' });
+        return;
+      }
+      throw err;
+    }
     res.status(204).end();
   });
 }

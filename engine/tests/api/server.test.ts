@@ -3,6 +3,7 @@ import request from 'supertest';
 import Database from 'better-sqlite3';
 import { openDb } from '../../src/db.js';
 import { createManualTodo } from '../../src/todos.js';
+import { createTicket } from '../../src/tickets.js';
 import { createServer } from '../../src/api/server.js';
 
 let db: Database.Database;
@@ -60,6 +61,47 @@ describe('projects routes', () => {
 
   it('404s for an unknown project id', async () => {
     await auth(request(app).get('/projects/999')).expect(404);
+  });
+
+  it('defaults the optional source fields when they are omitted', async () => {
+    const res = await auth(request(app).post('/projects')).send({
+      name: 'minimal', repoPath: '/repos/minimal', defaultBranch: 'main',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null });
+  });
+
+  it('rejects a create with a missing required field as 400 JSON, not a 500', async () => {
+    const res = await auth(request(app).post('/projects')).send({ name: 'no-repo-path', defaultBranch: 'main' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('repoPath');
+  });
+
+  it('409s on deleting a project that still has a ticket', async () => {
+    const created = await auth(request(app).post('/projects')).send({
+      name: 'busy', repoPath: '/repos/busy', defaultBranch: 'main',
+    });
+    createTicket(db, {
+      source: 'github', sourceId: 'GH-9', projectId: created.body.id, title: 't', body: 'b', url: 'u', analysis: null,
+    });
+
+    const res = await auth(request(app).delete(`/projects/${created.body.id}`));
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain('still has tickets');
+  });
+});
+
+describe('error handling', () => {
+  it('turns an uncaught route throw into JSON instead of an HTML error page', async () => {
+    await auth(request(app).post('/projects')).send({ name: 'a', repoPath: '/a', defaultBranch: 'main' });
+    const second = await auth(request(app).post('/projects')).send({ name: 'b', repoPath: '/b', defaultBranch: 'main' });
+
+    const res = await auth(request(app).patch(`/projects/${second.body.id}`)).send({ name: 'a' });
+
+    expect(res.status).toBe(500);
+    expect(res.type).toBe('application/json');
+    expect(res.body.error).toContain('UNIQUE');
   });
 });
 
