@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS tickets (
   url TEXT NOT NULL,
   analysis_json TEXT,
   status TEXT NOT NULL CHECK (status IN ('new','sparring','in_review','done','needs_attention')) DEFAULT 'new',
-  pr_id INTEGER REFERENCES prs(id),
+  pr_id INTEGER,
   created_at TEXT NOT NULL,
   UNIQUE(source, source_id)
 );
