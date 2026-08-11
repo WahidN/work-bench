@@ -74,7 +74,7 @@ async function revisePrChat(
 
     const committed = await commitAll(worktreePath, `fix: ${userMessage}`);
     if (!committed) {
-      const reply = "I didn't find a change to make for that — could you be more specific?";
+      const reply = "I didn't find a change to make for that. Could you be more specific?";
       addPrMessage(db, pr.id, 'assistant', reply);
       return { action: 'revised', reply };
     }
