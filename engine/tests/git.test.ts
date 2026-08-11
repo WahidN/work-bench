@@ -28,6 +28,7 @@ describe('openWorktree', () => {
     const path = await openWorktree(project, 'fix/gh-demo-1');
     expect(path).toBe('/repos/demo/.worktrees/fix-gh-demo-1');
     expect(execa).toHaveBeenCalledWith('git', ['fetch', 'origin', 'fix/gh-demo-1'], { cwd: '/repos/demo' });
+    expect(execa).toHaveBeenCalledWith('git', ['fetch', 'origin', 'main'], { cwd: '/repos/demo' });
     expect(execa).toHaveBeenCalledWith('git', ['worktree', 'add', '-B', 'fix/gh-demo-1', path, 'origin/fix/gh-demo-1'], { cwd: '/repos/demo' });
   });
 });

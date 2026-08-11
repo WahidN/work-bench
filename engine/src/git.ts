@@ -22,6 +22,8 @@ export async function createFixWorktree(project: Project, branch: string): Promi
 export async function openWorktree(project: Project, branch: string): Promise<string> {
   const path = worktreePathFor(project.repoPath, branch);
   await git(project.repoPath, ['fetch', 'origin', branch]);
+  // getDiff compares against origin/<defaultBranch>, so that ref must be fresh.
+  await git(project.repoPath, ['fetch', 'origin', project.defaultBranch]);
   await git(project.repoPath, ['worktree', 'remove', '--force', path]).catch(() => {});
   await git(project.repoPath, ['worktree', 'add', '-B', branch, path, `origin/${branch}`]);
   return path;
