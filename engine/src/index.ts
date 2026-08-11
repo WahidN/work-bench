@@ -15,7 +15,9 @@ async function main(): Promise<void> {
   const apiToken = await getOrCreateApiToken();
   const stopPoller = startPoller(db);
   const app = createServer(db, apiToken);
-  const server = app.listen(PORT, () => {
+  // Loopback only: this API runs claude -p with Bash enabled and gh pr merge,
+  // so it must never be reachable from the LAN.
+  const server = app.listen(PORT, '127.0.0.1', () => {
     console.log(`Workbench engine listening on http://localhost:${PORT}`);
   });
 
