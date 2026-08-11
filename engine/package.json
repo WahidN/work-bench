@@ -8,7 +8,7 @@
     "start": "tsx src/index.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "postinstall": "npm rebuild better-sqlite3"
+    "postinstall": "npm rebuild better-sqlite3 && node node_modules/.pnpm/esbuild@0.28.2/node_modules/esbuild/install.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",
