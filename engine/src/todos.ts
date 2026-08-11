@@ -82,6 +82,11 @@ export async function promoteTodo(db: Database.Database, todoId: number): Promis
   return ticket;
 }
 
+export function countJiraTodos(db: Database.Database): number {
+  const row = db.prepare(`SELECT COUNT(*) AS n FROM todos WHERE source = 'jira'`).get() as { n: number };
+  return row.n;
+}
+
 export function reconcileJiraTodos(db: Database.Database, currentSourceIds: string[]): number {
   if (currentSourceIds.length === 0) {
     return db.prepare(`DELETE FROM todos WHERE source = 'jira'`).run().changes;

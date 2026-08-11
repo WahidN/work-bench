@@ -9,7 +9,7 @@ import * as githubSource from '../src/sources/github.js';
 import * as analyze from '../src/analyze.js';
 import * as todos from '../src/todos.js';
 import { getSecret } from '../src/keychain.js';
-import { runPollCycle } from '../src/poller.js';
+import { runPollCycle, startPoller } from '../src/poller.js';
 
 vi.mock('../src/sources/jira.js');
 vi.mock('../src/sources/sentry.js');
@@ -31,6 +31,7 @@ beforeEach(() => {
   vi.mocked(sentrySource.fetchSentryIssues).mockResolvedValue([]);
   vi.mocked(githubSource.fetchGithubIssues).mockResolvedValue([]);
   vi.mocked(getSecret).mockResolvedValue('linku-bv');
+  vi.mocked(todos.countJiraTodos).mockReturnValue(0);
 });
 
 describe('runPollCycle', () => {
@@ -101,5 +102,63 @@ describe('runPollCycle', () => {
 
     expect(summary.sourceErrors).toEqual(['jira: Jira API error 401']);
     expect(summary.ticketsCreated).toBe(1);
+  });
+
+  it('keeps going when one issue fails to analyse and records why', async () => {
+    vi.mocked(githubSource.fetchGithubIssues).mockResolvedValue([
+      { source: 'github', sourceId: 'GH-linku/demo#1', title: 'Broken', url: 'u', body: 'b', projectKey: 'linku/demo' },
+      { source: 'github', sourceId: 'GH-linku/demo#2', title: 'Fine', url: 'u', body: 'b', projectKey: 'linku/demo' },
+    ]);
+    vi.mocked(analyze.analyzeIssue)
+      .mockRejectedValueOnce(new Error('Claude did not return valid JSON after 2 attempts'))
+      .mockResolvedValue({ summary: 's', rootCause: 'r', proposedFix: 'p', affectedFiles: [], confidence: 'high' });
+
+    const summary = await runPollCycle(db);
+
+    expect(summary.ticketsCreated).toBe(1);
+    expect(listTickets(db).map((t) => t.sourceId)).toEqual(['GH-linku/demo#2']);
+    expect(summary.sourceErrors).toEqual([
+      'github:GH-linku/demo#1 analysis failed: Claude did not return valid JSON after 2 attempts',
+    ]);
+  });
+
+  it('skips Jira reconciliation when an empty result would wipe existing todos', async () => {
+    vi.mocked(todos.countJiraTodos).mockReturnValue(3);
+
+    await runPollCycle(db);
+
+    expect(todos.reconcileJiraTodos).not.toHaveBeenCalled();
+  });
+
+  it('still reconciles an empty Jira result when there are no jira todos to lose', async () => {
+    vi.mocked(todos.countJiraTodos).mockReturnValue(0);
+
+    await runPollCycle(db);
+
+    expect(todos.reconcileJiraTodos).toHaveBeenCalledWith(db, []);
+  });
+});
+
+describe('startPoller', () => {
+  it('runs a first cycle immediately instead of after the first interval', async () => {
+    const stop = startPoller(db, 60_000);
+    await vi.waitFor(() => expect(githubSource.fetchGithubIssues).toHaveBeenCalledTimes(1));
+    stop();
+  });
+
+  it('skips a tick while the previous cycle is still running', async () => {
+    let releaseFetch: () => void;
+    vi.mocked(githubSource.fetchGithubIssues).mockReturnValueOnce(
+      new Promise((resolve) => { releaseFetch = () => resolve([]); })
+    );
+
+    const stop = startPoller(db, 5);
+    await new Promise((r) => setTimeout(r, 40));
+
+    expect(githubSource.fetchGithubIssues).toHaveBeenCalledTimes(1);
+
+    stop();
+    releaseFetch!();
+    await new Promise((r) => setTimeout(r, 10));
   });
 });

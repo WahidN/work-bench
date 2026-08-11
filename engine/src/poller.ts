@@ -5,7 +5,7 @@ import { fetchSentryIssues } from './sources/sentry.js';
 import { fetchGithubIssues } from './sources/github.js';
 import { analyzeIssue } from './analyze.js';
 import { findTicketBySource, createTicket } from './tickets.js';
-import { upsertJiraTodo, reconcileJiraTodos } from './todos.js';
+import { upsertJiraTodo, reconcileJiraTodos, countJiraTodos } from './todos.js';
 import { getSecret } from './keychain.js';
 import type { SourceIssue, Project } from './types.js';
 
@@ -48,7 +48,15 @@ export async function runPollCycle(db: Database.Database): Promise<PollSummary> 
     summary.jiraTodos++;
   }
   if (results[0].status === 'fulfilled') {
-    reconcileJiraTodos(db, issuesBySource[0].map((issue) => issue.sourceId));
+    const sourceIds = issuesBySource[0].map((issue) => issue.sourceId);
+    // An empty Jira result on a setup that has Jira todos is more likely a
+    // credential or Keychain problem than a genuinely empty board, and
+    // reconciling would delete every todo with its done state. Skip instead.
+    if (sourceIds.length > 0 || countJiraTodos(db) === 0) {
+      reconcileJiraTodos(db, sourceIds);
+    } else {
+      console.warn('Jira returned 0 issues while jira todos exist; skipping reconciliation this cycle');
+    }
   }
 
   for (const issue of [...issuesBySource[1], ...issuesBySource[2]]) {
@@ -56,20 +64,45 @@ export async function runPollCycle(db: Database.Database): Promise<PollSummary> 
     const field = issue.source === 'sentry' ? 'sentryProjectSlug' : 'githubRepo';
     const project = findProjectByKey(projects, field, issue.projectKey);
     if (!project) continue;
-    const analysis = await analyzeIssue(issue, project);
-    createTicket(db, {
-      source: issue.source, sourceId: issue.sourceId, projectId: project.id,
-      title: issue.title, body: issue.body, url: issue.url, analysis,
-    });
-    summary.ticketsCreated++;
+    // One issue Claude cannot analyse must not abort the rest of the cycle,
+    // otherwise it blocks every newer issue on every future cycle too.
+    try {
+      const analysis = await analyzeIssue(issue, project);
+      createTicket(db, {
+        source: issue.source, sourceId: issue.sourceId, projectId: project.id,
+        title: issue.title, body: issue.body, url: issue.url, analysis,
+      });
+      summary.ticketsCreated++;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      summary.sourceErrors.push(`${issue.source}:${issue.sourceId} analysis failed: ${message}`);
+    }
   }
 
   return summary;
 }
 
 export function startPoller(db: Database.Database, intervalMs: number = 5 * 60 * 1000): () => void {
-  const timer = setInterval(() => {
-    runPollCycle(db).catch((err) => console.error('poll cycle failed', err));
-  }, intervalMs);
+  let running = false;
+
+  const tick = (): void => {
+    // A cycle is unbounded (every analyzeIssue may take minutes), so without
+    // this guard a slow cycle would overlap the next one and analyse the same
+    // issue twice.
+    if (running) {
+      console.warn('previous poll cycle is still running; skipping this one');
+      return;
+    }
+    running = true;
+    runPollCycle(db)
+      .then((summary) => {
+        for (const error of summary.sourceErrors) console.error('poll cycle error:', error);
+      })
+      .catch((err) => console.error('poll cycle failed', err))
+      .finally(() => { running = false; });
+  };
+
+  tick();
+  const timer = setInterval(tick, intervalMs);
   return () => clearInterval(timer);
 }
