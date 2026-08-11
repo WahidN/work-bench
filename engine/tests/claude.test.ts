@@ -23,7 +23,7 @@ describe('runClaude', () => {
 
 describe('extractJson', () => {
   it('extracts a balanced JSON object out of surrounding prose', () => {
-    const text = 'Here is the result: {"a": 1, "note": "use {braces} carefully"} — done.';
+    const text = 'Here is the result: {"a": 1, "note": "use {braces} carefully"} - done.';
     expect(extractJson(text)).toEqual({ a: 1, note: 'use {braces} carefully' });
   });
 

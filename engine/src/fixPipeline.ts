@@ -94,6 +94,7 @@ export async function runFixPipeline(db: Database.Database, ticketId: number): P
       }
     }
 
+    // MAX_REVIEW_ROUNDS is at least 1, so the loop body ran and set lastScore.
     await markPrDraft(worktreePath);
     updatePrStatus(db, pr.id, 'needs_attention', lastScore ? averageScore(lastScore) : null);
     addPrMessage(db, pr.id, 'assistant', failComment(lastScore!));

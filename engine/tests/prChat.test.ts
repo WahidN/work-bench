@@ -62,7 +62,7 @@ describe('isMergeRequest', () => {
   });
 });
 
-describe('sendPrMessage — merge', () => {
+describe('sendPrMessage: merge', () => {
   it('runs mergePr, marks the PR merged, and the ticket done', async () => {
     const result = await sendPrMessage(db, prId, 'merge it');
 
@@ -73,7 +73,7 @@ describe('sendPrMessage — merge', () => {
   });
 });
 
-describe('sendPrMessage — revise', () => {
+describe('sendPrMessage: revise', () => {
   it('implements the revision, pushes, re-reviews, and records the outcome', async () => {
     vi.mocked(review.reviewDiff).mockResolvedValue({
       correctness: 5, completeness: 5, quality: 5, tests: 5, regressionRisk: 5, findings: [],
