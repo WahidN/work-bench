@@ -1,0 +1,80 @@
+import { execa } from 'execa';
+import { join } from 'node:path';
+import type { Project } from './types.js';
+
+async function git(cwd: string, args: string[]): Promise<string> {
+  const { stdout } = await execa('git', args, { cwd });
+  return stdout;
+}
+
+export function worktreePathFor(repoPath: string, branch: string): string {
+  return join(repoPath, '.worktrees', branch.replace(/\//g, '-'));
+}
+
+export async function createFixWorktree(project: Project, branch: string): Promise<string> {
+  const path = worktreePathFor(project.repoPath, branch);
+  await git(project.repoPath, ['fetch', 'origin', project.defaultBranch]);
+  await git(project.repoPath, ['worktree', 'remove', '--force', path]).catch(() => {});
+  await git(project.repoPath, ['worktree', 'add', '-B', branch, path, `origin/${project.defaultBranch}`]);
+  return path;
+}
+
+export async function openWorktree(project: Project, branch: string): Promise<string> {
+  const path = worktreePathFor(project.repoPath, branch);
+  await git(project.repoPath, ['fetch', 'origin', branch]);
+  await git(project.repoPath, ['worktree', 'remove', '--force', path]).catch(() => {});
+  await git(project.repoPath, ['worktree', 'add', '-B', branch, path, `origin/${branch}`]);
+  return path;
+}
+
+export async function removeWorktree(repoPath: string, worktreePath: string): Promise<void> {
+  await git(repoPath, ['worktree', 'remove', '--force', worktreePath]).catch(() => {});
+}
+
+export async function commitAll(worktreePath: string, message: string): Promise<boolean> {
+  await git(worktreePath, ['add', '-A']);
+  const status = await git(worktreePath, ['status', '--porcelain']);
+  if (!status.trim()) return false;
+  await git(worktreePath, ['commit', '-m', message]);
+  return true;
+}
+
+export async function pushBranch(worktreePath: string, branch: string): Promise<void> {
+  await git(worktreePath, ['push', '-u', 'origin', branch, '--force-with-lease']);
+}
+
+export async function getDiff(worktreePath: string, defaultBranch: string): Promise<string> {
+  return git(worktreePath, ['diff', `origin/${defaultBranch}...HEAD`]);
+}
+
+export async function createPr(
+  worktreePath: string,
+  title: string,
+  body: string,
+  baseBranch: string
+): Promise<string> {
+  try {
+    const { stdout } = await execa(
+      'gh',
+      ['pr', 'create', '--title', title, '--body', body, '--base', baseBranch],
+      { cwd: worktreePath }
+    );
+    const match = stdout.match(/https:\/\/github\.com\/[^\s)]+/);
+    return match ? match[0] : stdout.trim();
+  } catch (err) {
+    const existing = await execa('gh', ['pr', 'view', '--json', 'url', '-q', '.url'], {
+      cwd: worktreePath,
+    }).catch(() => null);
+    if (!existing) throw err;
+    await execa('gh', ['pr', 'ready'], { cwd: worktreePath }).catch(() => {});
+    return existing.stdout.trim();
+  }
+}
+
+export async function markPrDraft(worktreePath: string): Promise<void> {
+  await execa('gh', ['pr', 'ready', '--undo'], { cwd: worktreePath });
+}
+
+export async function mergePr(worktreePath: string): Promise<void> {
+  await execa('gh', ['pr', 'merge', '--squash', '--delete-branch'], { cwd: worktreePath });
+}
