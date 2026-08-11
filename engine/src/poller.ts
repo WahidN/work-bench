@@ -6,6 +6,7 @@ import { fetchGithubIssues } from './sources/github.js';
 import { analyzeIssue } from './analyze.js';
 import { findTicketBySource, createTicket } from './tickets.js';
 import { upsertJiraTodo, reconcileJiraTodos } from './todos.js';
+import { getSecret } from './keychain.js';
 import type { SourceIssue, Project } from './types.js';
 
 export interface PollSummary {
@@ -25,9 +26,13 @@ export async function runPollCycle(db: Database.Database): Promise<PollSummary> 
   const sentrySlugs = projects.filter((p) => p.sentryProjectSlug).map((p) => p.sentryProjectSlug!);
   const githubRepos = projects.filter((p) => p.githubRepo).map((p) => p.githubRepo!);
 
+  // Without an org there is no Sentry URL to call, so skip the fetch the same
+  // way fetchSentryIssues skips a missing token or empty project list.
+  const sentryOrg = await getSecret('sentry-org');
+
   const results = await Promise.allSettled([
     fetchAssignedJiraIssues(),
-    fetchSentryIssues('workbench', sentrySlugs),
+    sentryOrg ? fetchSentryIssues(sentryOrg, sentrySlugs) : Promise.resolve([]),
     fetchGithubIssues(githubRepos),
   ]);
   const names = ['jira', 'sentry', 'github'] as const;

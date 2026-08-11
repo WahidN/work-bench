@@ -8,6 +8,7 @@ import * as sentrySource from '../src/sources/sentry.js';
 import * as githubSource from '../src/sources/github.js';
 import * as analyze from '../src/analyze.js';
 import * as todos from '../src/todos.js';
+import { getSecret } from '../src/keychain.js';
 import { runPollCycle } from '../src/poller.js';
 
 vi.mock('../src/sources/jira.js');
@@ -15,6 +16,7 @@ vi.mock('../src/sources/sentry.js');
 vi.mock('../src/sources/github.js');
 vi.mock('../src/analyze.js');
 vi.mock('../src/todos.js');
+vi.mock('../src/keychain.js');
 
 let db: Database.Database;
 
@@ -28,6 +30,7 @@ beforeEach(() => {
   vi.mocked(jiraSource.fetchAssignedJiraIssues).mockResolvedValue([]);
   vi.mocked(sentrySource.fetchSentryIssues).mockResolvedValue([]);
   vi.mocked(githubSource.fetchGithubIssues).mockResolvedValue([]);
+  vi.mocked(getSecret).mockResolvedValue('linku-bv');
 });
 
 describe('runPollCycle', () => {
@@ -67,6 +70,22 @@ describe('runPollCycle', () => {
     expect(todos.upsertJiraTodo).toHaveBeenCalledTimes(1);
     expect(vi.mocked(todos.upsertJiraTodo).mock.calls[0][1].sourceId).toBe('JIRA-DEMO-1');
     expect(todos.reconcileJiraTodos).toHaveBeenCalledWith(db, ['JIRA-DEMO-1']);
+  });
+
+  it('passes the Sentry org from the keychain, not a hardcoded one', async () => {
+    await runPollCycle(db);
+
+    expect(getSecret).toHaveBeenCalledWith('sentry-org');
+    expect(sentrySource.fetchSentryIssues).toHaveBeenCalledWith('linku-bv', ['demo-frontend']);
+  });
+
+  it('skips Sentry without an error when the org secret is not set', async () => {
+    vi.mocked(getSecret).mockResolvedValue(null);
+
+    const summary = await runPollCycle(db);
+
+    expect(sentrySource.fetchSentryIssues).not.toHaveBeenCalled();
+    expect(summary.sourceErrors).toEqual([]);
   });
 
   it('records a source error without aborting the rest of the cycle', async () => {
