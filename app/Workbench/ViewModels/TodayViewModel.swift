@@ -16,6 +16,7 @@ final class TodayViewModel {
     private(set) var todos: [Todo] = []
     private(set) var isLoading = false
     var errorMessage: String?
+    private var isCurrentlyFailing = false
 
     private let api: any TodayAPI
 
@@ -35,8 +36,12 @@ final class TodayViewModel {
             needsInput = response.needsInput
             todos = response.todos
             errorMessage = nil
+            isCurrentlyFailing = false
         } catch {
-            present(error)
+            if !isCurrentlyFailing {
+                present(error)
+            }
+            isCurrentlyFailing = true
         }
     }
 

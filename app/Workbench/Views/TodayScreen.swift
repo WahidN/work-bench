@@ -36,7 +36,6 @@ struct TodayScreen: View {
             .padding(24)
         }
         .background(Theme.background)
-        .task { await viewModel.load() }
         .alert(
             "Error",
             isPresented: Binding(get: { viewModel.errorMessage != nil }, set: { if !$0 { viewModel.errorMessage = nil } })
