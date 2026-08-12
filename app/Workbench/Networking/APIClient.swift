@@ -103,3 +103,21 @@ extension APIClient {
         try await sendNoContent("DELETE", "/projects/\(id)", body: nil)
     }
 }
+
+extension APIClient {
+    func todos() async throws -> [Todo] {
+        try await send("GET", "/todos", body: nil)
+    }
+
+    func createTodo(text: String) async throws -> Todo {
+        try await send("POST", "/todos", body: ["text": text])
+    }
+
+    func setTodoDone(id: Int, done: Bool) async throws -> Todo {
+        try await send("PATCH", "/todos/\(id)", body: ["done": done])
+    }
+
+    func promoteTodo(id: Int) async throws -> Ticket {
+        try await send("POST", "/todos/\(id)/promote", body: nil)
+    }
+}
