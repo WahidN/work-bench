@@ -1,4 +1,5 @@
 Workbench.xcodeproj/
+Workbench/Info.plist
 xcuserdata/
 DerivedData/
 .build/
