@@ -18,6 +18,7 @@ final class TicketsViewModel {
     var errorMessage: String?
 
     private let api: any TicketsAPI
+    private var selectToken = 0
 
     init(api: any TicketsAPI = APIClient()) {
         self.api = api
@@ -36,35 +37,46 @@ final class TicketsViewModel {
     }
 
     func select(_ ticket: Ticket) async {
+        selectToken += 1
+        let token = selectToken
         do {
-            selectedTicket = try await api.ticket(id: ticket.id)
+            let detail = try await api.ticket(id: ticket.id)
+            guard token == selectToken else { return }
+            selectedTicket = detail
         } catch {
+            guard token == selectToken else { return }
             present(error)
         }
     }
 
     func sendMessage(_ text: String) async {
         guard let ticketId = selectedTicket?.id else { return }
+        let token = selectToken
         isSending = true
         defer { isSending = false }
         do {
             _ = try await api.sendTicketMessage(id: ticketId, text: text)
-            selectedTicket = try await api.ticket(id: ticketId)
+            let detail = try await api.ticket(id: ticketId)
+            guard token == selectToken else { return }
+            selectedTicket = detail
         } catch {
+            guard token == selectToken else { return }
             present(error)
         }
     }
 
     func createPr() async {
         guard let ticketId = selectedTicket?.id else { return }
+        let token = selectToken
         isSending = true
         defer { isSending = false }
         do {
             _ = try await api.createPr(ticketId: ticketId)
-            selectedTicket = try await api.ticket(id: ticketId)
+            let detail = try await api.ticket(id: ticketId)
+            if token == selectToken { selectedTicket = detail }
             await load()
         } catch {
-            present(error)
+            if token == selectToken { present(error) }
         }
     }
 }

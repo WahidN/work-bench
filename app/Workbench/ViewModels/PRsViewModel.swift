@@ -20,6 +20,7 @@ final class PRsViewModel {
     var errorMessage: String?
 
     private let api: any PRsAPI
+    private var selectToken = 0
 
     init(api: any PRsAPI = APIClient()) {
         self.api = api
@@ -38,41 +39,53 @@ final class PRsViewModel {
     }
 
     func select(_ pr: PullRequest) async {
+        selectToken += 1
+        let token = selectToken
         diffText = nil
         do {
             let detail = try await api.pullRequest(id: pr.id)
+            guard token == selectToken else { return }
             selectedPr = detail
             if detail.status != .merged {
-                diffText = try await api.diff(prId: pr.id).diff
+                let diff = try await api.diff(prId: pr.id).diff
+                guard token == selectToken else { return }
+                diffText = diff
             }
         } catch {
+            guard token == selectToken else { return }
             present(error)
         }
     }
 
     func sendMessage(_ text: String) async {
         guard let prId = selectedPr?.id else { return }
+        let token = selectToken
         isBusy = true
         defer { isBusy = false }
         do {
             _ = try await api.sendPrMessage(id: prId, text: text)
-            selectedPr = try await api.pullRequest(id: prId)
+            let detail = try await api.pullRequest(id: prId)
+            guard token == selectToken else { return }
+            selectedPr = detail
             diffText = try? await api.diff(prId: prId).diff
         } catch {
+            guard token == selectToken else { return }
             present(error)
         }
     }
 
     func merge() async {
         guard let prId = selectedPr?.id else { return }
+        let token = selectToken
         isBusy = true
         defer { isBusy = false }
         do {
             _ = try await api.mergePr(id: prId)
-            selectedPr = try await api.pullRequest(id: prId)
+            let detail = try await api.pullRequest(id: prId)
+            if token == selectToken { selectedPr = detail }
             await load()
         } catch {
-            present(error)
+            if token == selectToken { present(error) }
         }
     }
 }
