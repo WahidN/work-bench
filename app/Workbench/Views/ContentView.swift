@@ -45,7 +45,7 @@ struct ContentView: View {
             case .pullRequests:
                 PRsScreen(viewModel: prsViewModel)
             case .projects:
-                Text("Projects — Task 18 builds this")
+                ProjectsScreen(viewModel: projectsViewModel)
             case .none:
                 Text("Select a section")
             }
