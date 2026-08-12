@@ -2,14 +2,16 @@ import SwiftUI
 
 struct DiffView: View {
     let diffText: String
+    private let lines: [String]
 
-    private var lines: [String] {
-        diffText.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    init(diffText: String) {
+        self.diffText = diffText
+        self.lines = diffText.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
     }
 
     var body: some View {
         ScrollView([.horizontal, .vertical]) {
-            VStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                     Text(line.isEmpty ? " " : line)
                         .font(.system(.caption, design: .monospaced))
