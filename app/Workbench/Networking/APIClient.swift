@@ -6,8 +6,15 @@ final class APIClient {
     private let session: URLSession
     private let keychain: KeychainClient
 
-    init(session: URLSession = .shared, keychain: KeychainClient = KeychainClient()) {
-        self.session = session
+    init(session: URLSession? = nil, keychain: KeychainClient = KeychainClient()) {
+        if let session {
+            self.session = session
+        } else {
+            let configuration = URLSessionConfiguration.default
+            configuration.timeoutIntervalForRequest = 900
+            configuration.timeoutIntervalForResource = 900
+            self.session = URLSession(configuration: configuration)
+        }
         self.keychain = keychain
     }
 
