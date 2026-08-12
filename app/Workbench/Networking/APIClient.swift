@@ -121,3 +121,21 @@ extension APIClient {
         try await send("POST", "/todos/\(id)/promote", body: nil)
     }
 }
+
+extension APIClient {
+    func tickets() async throws -> [Ticket] {
+        try await send("GET", "/tickets", body: nil)
+    }
+
+    func ticket(id: Int) async throws -> Ticket {
+        try await send("GET", "/tickets/\(id)", body: nil)
+    }
+
+    func sendTicketMessage(id: Int, text: String) async throws -> ChatReply {
+        try await send("POST", "/tickets/\(id)/messages", body: ["text": text])
+    }
+
+    func createPr(ticketId: Int) async throws -> FixResult {
+        try await send("POST", "/tickets/\(ticketId)/create-pr", body: nil)
+    }
+}
