@@ -52,10 +52,31 @@ struct ContentView: View {
         }
         .frame(minWidth: 900, minHeight: 560)
         .task {
-            await todayViewModel.load()
+            var previousKeys: Set<String> = []
+            var isFirstCycle = true
+            while !Task.isCancelled {
+                await todayViewModel.load()
+                let currentKeys = Set(todayViewModel.needsInput.map(\.uniqueKey))
+                if !isFirstCycle {
+                    let newlyAppeared = todayViewModel.needsInput.filter { !previousKeys.contains($0.uniqueKey) }
+                    for item in newlyAppeared {
+                        appDelegate.notify(title: notificationTitle(for: item), body: item.title)
+                    }
+                }
+                previousKeys = currentKeys
+                isFirstCycle = false
+                try? await Task.sleep(for: .seconds(15))
+            }
         }
         .onChange(of: todayViewModel.needsInput.count) { _, newCount in
             appDelegate.updateBadge(count: newCount)
         }
+    }
+
+    private func notificationTitle(for item: TodayItem) -> String {
+        if item.status == "needs_attention" {
+            return item.kind == .ticket ? "Fix failed, needs attention" : "PR needs attention"
+        }
+        return item.kind == .ticket ? "Ticket ready to spar" : "PR ready for review"
     }
 }
