@@ -596,7 +596,7 @@ The base HTTP plumbing every endpoint method (Tasks 5-8) builds on: constructs a
 **Files:**
 - Create: `app/Workbench/Networking/APIError.swift`
 - Create: `app/Workbench/Networking/APIClient.swift`
-- Test: `app/WorkbenchTests/Networking/MockURLProtocol.swift` (test helper, not itself tested)
+- Test: `app/WorkbenchTests/Networking/MockURLProtocol.swift` (test helper, not itself tested; also defines a shared `URLRequest.capturedBodyData()` extension — Tasks 5-7's tests use this instead of reading `request.httpBody` directly, since URLSession converts a body-bearing request's `httpBody` into an `httpBodyStream` before it reaches a custom `URLProtocol`, leaving `httpBody` nil at that point)
 - Test: `app/WorkbenchTests/Networking/APIClientCoreTests.swift`
 
 **Interfaces:**
@@ -638,6 +638,31 @@ func mockedSession(handler: @escaping (URLRequest) throws -> (HTTPURLResponse, D
     config.protocolClasses = [MockURLProtocol.self]
     MockURLProtocol.requestHandler = handler
     return URLSession(configuration: config)
+}
+
+extension URLRequest {
+    /// URLSession converts a body-bearing request's `httpBody` into an `httpBodyStream`
+    /// internally before it reaches a custom `URLProtocol`, so `httpBody` alone is often
+    /// nil here even though the caller set it. Every test in this project that needs to
+    /// inspect a captured request's JSON body should call this, not `request.httpBody` directly.
+    func capturedBodyData() -> Data? {
+        if let httpBody { return httpBody }
+        guard let stream = httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let bufferSize = 4096
+        var buffer = [UInt8](repeating: 0, count: bufferSize)
+        while stream.hasBytesAvailable {
+            let read = stream.read(&buffer, maxLength: bufferSize)
+            if read > 0 {
+                data.append(buffer, count: read)
+            } else {
+                break
+            }
+        }
+        return data
+    }
 }
 
 func jsonResponse(_ url: URL, status: Int, body: String) -> (HTTPURLResponse, Data) {
@@ -726,19 +751,13 @@ struct APIClientCoreTests {
     @Test func encodesTheRequestBodyAsJSON() async throws {
         var capturedBody: Data?
         let session = mockedSession { request in
-            capturedBody = request.httpBodyStreamOrData()
+            capturedBody = request.capturedBodyData()
             return jsonResponse(request.url!, status: 201, body: #"{"value":1}"#)
         }
         let client = APIClient(session: session, keychain: testKeychain)
         let _: Echo = try await client.send("POST", "/todos", body: ["text": "renew SSL cert"])
         let decoded = try JSONSerialization.jsonObject(with: capturedBody ?? Data()) as? [String: String]
         #expect(decoded?["text"] == "renew SSL cert")
-    }
-}
-
-private extension URLRequest {
-    func httpBodyStreamOrData() -> Data? {
-        httpBody
     }
 }
 ```
@@ -927,7 +946,7 @@ struct APIClientTodayProjectsTests {
         var capturedBody: [String: Any]?
         let session = mockedSession { request in
             capturedMethod = request.httpMethod
-            capturedBody = try? JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+            capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
             return jsonResponse(request.url!, status: 201, body: """
             {"id":1,"name":"demo","repoPath":"/repos/demo","defaultBranch":"main","githubRepo":null,"jiraProjectKey":null,"sentryProjectSlug":null}
             """)
@@ -953,7 +972,7 @@ struct APIClientTodayProjectsTests {
     @Test func updateProjectOnlySendsChangedFields() async throws {
         var capturedBody: [String: Any]?
         let session = mockedSession { request in
-            capturedBody = try? JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+            capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
             return jsonResponse(request.url!, status: 200, body: """
             {"id":1,"name":"demo","repoPath":"/repos/demo","defaultBranch":"develop","githubRepo":null,"jiraProjectKey":null,"sentryProjectSlug":null}
             """)
@@ -1085,7 +1104,7 @@ struct APIClientTodosTests {
     @Test func createTodoPostsTheTextField() async throws {
         var capturedBody: [String: Any]?
         let session = mockedSession { request in
-            capturedBody = try? JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+            capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
             return jsonResponse(request.url!, status: 201, body: """
             {"id":1,"source":"manual","sourceId":null,"text":"renew SSL cert","body":"","url":null,
              "projectId":null,"canPromote":false,"done":false,"promotedTicketId":null,"createdAt":"2026-08-12T00:00:00.000Z"}
@@ -1099,7 +1118,7 @@ struct APIClientTodosTests {
     @Test func setTodoDonePatchesTheDoneField() async throws {
         var capturedBody: [String: Any]?
         let session = mockedSession { request in
-            capturedBody = try? JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+            capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
             return jsonResponse(request.url!, status: 200, body: """
             {"id":1,"source":"manual","sourceId":null,"text":"x","body":"","url":null,
              "projectId":null,"canPromote":false,"done":true,"promotedTicketId":null,"createdAt":"2026-08-12T00:00:00.000Z"}
@@ -1233,7 +1252,7 @@ struct APIClientTicketsTests {
         var capturedBody: [String: Any]?
         let session = mockedSession { request in
             capturedPath = request.url?.path
-            capturedBody = try? JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+            capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
             return jsonResponse(request.url!, status: 200, body: #"{"reply":"Sounds good."}"#)
         }
         let reply = try await APIClient(session: session, keychain: testKeychain).sendTicketMessage(id: 1, text: "go ahead")
