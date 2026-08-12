@@ -28,8 +28,11 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(SidebarSection.allCases, selection: $selection) { section in
-                Label(section.rawValue, systemImage: section.symbol)
+            List(selection: $selection) {
+                ForEach(SidebarSection.allCases) { section in
+                    Label(section.rawValue, systemImage: section.symbol)
+                        .tag(section)
+                }
             }
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(180)
