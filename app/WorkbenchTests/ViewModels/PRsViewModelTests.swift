@@ -1,0 +1,74 @@
+import Testing
+@testable import Workbench
+
+private func samplePr(id: Int = 1, status: PrStatus = .open) -> PullRequest {
+    PullRequest(id: id, ticketId: 1, projectId: 1, branch: "fix/gh-1", number: id,
+                url: "https://x/pull/\(id)", status: status, lastReviewScore: 4.6,
+                createdAt: "2026-08-12T00:00:00.000Z")
+}
+
+@MainActor
+final class MockPRsAPI: PRsAPI {
+    var pullRequestsResult: Result<[PullRequest], Error> = .success([])
+    var pullRequestHandler: (Int) throws -> PullRequest = { samplePr(id: $0) }
+    var diffResult: Result<DiffResponse, Error> = .success(DiffResponse(diff: "--- a\n+++ b"))
+    var sendMessageResult: Result<PrChatResult, Error> = .success(PrChatResult(action: .revised, reply: "done"))
+    var mergeResult: Result<PrChatResult, Error> = .success(PrChatResult(action: .merged, reply: "Merged."))
+    private(set) var diffCalls: [Int] = []
+    private(set) var mergeCalls: [Int] = []
+
+    func pullRequests() async throws -> [PullRequest] { try pullRequestsResult.get() }
+    func pullRequest(id: Int) async throws -> PullRequest { try pullRequestHandler(id) }
+    func diff(prId: Int) async throws -> DiffResponse {
+        diffCalls.append(prId)
+        return try diffResult.get()
+    }
+    func sendPrMessage(id: Int, text: String) async throws -> PrChatResult { try sendMessageResult.get() }
+    func mergePr(id: Int) async throws -> PrChatResult {
+        mergeCalls.append(id)
+        return try mergeResult.get()
+    }
+}
+
+@MainActor
+@Suite
+struct PRsViewModelTests {
+    @Test func selectFetchesDetailAndDiff() async {
+        let api = MockPRsAPI()
+        let viewModel = PRsViewModel(api: api)
+        await viewModel.select(samplePr(id: 1))
+        #expect(viewModel.selectedPr?.id == 1)
+        #expect(viewModel.diffText == "--- a\n+++ b")
+        #expect(api.diffCalls == [1])
+    }
+
+    @Test func selectOnAnAlreadyMergedPrSkipsTheDiffCall() async {
+        let api = MockPRsAPI()
+        api.pullRequestHandler = { id in samplePr(id: id, status: .merged) }
+        let viewModel = PRsViewModel(api: api)
+        await viewModel.select(samplePr(id: 1))
+        #expect(viewModel.diffText == nil)
+        #expect(api.diffCalls.isEmpty, "should never call diff for a PR already known to be merged")
+    }
+
+    @Test func sendMessageRefreshesDetailAndDiff() async {
+        let api = MockPRsAPI()
+        let viewModel = PRsViewModel(api: api)
+        await viewModel.select(samplePr(id: 1))
+        await viewModel.sendMessage("also guard the email field")
+        #expect(viewModel.diffText != nil)
+    }
+
+    @Test func mergeCallsMergeAndReloadsListWithoutFetchingDiff() async {
+        let api = MockPRsAPI()
+        api.pullRequestHandler = { id in samplePr(id: id, status: .open) }
+        api.pullRequestsResult = .success([samplePr(id: 1, status: .merged)])
+        let viewModel = PRsViewModel(api: api)
+        await viewModel.select(samplePr(id: 1))
+        let diffCallsBeforeMerge = api.diffCalls.count
+        await viewModel.merge()
+        #expect(api.mergeCalls == [1])
+        #expect(api.diffCalls.count == diffCallsBeforeMerge, "merging should never attempt a diff fetch")
+        #expect(viewModel.pullRequests.first?.status == .merged)
+    }
+}
