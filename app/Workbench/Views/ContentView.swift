@@ -36,7 +36,7 @@ struct ContentView: View {
         } detail: {
             switch selection {
             case .today:
-                Text("Today — Task 15 builds this")
+                TodayScreen(viewModel: todayViewModel)
             case .tickets:
                 Text("Tickets — Task 16 builds this")
             case .pullRequests:
