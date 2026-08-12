@@ -2,9 +2,12 @@ import SwiftUI
 
 @main
 struct WorkbenchApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     var body: some Scene {
         WindowGroup {
-            Text("Workbench")
+            ContentView()
+                .environment(appDelegate)
         }
     }
 }
