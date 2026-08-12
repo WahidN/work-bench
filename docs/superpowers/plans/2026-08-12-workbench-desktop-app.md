@@ -18,6 +18,7 @@
 - `GET /today`'s `needsInput` array items are a distinct synthetic shape (`kind`, `id`, `title`, `status`, `reviewScore`), not raw `Ticket`/`Pr` objects.
 - No em dashes in any user-facing string (this has been a standing rule throughout this project) — use plain punctuation.
 - No third-party dependencies (no SPM packages) unless a task explicitly calls for one — everything here is buildable with Apple's own frameworks.
+- Every `xcodebuild test` invocation in this plan includes `-parallel-testing-enabled NO`. `MockURLProtocol` (Task 4) stores its handler in a single `static var`, shared across every test file that calls `mockedSession(...)`. With more than one such test suite in the target, Swift Testing's default cross-suite parallelism lets one test's handler overwrite another's before the first request reaches `startLoading()` — confirmed 100% reproducing once Task 5 introduced a second suite. The flag forces serial execution, which eliminates it; do not drop it from a test command to "speed things up."
 - Every new Swift file that contains logic (not a pure SwiftUI View) gets a Swift Testing file under `WorkbenchTests/` mirroring its path. SwiftUI View files are verified manually (build and look at it), matching how the engine plan handled its own untestable bootstrap code — there is no automated UI testing in this plan.
 
 ---
@@ -102,7 +103,7 @@ Expected: `Created project at .../app/Workbench.xcodeproj`, and `xcodebuild -lis
 Run: `cd app && xcodebuild build -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
 Expected: `** BUILD SUCCEEDED **`
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: `** TEST SUCCEEDED **`, 1 test passed.
 
 - [ ] **Step 6: Add `.gitignore` for the generated project and Xcode noise**
@@ -265,7 +266,7 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: FAIL — `Cannot find type 'Project' in scope` (and similarly for every other type), since none of the model files exist yet.
 
 - [ ] **Step 3: Write `app/Workbench/Models/Project.swift`**
@@ -415,7 +416,7 @@ struct TodayResponse: Codable, Equatable {
 
 - [ ] **Step 8: Run tests to verify they pass**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: `** TEST SUCCEEDED **`, 10 tests passed (9 new + the Task 1 placeholder — delete the placeholder test now that real tests exist).
 
 - [ ] **Step 9: Delete the placeholder test**
@@ -489,7 +490,7 @@ struct KeychainClientTests {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: FAIL — `Cannot find type 'KeychainClient' in scope`.
 
 - [ ] **Step 3: Write `app/Workbench/Networking/KeychainClient.swift`**
@@ -577,7 +578,7 @@ struct KeychainClient {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: `** TEST SUCCEEDED **`, 4 new tests passed (14 total).
 
 - [ ] **Step 5: Commit**
@@ -764,7 +765,7 @@ struct APIClientCoreTests {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: FAIL — `Cannot find type 'APIClient' in scope` / `Cannot find type 'APIError' in scope`.
 
 - [ ] **Step 3: Write `app/Workbench/Networking/APIError.swift`**
@@ -889,7 +890,7 @@ final class APIClient {
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: `** TEST SUCCEEDED **`, 6 new tests passed (20 total).
 
 - [ ] **Step 6: Commit**
@@ -1004,7 +1005,7 @@ struct APIClientTodayProjectsTests {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: FAIL — `Cannot find type 'ProjectInput' in scope` / `value of type 'APIClient' has no member 'today'`.
 
 - [ ] **Step 3: Write `app/Workbench/Networking/ProjectInput.swift`**
@@ -1061,7 +1062,7 @@ extension APIClient {
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: `** TEST SUCCEEDED **`, 6 new tests passed (26 total).
 
 - [ ] **Step 6: Commit**
@@ -1167,7 +1168,7 @@ struct APIClientTodosTests {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: FAIL — `value of type 'APIClient' has no member 'createTodo'`.
 
 - [ ] **Step 3: Add the extension to `app/Workbench/Networking/APIClient.swift`**
@@ -1194,7 +1195,7 @@ extension APIClient {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: `** TEST SUCCEEDED **`, 6 new tests passed (32 total).
 
 - [ ] **Step 5: Commit**
@@ -1281,7 +1282,7 @@ struct APIClientTicketsTests {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: FAIL — `Cannot find type 'ChatReply' in scope`.
 
 - [ ] **Step 3: Write `app/Workbench/Networking/ChatReply.swift`**
@@ -1321,7 +1322,7 @@ extension APIClient {
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: `** TEST SUCCEEDED **`, 4 new tests passed (36 total).
 
 - [ ] **Step 6: Commit**
@@ -1410,7 +1411,7 @@ struct APIClientPRsTests {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: FAIL — `Cannot find type 'DiffResponse' in scope`.
 
 - [ ] **Step 3: Write `app/Workbench/Networking/PrChatResult.swift`**
@@ -1458,7 +1459,7 @@ extension APIClient {
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: `** TEST SUCCEEDED **`, 5 new tests passed (41 total).
 
 - [ ] **Step 6: Commit**
@@ -1580,7 +1581,7 @@ struct TodayViewModelTests {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: FAIL — `Cannot find type 'TodayAPI' in scope` / `Cannot find 'TodayViewModel' in scope`.
 
 - [ ] **Step 3: Write `app/Workbench/ViewModels/TodayViewModel.swift`**
@@ -1659,7 +1660,7 @@ final class TodayViewModel {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: `** TEST SUCCEEDED **`, 5 new tests passed (46 total).
 
 - [ ] **Step 5: Commit**
@@ -1778,7 +1779,7 @@ struct TicketsViewModelTests {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: FAIL — `Cannot find type 'TicketsAPI' in scope`.
 
 - [ ] **Step 3: Write `app/Workbench/ViewModels/TicketsViewModel.swift`**
@@ -1858,7 +1859,7 @@ final class TicketsViewModel {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: `** TEST SUCCEEDED **`, 5 new tests passed (51 total).
 
 - [ ] **Step 5: Commit**
@@ -1964,7 +1965,7 @@ struct PRsViewModelTests {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: FAIL — `Cannot find type 'PRsAPI' in scope`.
 
 - [ ] **Step 3: Write `app/Workbench/ViewModels/PRsViewModel.swift`**
@@ -2052,7 +2053,7 @@ final class PRsViewModel {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: `** TEST SUCCEEDED **`, 4 new tests passed (55 total).
 
 - [ ] **Step 5: Commit**
@@ -2161,7 +2162,7 @@ struct ProjectsViewModelTests {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: FAIL — `Cannot find type 'ProjectsAPI' in scope`.
 
 - [ ] **Step 3: Write `app/Workbench/ViewModels/ProjectsViewModel.swift`**
@@ -2246,7 +2247,7 @@ final class ProjectsViewModel {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: `** TEST SUCCEEDED **`, 5 new tests passed (60 total).
 
 - [ ] **Step 5: Commit**
@@ -2377,7 +2378,7 @@ struct WorkbenchApp: App {
 
 - [ ] **Step 5: Regenerate, build, and confirm the test suite is still green**
 
-Run: `cd app && xcodegen generate && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodegen generate && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: `** TEST SUCCEEDED **`, still 60 tests passing (this task adds no new tests, but must not break existing ones).
 
 - [ ] **Step 6: Manually verify the app actually launches with a menu bar icon**
@@ -3326,7 +3327,7 @@ private func notificationTitle(for item: TodayItem) -> String {
 
 - [ ] **Step 3: Regenerate, build, and confirm the test suite is still green**
 
-Run: `cd app && xcodegen generate && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS'`
+Run: `cd app && xcodegen generate && xcodebuild test -project Workbench.xcodeproj -scheme Workbench -destination 'platform=macOS' -parallel-testing-enabled NO`
 Expected: `** TEST SUCCEEDED **`, still 60 tests passing (this task touches no tested code, only `AppDelegate` and the polling loop, neither of which has automated tests per this plan's Global Constraints).
 
 - [ ] **Step 4: Manually verify notification permission is requested**
