@@ -1706,10 +1706,14 @@ final class MockTicketsAPI: TicketsAPI {
     var sendMessageResult: Result<ChatReply, Error> = .success(ChatReply(reply: "ok"))
     var createPrResult: Result<FixResult, Error> = .success(FixResult(ticketStatus: .inReview, prId: 1))
     private(set) var ticketCalls: [Int] = []
+    private(set) var ticketsCalls = 0
     private(set) var sendMessageCalls: [(id: Int, text: String)] = []
     private(set) var createPrCalls: [Int] = []
 
-    func tickets() async throws -> [Ticket] { try ticketsResult.get() }
+    func tickets() async throws -> [Ticket] {
+        ticketsCalls += 1
+        return try ticketsResult.get()
+    }
     func ticket(id: Int) async throws -> Ticket {
         ticketCalls.append(id)
         return try ticketHandler(id)
@@ -1761,9 +1765,11 @@ struct TicketsViewModelTests {
         api.ticketsResult = .success([sampleTicket(id: 1, status: .new)])
         let viewModel = TicketsViewModel(api: api)
         await viewModel.select(sampleTicket(id: 1))
+        let ticketsCallsBeforeCreatePr = api.ticketsCalls
         await viewModel.createPr()
         #expect(api.createPrCalls == [1])
         #expect(api.ticketCalls.count == 2, "one select fetch, one refetch after create-pr")
+        #expect(api.ticketsCalls == ticketsCallsBeforeCreatePr + 1, "should reload the list, not just the selected ticket")
     }
 
     @Test func createPrConflictSurfacesTheEngineMessage() async {
