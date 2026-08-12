@@ -77,3 +77,29 @@ final class APIClient {
         try validate(response, data: data)
     }
 }
+
+extension APIClient {
+    func today() async throws -> TodayResponse {
+        try await send("GET", "/today", body: nil)
+    }
+
+    func projects() async throws -> [Project] {
+        try await send("GET", "/projects", body: nil)
+    }
+
+    func project(id: Int) async throws -> Project {
+        try await send("GET", "/projects/\(id)", body: nil)
+    }
+
+    func createProject(_ input: ProjectInput) async throws -> Project {
+        try await send("POST", "/projects", body: input)
+    }
+
+    func updateProject(id: Int, _ input: ProjectUpdate) async throws -> Project {
+        try await send("PATCH", "/projects/\(id)", body: input)
+    }
+
+    func deleteProject(id: Int) async throws {
+        try await sendNoContent("DELETE", "/projects/\(id)", body: nil)
+    }
+}
