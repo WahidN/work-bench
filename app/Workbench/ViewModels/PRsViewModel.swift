@@ -67,7 +67,9 @@ final class PRsViewModel {
             let detail = try await api.pullRequest(id: prId)
             guard token == selectToken else { return }
             selectedPr = detail
-            diffText = try? await api.diff(prId: prId).diff
+            let diff = try? await api.diff(prId: prId).diff
+            guard token == selectToken else { return }
+            diffText = diff
         } catch {
             guard token == selectToken else { return }
             present(error)
