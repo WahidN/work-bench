@@ -12,6 +12,7 @@ struct TicketsScreen: View {
                     get: { viewModel.selectedTicket?.id },
                     set: { id in
                         if let id, let ticket = viewModel.tickets.first(where: { $0.id == id }) {
+                            viewModel.selectedTicket = ticket
                             Task { await viewModel.select(ticket) }
                         }
                     }

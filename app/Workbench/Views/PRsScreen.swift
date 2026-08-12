@@ -12,6 +12,7 @@ struct PRsScreen: View {
                     get: { viewModel.selectedPr?.id },
                     set: { id in
                         if let id, let pr = viewModel.pullRequests.first(where: { $0.id == id }) {
+                            viewModel.selectedPr = pr
                             Task { await viewModel.select(pr) }
                         }
                     }
