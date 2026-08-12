@@ -139,3 +139,25 @@ extension APIClient {
         try await send("POST", "/tickets/\(ticketId)/create-pr", body: nil)
     }
 }
+
+extension APIClient {
+    func pullRequests() async throws -> [PullRequest] {
+        try await send("GET", "/prs", body: nil)
+    }
+
+    func pullRequest(id: Int) async throws -> PullRequest {
+        try await send("GET", "/prs/\(id)", body: nil)
+    }
+
+    func diff(prId: Int) async throws -> DiffResponse {
+        try await send("GET", "/prs/\(prId)/diff", body: nil)
+    }
+
+    func sendPrMessage(id: Int, text: String) async throws -> PrChatResult {
+        try await send("POST", "/prs/\(id)/messages", body: ["text": text])
+    }
+
+    func mergePr(id: Int) async throws -> PrChatResult {
+        try await send("POST", "/prs/\(id)/merge", body: nil)
+    }
+}
