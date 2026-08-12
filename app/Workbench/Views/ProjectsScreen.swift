@@ -36,7 +36,9 @@ struct ProjectsScreen: View {
                 ProjectFormView(draft: $draft, saveTitle: "Create", onSave: {
                     Task {
                         await viewModel.create(draft.asInput())
-                        isCreatingNew = false
+                        if viewModel.errorMessage == nil {
+                            isCreatingNew = false
+                        }
                     }
                 }, onRemove: nil)
             } else if viewModel.selectedProject != nil {
