@@ -38,7 +38,7 @@ struct ContentView: View {
             case .today:
                 TodayScreen(viewModel: todayViewModel)
             case .tickets:
-                Text("Tickets — Task 16 builds this")
+                TicketsScreen(viewModel: ticketsViewModel)
             case .pullRequests:
                 Text("Pull Requests — Task 17 builds this")
             case .projects:
