@@ -1,0 +1,90 @@
+import Testing
+@testable import Workbench
+
+@MainActor
+final class MockTodayAPI: TodayAPI {
+    var todayResult: Result<TodayResponse, Error> = .success(TodayResponse(needsInput: [], todos: []))
+    var createTodoResult: Result<Todo, Error>?
+    var setTodoDoneResult: Result<Todo, Error>?
+    var promoteTodoResult: Result<Ticket, Error>?
+    private(set) var createTodoCalls: [String] = []
+    private(set) var setTodoDoneCalls: [(id: Int, done: Bool)] = []
+    private(set) var promoteTodoCalls: [Int] = []
+
+    func today() async throws -> TodayResponse { try todayResult.get() }
+    func createTodo(text: String) async throws -> Todo {
+        createTodoCalls.append(text)
+        return try createTodoResult!.get()
+    }
+    func setTodoDone(id: Int, done: Bool) async throws -> Todo {
+        setTodoDoneCalls.append((id, done))
+        return try setTodoDoneResult!.get()
+    }
+    func promoteTodo(id: Int) async throws -> Ticket {
+        promoteTodoCalls.append(id)
+        return try promoteTodoResult!.get()
+    }
+}
+
+private func sampleTodo(id: Int = 1, done: Bool = false) -> Todo {
+    Todo(id: id, source: .manual, sourceId: nil, text: "x", body: "", url: nil,
+         projectId: nil, canPromote: false, done: done, promotedTicketId: nil, createdAt: "2026-08-12T00:00:00.000Z")
+}
+
+private func sampleTicket() -> Ticket {
+    Ticket(id: 1, source: .jira, sourceId: "JIRA-1", projectId: 1, title: "t", body: "b", url: "u",
+           analysis: nil, status: .new, prId: nil, createdAt: "2026-08-12T00:00:00.000Z")
+}
+
+@MainActor
+@Suite
+struct TodayViewModelTests {
+    @Test func loadPopulatesStateOnSuccess() async {
+        let api = MockTodayAPI()
+        api.todayResult = .success(TodayResponse(needsInput: [], todos: [sampleTodo()]))
+        let viewModel = TodayViewModel(api: api)
+        await viewModel.load()
+        #expect(viewModel.todos.count == 1)
+        #expect(viewModel.errorMessage == nil)
+        #expect(viewModel.isLoading == false)
+    }
+
+    @Test func loadSetsErrorMessageOnFailure() async {
+        let api = MockTodayAPI()
+        api.todayResult = .failure(APIError.transportFailed("no engine"))
+        let viewModel = TodayViewModel(api: api)
+        await viewModel.load()
+        #expect(viewModel.errorMessage != nil)
+    }
+
+    @Test func addTodoAppendsTheCreatedTodo() async {
+        let api = MockTodayAPI()
+        api.createTodoResult = .success(sampleTodo(id: 2))
+        let viewModel = TodayViewModel(api: api)
+        await viewModel.addTodo(text: "call client")
+        #expect(api.createTodoCalls == ["call client"])
+        #expect(viewModel.todos.map(\.id) == [2])
+    }
+
+    @Test func toggleDoneRemovesTheTodoFromTheLocalList() async {
+        let api = MockTodayAPI()
+        api.todayResult = .success(TodayResponse(needsInput: [], todos: [sampleTodo(id: 1)]))
+        api.setTodoDoneResult = .success(sampleTodo(id: 1, done: true))
+        let viewModel = TodayViewModel(api: api)
+        await viewModel.load()
+        await viewModel.toggleDone(sampleTodo(id: 1))
+        #expect(api.setTodoDoneCalls.first?.id == 1)
+        #expect(api.setTodoDoneCalls.first?.done == true)
+        #expect(viewModel.todos.isEmpty, "GET /todos only ever returns open todos, so a completed one should disappear from the local list too")
+    }
+
+    @Test func promoteReloadsAfterSucceeding() async {
+        let api = MockTodayAPI()
+        api.promoteTodoResult = .success(sampleTicket())
+        api.todayResult = .success(TodayResponse(needsInput: [TodayItem(kind: .ticket, id: 1, title: "t", status: "new", reviewScore: nil)], todos: []))
+        let viewModel = TodayViewModel(api: api)
+        await viewModel.promote(sampleTodo(id: 1))
+        #expect(api.promoteTodoCalls == [1])
+        #expect(viewModel.needsInput.count == 1, "promote should reload Today so the newly-created ticket shows up")
+    }
+}
