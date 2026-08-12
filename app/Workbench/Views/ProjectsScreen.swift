@@ -50,7 +50,7 @@ struct ProjectsScreen: View {
                     Task { await viewModel.delete(project) }
                 })
             } else {
-                Text("No projects yet")
+                Text(viewModel.projects.isEmpty ? "No projects yet" : "Select a project")
                     .foregroundStyle(Theme.textMuted)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
