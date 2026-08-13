@@ -114,3 +114,15 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     #expect(today.needsInput[1].reviewScore == 4.6)
     #expect(today.todos.count == 1)
 }
+
+@Test func projectMessageDecodesFromEngineJson() throws {
+    let json = """
+    {"id":7,"projectId":3,"role":"assistant","content":"two PRs are waiting","createdAt":"2026-08-13T09:00:00.000Z"}
+    """
+    let message = try JSONDecoder().decode(ProjectMessage.self, from: Data(json.utf8))
+
+    #expect(message.id == 7)
+    #expect(message.projectId == 3)
+    #expect(message.role == .assistant)
+    #expect(message.content == "two PRs are waiting")
+}

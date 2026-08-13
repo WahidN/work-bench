@@ -109,6 +109,14 @@ extension APIClient {
     func deleteProject(id: Int) async throws {
         try await sendNoContent("DELETE", "/projects/\(id)", body: nil)
     }
+
+    func projectMessages(id: Int) async throws -> [ProjectMessage] {
+        try await send("GET", "/projects/\(id)/messages", body: nil)
+    }
+
+    func sendProjectMessage(id: Int, text: String) async throws -> ChatReply {
+        try await send("POST", "/projects/\(id)/messages", body: ["text": text])
+    }
 }
 
 extension APIClient {
