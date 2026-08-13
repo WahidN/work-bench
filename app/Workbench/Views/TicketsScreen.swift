@@ -2,7 +2,7 @@ import SwiftUI
 
 struct TicketsScreen: View {
     @Bindable var viewModel: TicketsViewModel
-    @State private var messageText = ""
+    let onOpenAgent: (AgentChatTarget) -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -20,7 +20,9 @@ struct TicketsScreen: View {
             ) { ticket in
                 VStack(alignment: .leading) {
                     Text(ticket.title).foregroundStyle(Theme.textPrimary)
-                    Text(ticket.status.rawValue).font(.caption).foregroundStyle(Theme.textMuted)
+                    Text(WorkItemStatusLabel.ticket(ticket.status))
+                        .font(.caption)
+                        .foregroundStyle(Theme.textMuted)
                 }
             }
             .frame(width: 220)
@@ -29,39 +31,27 @@ struct TicketsScreen: View {
             Divider()
 
             if let ticket = viewModel.selectedTicket {
-                VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 12) {
                     Text(ticket.title)
                         .font(.headline)
                         .foregroundStyle(Theme.textPrimary)
-                        .padding()
-
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(ticket.messages ?? []) { message in
-                                ChatBubble(role: message.role, content: message.content)
-                            }
-                        }
-                        .padding()
-                    }
-
+                    Text(ticket.body)
+                        .foregroundStyle(Theme.textSecondary)
                     HStack {
-                        TextField("Reply or redirect Claude...", text: $messageText)
-                            .textFieldStyle(.plain)
-                            .padding(8)
-                            .background(Theme.cardBackground)
-                            .cornerRadius(6)
-                            .onSubmit(sendMessage)
-                            .disabled(viewModel.isSending)
+                        Button("Agent") { onOpenAgent(.ticket(ticket)) }
+                            .tint(Theme.accent)
                         Button("Create PR") {
                             Task { await viewModel.createPr() }
                         }
                         .tint(Theme.accent)
                         .disabled(viewModel.isSending || !(ticket.status == .new || ticket.status == .sparring))
                     }
-                    .padding()
+                    Spacer()
                 }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                Text("Select a ticket")
+                Text("Select an issue")
                     .foregroundStyle(Theme.textMuted)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -76,12 +66,5 @@ struct TicketsScreen: View {
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
-    }
-
-    private func sendMessage() {
-        let text = messageText.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty else { return }
-        messageText = ""
-        Task { await viewModel.sendMessage(text) }
     }
 }

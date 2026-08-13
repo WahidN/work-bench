@@ -25,6 +25,7 @@ struct ContentView: View {
     @State private var ticketsViewModel = TicketsViewModel()
     @State private var prsViewModel = PRsViewModel()
     @State private var projectsViewModel = ProjectsViewModel()
+    @State private var agentChatViewModel = AgentChatViewModel()
 
     var body: some View {
         HStack(spacing: 0) {
@@ -45,10 +46,24 @@ struct ContentView: View {
                 AppHeader(
                     section: selection,
                     projectCount: projectsViewModel.projects.count,
-                    onOpenAgent: {}
+                    onOpenAgent: openProjectChat
                 )
                 content
             }
+            .overlay(alignment: .trailing) {
+                if agentChatViewModel.isOpen {
+                    AgentChatPanel(
+                        viewModel: agentChatViewModel,
+                        project: chatProject,
+                        linkedTicket: chatLinkedTicket,
+                        onBackToProject: { project in
+                            Task { await agentChatViewModel.open(.project(project)) }
+                        }
+                    )
+                    .transition(.wbSlide)
+                }
+            }
+            .animation(.easeOut(duration: 0.16), value: agentChatViewModel.isOpen)
         }
         .background(Theme.nocturneBg)
         .frame(minWidth: 900, minHeight: 560)
@@ -82,12 +97,32 @@ struct ContentView: View {
         case .today:
             TodayScreen(viewModel: todayViewModel)
         case .issues:
-            TicketsScreen(viewModel: ticketsViewModel)
+            TicketsScreen(viewModel: ticketsViewModel, onOpenAgent: openAgent)
         case .pullRequests:
-            PRsScreen(viewModel: prsViewModel)
+            PRsScreen(viewModel: prsViewModel, onOpenAgent: openAgent)
         case .projects:
             ProjectsScreen(viewModel: projectsViewModel)
         }
+    }
+
+    private var chatProject: Project? {
+        guard let target = agentChatViewModel.target else { return nil }
+        return projectsViewModel.projects.first { $0.id == target.projectId }
+    }
+
+    // A PR carries no title of its own; the ticket it was created from supplies it.
+    private var chatLinkedTicket: Ticket? {
+        guard case .pullRequest(let pr) = agentChatViewModel.target else { return nil }
+        return ticketsViewModel.tickets.first { $0.id == pr.ticketId }
+    }
+
+    private func openProjectChat() {
+        guard let project = projectsViewModel.selectedProject ?? projectsViewModel.projects.first else { return }
+        Task { await agentChatViewModel.open(.project(project)) }
+    }
+
+    private func openAgent(_ target: AgentChatTarget) {
+        Task { await agentChatViewModel.open(target) }
     }
 
     private func notificationTitle(for item: TodayItem) -> String {

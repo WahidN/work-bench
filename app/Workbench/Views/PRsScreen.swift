@@ -2,7 +2,7 @@ import SwiftUI
 
 struct PRsScreen: View {
     @Bindable var viewModel: PRsViewModel
-    @State private var messageText = ""
+    let onOpenAgent: (AgentChatTarget) -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -20,7 +20,9 @@ struct PRsScreen: View {
             ) { pr in
                 VStack(alignment: .leading) {
                     Text("#\(pr.number ?? pr.id)").foregroundStyle(Theme.textPrimary)
-                    Text(pr.status.rawValue).font(.caption).foregroundStyle(Theme.textMuted)
+                    Text(WorkItemStatusLabel.pullRequest(pr.status))
+                        .font(.caption)
+                        .foregroundStyle(Theme.textMuted)
                 }
             }
             .frame(width: 220)
@@ -30,52 +32,25 @@ struct PRsScreen: View {
 
             if let pr = viewModel.selectedPr {
                 VStack(alignment: .leading, spacing: 12) {
+                    Text("#\(pr.number ?? pr.id)")
+                        .font(.headline)
+                        .foregroundStyle(Theme.textPrimary)
+                    if let score = pr.lastReviewScore {
+                        Text("Self-reviewed \(String(format: "%.1f", score))/5")
+                            .font(.caption)
+                            .foregroundStyle(Theme.success)
+                    }
                     HStack {
-                        VStack(alignment: .leading) {
-                            Text("#\(pr.number ?? pr.id)").font(.headline).foregroundStyle(Theme.textPrimary)
-                            if let score = pr.lastReviewScore {
-                                Text("Self-reviewed \(String(format: "%.1f", score))/5")
-                                    .font(.caption)
-                                    .foregroundStyle(Theme.success)
-                            }
-                        }
-                        Spacer()
+                        Button("Agent") { onOpenAgent(.pullRequest(pr)) }
+                            .tint(Theme.accent)
                         if let urlString = pr.url, let url = URL(string: urlString) {
                             Link("Open in GitHub", destination: url)
                         }
-                        Button("Merge") {
-                            Task { await viewModel.merge() }
-                        }
-                        .tint(Theme.success)
-                        .disabled(viewModel.isBusy || pr.status == .merged)
                     }
-
-                    if pr.status == .merged {
-                        Text("This PR has been merged. The diff is no longer available.")
-                            .foregroundStyle(Theme.textMuted)
-                    } else if let diffText = viewModel.diffText {
-                        DiffView(diffText: diffText).frame(maxHeight: 260)
-                    }
-
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(pr.messages ?? []) { message in
-                                ChatBubble(role: message.role, content: message.content)
-                            }
-                        }
-                    }
-
-                    if pr.status != .merged {
-                        TextField("Fix this, ask a question, or say merge it...", text: $messageText)
-                            .textFieldStyle(.plain)
-                            .padding(8)
-                            .background(Theme.cardBackground)
-                            .cornerRadius(6)
-                            .onSubmit(sendMessage)
-                            .disabled(viewModel.isBusy)
-                    }
+                    Spacer()
                 }
                 .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 Text("Select a pull request")
                     .foregroundStyle(Theme.textMuted)
@@ -92,12 +67,5 @@ struct PRsScreen: View {
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
-    }
-
-    private func sendMessage() {
-        let text = messageText.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty else { return }
-        messageText = ""
-        Task { await viewModel.sendMessage(text) }
     }
 }
