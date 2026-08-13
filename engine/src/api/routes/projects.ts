@@ -1,6 +1,9 @@
 import type { Express } from 'express';
 import type Database from 'better-sqlite3';
-import { listProjects, getProject, createProject, updateProject, deleteProject } from '../../projects.js';
+import {
+  listProjects, getProject, createProject, updateProject, deleteProject, listProjectMessages,
+} from '../../projects.js';
+import { sendProjectMessage } from '../../projectChat.js';
 
 export function registerProjectsRoutes(app: Express, db: Database.Database): void {
   app.get('/projects', (_req, res) => res.json(listProjects(db)));
@@ -9,6 +12,26 @@ export function registerProjectsRoutes(app: Express, db: Database.Database): voi
     const project = getProject(db, Number(req.params.id));
     if (!project) { res.status(404).json({ error: 'not found' }); return; }
     res.json(project);
+  });
+
+  app.get('/projects/:id/messages', (req, res) => {
+    const project = getProject(db, Number(req.params.id));
+    if (!project) { res.status(404).json({ error: 'not found' }); return; }
+    res.json(listProjectMessages(db, project.id));
+  });
+
+  app.post('/projects/:id/messages', async (req, res) => {
+    const projectId = Number(req.params.id);
+    const text = req.body?.text;
+    if (typeof text !== 'string' || !text.trim()) { res.status(400).json({ error: 'text is required' }); return; }
+    if (!getProject(db, projectId)) { res.status(404).json({ error: 'not found' }); return; }
+
+    try {
+      const reply = await sendProjectMessage(db, projectId, text);
+      res.json({ reply });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
   });
 
   app.post('/projects', (req, res) => {
