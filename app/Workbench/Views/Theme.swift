@@ -51,6 +51,8 @@ extension Theme {
         static let a900 = Color(hex: "2B2741")
     }
 
+    static let sidebarGradientTop = Color(hex: "1A1C2B")
+
     static let nocturneBg = Color(hex: "161826")
     static let nocturneSurface = Color(hex: "232532")
     static let nocturneText = Color(hex: "E9E9ED")

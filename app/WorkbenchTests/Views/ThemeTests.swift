@@ -78,3 +78,7 @@ private func expectHex(_ color: Color, _ hex: String) {
 @Test func headingAndBodyReturnDistinctFontsAtGivenSize() {
     #expect(Theme.heading(15) != Theme.body(15))
 }
+
+@Test func sidebarGradientTopMatchesDesignTokens() {
+    expectHex(Theme.sidebarGradientTop, "1A1C2B")
+}
