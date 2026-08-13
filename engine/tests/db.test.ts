@@ -19,7 +19,7 @@ describe('openDb', () => {
       .all()
       .map((r: any) => r.name);
     expect(tables).toEqual([
-      'jobs', 'pr_messages', 'projects', 'prs', 'ticket_messages', 'tickets', 'todos',
+      'jobs', 'pr_messages', 'project_messages', 'projects', 'prs', 'ticket_messages', 'tickets', 'todos',
     ]);
     db.close();
   });
