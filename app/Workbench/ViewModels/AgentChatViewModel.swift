@@ -61,7 +61,8 @@ final class AgentChatViewModel {
     }
 
     func send(_ text: String) async {
-        guard let target, !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        guard let target, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard !isSending else { return }
         let token = loadToken
         isSending = true
         defer { isSending = false }
@@ -84,6 +85,7 @@ final class AgentChatViewModel {
 
     func merge() async {
         guard case .pullRequest(let pr) = target else { return }
+        guard !isSending else { return }
         let token = loadToken
         isSending = true
         defer { isSending = false }

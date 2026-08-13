@@ -58,6 +58,12 @@ struct ContentView: View {
                         linkedTicket: chatLinkedTicket,
                         onBackToProject: { project in
                             Task { await agentChatViewModel.open(.project(project)) }
+                        },
+                        onDidMutate: {
+                            Task {
+                                await ticketsViewModel.load()
+                                await prsViewModel.load()
+                            }
                         }
                     )
                     .transition(.wbSlide)
@@ -69,6 +75,9 @@ struct ContentView: View {
         .frame(minWidth: 900, minHeight: 560)
         .preferredColorScheme(.dark)
         .task { await projectsViewModel.load() }
+        // A PR panel takes its title from the linked ticket, so the tickets have to
+        // be loaded even before the Issues screen has ever been opened.
+        .task { await ticketsViewModel.load() }
         .task {
             var previousKeys: Set<String> = []
             var isFirstCycle = true

@@ -5,6 +5,9 @@ struct AgentChatPanel: View {
     let project: Project?
     let linkedTicket: Ticket?
     let onBackToProject: (Project) -> Void
+    /// A send or a merge can change the target's status engine-side, so the lists
+    /// behind the panel have to reload.
+    let onDidMutate: () -> Void
 
     private var subject: AgentChatSubject? {
         viewModel.target.map {
@@ -27,6 +30,14 @@ struct AgentChatPanel: View {
             Rectangle().fill(Theme.Neutral.n800).frame(width: 1)
         }
         .shadow(color: .black.opacity(0.65), radius: 20, x: 0, y: 16)
+        .alert(
+            "Error",
+            isPresented: Binding(get: { viewModel.errorMessage != nil }, set: { if !$0 { viewModel.errorMessage = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(viewModel.errorMessage ?? "")
+        }
     }
 
     private func header(_ subject: AgentChatSubject) -> some View {
@@ -83,19 +94,19 @@ struct AgentChatPanel: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(Theme.Space.s6)
         }
+        .defaultScrollAnchor(.bottom)
         .frame(maxHeight: .infinity)
     }
 
     private func composer(_ subject: AgentChatSubject) -> some View {
         VStack(alignment: .leading, spacing: Theme.Space.s3) {
             if case .pullRequest(let pr) = viewModel.target, pr.status != .merged {
-                MergeButton(isBusy: viewModel.isSending) {
-                    Task { await viewModel.merge() }
-                }
+                MergeButton(isBusy: viewModel.isSending, action: merge)
             }
             FlowRow(spacing: Theme.Space.s2) {
                 ForEach(subject.quickPrompts, id: \.self) { prompt in
-                    QuickPromptChip(text: prompt) { send(prompt) }
+                    // A chip must not eat a draft the user has already typed.
+                    QuickPromptChip(text: prompt) { send(prompt, clearDraft: false) }
                 }
             }
             HStack(spacing: Theme.Space.s2) {
@@ -112,17 +123,31 @@ struct AgentChatPanel: View {
                             .strokeBorder(Theme.Neutral.n800, lineWidth: 1)
                     )
                     .disabled(viewModel.isSending)
-                    .onSubmit { send(viewModel.draft) }
-                SendButton(isBusy: viewModel.isSending) { send(viewModel.draft) }
+                    .onSubmit { send(viewModel.draft, clearDraft: true) }
+                SendButton(isBusy: viewModel.isSending) { send(viewModel.draft, clearDraft: true) }
             }
         }
         .padding(Theme.Space.s6)
     }
 
-    private func send(_ text: String) {
+    // The draft survives a failed send, so the user can retry instead of retyping.
+    private func send(_ text: String, clearDraft: Bool) {
         guard !viewModel.isSending else { return }
-        viewModel.draft = ""
-        Task { await viewModel.send(text) }
+        Task {
+            await viewModel.send(text)
+            if viewModel.errorMessage == nil {
+                if clearDraft { viewModel.draft = "" }
+                onDidMutate()
+            }
+        }
+    }
+
+    private func merge() {
+        guard !viewModel.isSending else { return }
+        Task {
+            await viewModel.merge()
+            if viewModel.errorMessage == nil { onDidMutate() }
+        }
     }
 }
 

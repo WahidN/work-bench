@@ -204,6 +204,32 @@ struct AgentChatViewModelTests {
         #expect(api.sentProjectMessages.isEmpty)
     }
 
+    @Test func sendIgnoresANewlineOnlyMessage() async {
+        let api = MockAgentChatAPI()
+        let viewModel = AgentChatViewModel(api: api)
+        await viewModel.open(.project(atlas))
+
+        await viewModel.send("\n\n")
+
+        #expect(api.sentProjectMessages.isEmpty)
+    }
+
+    @Test func aSecondSendIsRefusedWhileTheFirstIsStillInFlight() async {
+        let api = MockAgentChatAPI()
+        let viewModel = AgentChatViewModel(api: api)
+        await viewModel.open(.project(atlas))
+
+        api.gateArmed = true
+        let inFlight = Task { await viewModel.send("first") }
+        while !api.gateEngaged { await Task.yield() }
+
+        await viewModel.send("second")
+        api.releaseGate()
+        await inFlight.value
+
+        #expect(api.sentProjectMessages == ["first"], "two concurrent runs would interleave into one transcript")
+    }
+
     @Test func sendSurfacesAFailureAsAnErrorMessage() async {
         let api = MockAgentChatAPI()
         api.sendProjectResult = .failure(APIError.serverError("claude timed out"))
