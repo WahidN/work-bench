@@ -57,8 +57,15 @@ export function updateProject(
   return getProject(db, id);
 }
 
+// The chat thread belongs to the project, so it goes with it. The schema has no
+// ON DELETE CASCADE, and adding one would not reach databases that already exist.
+// Tickets and todos are deliberately left to the foreign key, so deleting a
+// project that still has those keeps failing and the route keeps answering 409.
 export function deleteProject(db: Database.Database, id: number): void {
-  db.prepare('DELETE FROM projects WHERE id = ?').run(id);
+  db.transaction(() => {
+    db.prepare('DELETE FROM project_messages WHERE project_id = ?').run(id);
+    db.prepare('DELETE FROM projects WHERE id = ?').run(id);
+  })();
 }
 
 function rowToProjectMessage(row: any): ProjectMessage {

@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { openDb } from '../src/db.js';
 import { listProjects, getProject, createProject, updateProject, deleteProject, listProjectMessages, addProjectMessage } from '../src/projects.js';
+import { createTicket } from '../src/tickets.js';
 
 let db: Database.Database;
 
@@ -43,6 +44,36 @@ describe('projects', () => {
     });
     deleteProject(db, created.id);
     expect(getProject(db, created.id)).toBeNull();
+  });
+
+  it('deleteProject also removes the chat thread, so a used project stays deletable', () => {
+    const created = createProject(db, {
+      name: 'demo', repoPath: '/repos/demo', defaultBranch: 'main',
+      githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null,
+    });
+    addProjectMessage(db, created.id, 'user', 'catch me up');
+    addProjectMessage(db, created.id, 'assistant', 'two PRs are waiting');
+
+    deleteProject(db, created.id);
+
+    expect(getProject(db, created.id)).toBeNull();
+    expect(listProjectMessages(db, created.id)).toEqual([]);
+  });
+
+  it('deleteProject still fails while a ticket references the project, and keeps the thread', () => {
+    const created = createProject(db, {
+      name: 'busy', repoPath: '/repos/busy', defaultBranch: 'main',
+      githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null,
+    });
+    addProjectMessage(db, created.id, 'user', 'catch me up');
+    createTicket(db, {
+      source: 'github', sourceId: 'GH-9', projectId: created.id,
+      title: 't', body: 'b', url: 'u', analysis: null,
+    });
+
+    expect(() => deleteProject(db, created.id)).toThrow(/FOREIGN KEY constraint failed/);
+    expect(getProject(db, created.id)).not.toBeNull();
+    expect(listProjectMessages(db, created.id)).toHaveLength(1);
   });
 });
 
