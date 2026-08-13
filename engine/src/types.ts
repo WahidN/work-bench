@@ -71,6 +71,14 @@ export interface PrMessage {
   createdAt: string;
 }
 
+export interface ProjectMessage {
+  id: number;
+  projectId: number;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: string;
+}
+
 export type JobType = 'triage' | 'spar' | 'fix' | 'pr-chat' | 'merge';
 export type JobTargetType = 'ticket' | 'pr';
 export type JobStatus = 'running' | 'done' | 'failed' | 'interrupted';

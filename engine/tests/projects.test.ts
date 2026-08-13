@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { openDb } from '../src/db.js';
-import { listProjects, getProject, createProject, updateProject, deleteProject } from '../src/projects.js';
+import { listProjects, getProject, createProject, updateProject, deleteProject, listProjectMessages, addProjectMessage } from '../src/projects.js';
 
 let db: Database.Database;
 
@@ -43,5 +43,57 @@ describe('projects', () => {
     });
     deleteProject(db, created.id);
     expect(getProject(db, created.id)).toBeNull();
+  });
+});
+
+describe('project messages', () => {
+  it('returns an empty thread for a project with no messages', () => {
+    const project = createProject(db, {
+      name: 'demo', repoPath: '/repos/demo', defaultBranch: 'main',
+      githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null,
+    });
+    expect(listProjectMessages(db, project.id)).toEqual([]);
+  });
+
+  it('appends messages and returns them in insertion order', () => {
+    const project = createProject(db, {
+      name: 'demo', repoPath: '/repos/demo', defaultBranch: 'main',
+      githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null,
+    });
+    addProjectMessage(db, project.id, 'user', 'what should I do first?');
+    addProjectMessage(db, project.id, 'assistant', 'start with the refund retry');
+
+    expect(listProjectMessages(db, project.id).map((m) => [m.role, m.content])).toEqual([
+      ['user', 'what should I do first?'],
+      ['assistant', 'start with the refund retry'],
+    ]);
+  });
+
+  it('keeps each project thread separate', () => {
+    const a = createProject(db, {
+      name: 'a', repoPath: '/repos/a', defaultBranch: 'main',
+      githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null,
+    });
+    const b = createProject(db, {
+      name: 'b', repoPath: '/repos/b', defaultBranch: 'main',
+      githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null,
+    });
+    addProjectMessage(db, a.id, 'user', 'for a');
+
+    expect(listProjectMessages(db, a.id)).toHaveLength(1);
+    expect(listProjectMessages(db, b.id)).toEqual([]);
+  });
+
+  it('returns the row it inserted, with the project id mapped from snake_case', () => {
+    const project = createProject(db, {
+      name: 'demo', repoPath: '/repos/demo', defaultBranch: 'main',
+      githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null,
+    });
+    const message = addProjectMessage(db, project.id, 'user', 'hi');
+
+    expect(message.projectId).toBe(project.id);
+    expect(message.role).toBe('user');
+    expect(message.content).toBe('hi');
+    expect(message.createdAt).toBeTypeOf('string');
   });
 });

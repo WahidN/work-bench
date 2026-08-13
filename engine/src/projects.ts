@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { Project } from './types.js';
+import type { Project, ProjectMessage } from './types.js';
 
 function rowToProject(row: any): Project {
   return {
@@ -59,4 +59,35 @@ export function updateProject(
 
 export function deleteProject(db: Database.Database, id: number): void {
   db.prepare('DELETE FROM projects WHERE id = ?').run(id);
+}
+
+function rowToProjectMessage(row: any): ProjectMessage {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    role: row.role,
+    content: row.content,
+    createdAt: row.created_at,
+  };
+}
+
+export function listProjectMessages(db: Database.Database, projectId: number): ProjectMessage[] {
+  return db
+    .prepare('SELECT * FROM project_messages WHERE project_id = ? ORDER BY id')
+    .all(projectId)
+    .map(rowToProjectMessage);
+}
+
+export function addProjectMessage(
+  db: Database.Database,
+  projectId: number,
+  role: 'user' | 'assistant',
+  content: string
+): ProjectMessage {
+  const result = db
+    .prepare('INSERT INTO project_messages (project_id, role, content, created_at) VALUES (?, ?, ?, ?)')
+    .run(projectId, role, content, new Date().toISOString());
+  return rowToProjectMessage(
+    db.prepare('SELECT * FROM project_messages WHERE id = ?').get(result.lastInsertRowid)
+  );
 }
