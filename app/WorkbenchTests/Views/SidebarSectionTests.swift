@@ -8,7 +8,7 @@ import Testing
 @Test func sidebarSectionLabelsMatchDesignNav() {
     #expect(SidebarSection.today.rawValue == "Today")
     #expect(SidebarSection.projects.rawValue == "Projects")
-    #expect(SidebarSection.pullRequests.rawValue == "Pull Requests")
+    #expect(SidebarSection.pullRequests.rawValue == "Pull requests")
     #expect(SidebarSection.issues.rawValue == "Issues")
 }
 

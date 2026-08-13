@@ -3,7 +3,7 @@ import SwiftUI
 enum SidebarSection: String, CaseIterable, Identifiable {
     case today = "Today"
     case projects = "Projects"
-    case pullRequests = "Pull Requests"
+    case pullRequests = "Pull requests"
     case issues = "Issues"
 
     var id: String { rawValue }
@@ -20,7 +20,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
     @Environment(AppDelegate.self) private var appDelegate
-    @State private var selection: SidebarSection? = .today
+    @State private var selection: SidebarSection = .today
     @State private var todayViewModel = TodayViewModel()
     @State private var ticketsViewModel = TicketsViewModel()
     @State private var prsViewModel = PRsViewModel()
@@ -29,11 +29,12 @@ struct ContentView: View {
     var body: some View {
         HStack(spacing: 0) {
             Sidebar(
-                selection: selection ?? .today,
+                selection: selection,
                 todos: todayViewModel.todos,
                 tickets: ticketsViewModel.tickets,
                 prs: prsViewModel.pullRequests,
                 projects: projectsViewModel.projects,
+                selectedProject: projectsViewModel.selectedProject,
                 onSelect: { selection = $0 },
                 onSelectProject: { project in
                     selection = .projects
@@ -42,7 +43,7 @@ struct ContentView: View {
             )
             VStack(spacing: 0) {
                 AppHeader(
-                    section: selection ?? .today,
+                    section: selection,
                     projectCount: projectsViewModel.projects.count,
                     onOpenAgent: {}
                 )
@@ -52,8 +53,8 @@ struct ContentView: View {
         .background(Theme.nocturneBg)
         .frame(minWidth: 900, minHeight: 560)
         .preferredColorScheme(.dark)
+        .task { await projectsViewModel.load() }
         .task {
-            await projectsViewModel.load()
             var previousKeys: Set<String> = []
             var isFirstCycle = true
             while !Task.isCancelled {
@@ -86,8 +87,6 @@ struct ContentView: View {
             PRsScreen(viewModel: prsViewModel)
         case .projects:
             ProjectsScreen(viewModel: projectsViewModel)
-        case .none:
-            Text("Select a section")
         }
     }
 
