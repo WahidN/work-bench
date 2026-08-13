@@ -24,6 +24,10 @@ enum SidebarLogic {
         Theme.projectDotColors[index % Theme.projectDotColors.count]
     }
 
+    static func isProjectSelected(_ project: Project, selectedProject: Project?) -> Bool {
+        project.id == selectedProject?.id
+    }
+
     static func accountInitials(from fullName: String) -> String {
         let parts = fullName.split(separator: " ").filter { !$0.isEmpty }
         if parts.count >= 2 {

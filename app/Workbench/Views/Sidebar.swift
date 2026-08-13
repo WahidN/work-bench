@@ -6,13 +6,14 @@ struct Sidebar: View {
     let tickets: [Ticket]
     let prs: [PullRequest]
     let projects: [Project]
+    let selectedProject: Project?
     let onSelect: (SidebarSection) -> Void
     let onSelectProject: (Project) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s6) {
             brandRow
-            searchButton
+            SearchButton()
             navRows
             projectsList
             footer
@@ -44,26 +45,7 @@ struct Sidebar: View {
                 .tracking(-0.15)
                 .foregroundStyle(Theme.nocturneText)
         }
-    }
-
-    private var searchButton: some View {
-        Button(action: {}) {
-            HStack {
-                HStack(spacing: Theme.Space.s2) {
-                    Image(systemName: "magnifyingglass")
-                    Text("Search or add")
-                }
-                Spacer()
-                Text("⌘K")
-                    .font(.system(size: Theme.FontSize.label))
-                    .foregroundStyle(Theme.Neutral.n600)
-            }
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(Theme.Neutral.n400)
-        .padding(.vertical, Theme.Space.s2)
-        .padding(.horizontal, Theme.Space.s3)
-        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).strokeBorder(Theme.Neutral.n800, lineWidth: 1))
+        .padding(.horizontal, Theme.Space.s2)
     }
 
     private var navRows: some View {
@@ -83,12 +65,8 @@ struct Sidebar: View {
                             .monospacedDigit()
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(WBRowButtonStyle(isSelected: isSelected))
                 .foregroundStyle(isSelected ? Theme.Accent.a200 : Theme.Neutral.n400)
-                .padding(.vertical, Theme.Space.s2)
-                .padding(.horizontal, Theme.Space.s3)
-                .background(isSelected ? Theme.Accent.a900 : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
             }
         }
     }
@@ -110,6 +88,7 @@ struct Sidebar: View {
             ScrollView {
                 VStack(spacing: 2) {
                     ForEach(Array(projects.enumerated()), id: \.element.id) { index, project in
+                        let isProjectRowSelected = SidebarLogic.isProjectSelected(project, selectedProject: selectedProject)
                         Button {
                             onSelectProject(project)
                         } label: {
@@ -126,11 +105,8 @@ struct Sidebar: View {
                                     .monospacedDigit()
                             }
                         }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Theme.Neutral.n500)
-                        .padding(.vertical, Theme.Space.s2)
-                        .padding(.horizontal, Theme.Space.s3)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                        .buttonStyle(WBRowButtonStyle(isSelected: isProjectRowSelected, selectedBackground: Theme.Neutral.n900))
+                        .foregroundStyle(isProjectRowSelected ? Theme.nocturneText : Theme.Neutral.n500)
                     }
                 }
             }
@@ -139,29 +115,72 @@ struct Sidebar: View {
     }
 
     private var footer: some View {
-        HStack(spacing: Theme.Space.s3) {
+        let name = ProcessInfo.processInfo.fullUserName
+        return HStack(spacing: Theme.Space.s3) {
             Circle()
                 .fill(Theme.Accent.a800)
                 .frame(width: 22, height: 22)
                 .overlay {
-                    Text(SidebarLogic.accountInitials(from: ProcessInfo.processInfo.fullUserName))
+                    Text(SidebarLogic.accountInitials(from: name))
                         .font(.system(size: Theme.FontSize.tag))
                         .foregroundStyle(Theme.Accent.a200)
                 }
-            Text(ProcessInfo.processInfo.fullUserName)
+            Text(name)
                 .font(.system(size: Theme.FontSize.tableMeta))
                 .foregroundStyle(Theme.Neutral.n400)
             Spacer()
-            Button(action: {}) {
-                Image(systemName: "gearshape").font(.system(size: 14))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Theme.Neutral.n600)
+            FooterGearButton()
         }
         .padding(.vertical, Theme.Space.s2)
         .padding(.horizontal, Theme.Space.s3)
         .overlay(alignment: .top) {
             Rectangle().fill(Theme.Neutral.n900).frame(height: 1)
         }
+    }
+}
+
+private struct SearchButton: View {
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: {}) {
+            HStack {
+                HStack(spacing: Theme.Space.s2) {
+                    Image(systemName: "magnifyingglass")
+                    Text("Search or add")
+                        .font(Theme.heading(14))
+                }
+                Spacer()
+                Text("⌘K")
+                    .font(.system(size: Theme.FontSize.label))
+                    .foregroundStyle(Theme.Neutral.n600)
+            }
+            .padding(.vertical, Theme.Space.s2)
+            .padding(.horizontal, 10.08)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isHovered ? Theme.Neutral.n200 : Theme.Neutral.n400)
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .strokeBorder(isHovered ? Theme.Accent.a700 : Theme.Neutral.n800, lineWidth: 1)
+        )
+        .onHover { isHovered = $0 }
+    }
+}
+
+private struct FooterGearButton: View {
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: {}) {
+            Image(systemName: "gearshape")
+                .font(.system(size: 14))
+                .padding(Theme.Space.s2)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isHovered ? Theme.Neutral.n400 : Theme.Neutral.n600)
+        .onHover { isHovered = $0 }
+        .accessibilityLabel("Settings")
+        .help("Settings")
     }
 }
