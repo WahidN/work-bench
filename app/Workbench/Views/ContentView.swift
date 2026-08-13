@@ -27,32 +27,33 @@ struct ContentView: View {
     @State private var projectsViewModel = ProjectsViewModel()
 
     var body: some View {
-        NavigationSplitView {
-            List(selection: $selection) {
-                ForEach(SidebarSection.allCases) { section in
-                    Label(section.rawValue, systemImage: section.symbol)
-                        .tag(section)
+        HStack(spacing: 0) {
+            Sidebar(
+                selection: selection ?? .today,
+                todos: todayViewModel.todos,
+                tickets: ticketsViewModel.tickets,
+                prs: prsViewModel.pullRequests,
+                projects: projectsViewModel.projects,
+                onSelect: { selection = $0 },
+                onSelectProject: { project in
+                    selection = .projects
+                    projectsViewModel.selectedProject = project
                 }
-            }
-            .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(180)
-        } detail: {
-            switch selection {
-            case .today:
-                TodayScreen(viewModel: todayViewModel)
-            case .issues:
-                TicketsScreen(viewModel: ticketsViewModel)
-            case .pullRequests:
-                PRsScreen(viewModel: prsViewModel)
-            case .projects:
-                ProjectsScreen(viewModel: projectsViewModel)
-            case .none:
-                Text("Select a section")
+            )
+            VStack(spacing: 0) {
+                AppHeader(
+                    section: selection ?? .today,
+                    projectCount: projectsViewModel.projects.count,
+                    onOpenAgent: {}
+                )
+                content
             }
         }
+        .background(Theme.nocturneBg)
         .frame(minWidth: 900, minHeight: 560)
         .preferredColorScheme(.dark)
         .task {
+            await projectsViewModel.load()
             var previousKeys: Set<String> = []
             var isFirstCycle = true
             while !Task.isCancelled {
@@ -71,6 +72,22 @@ struct ContentView: View {
         }
         .onChange(of: todayViewModel.needsInput.count) { _, newCount in
             appDelegate.updateBadge(count: newCount)
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch selection {
+        case .today:
+            TodayScreen(viewModel: todayViewModel)
+        case .issues:
+            TicketsScreen(viewModel: ticketsViewModel)
+        case .pullRequests:
+            PRsScreen(viewModel: prsViewModel)
+        case .projects:
+            ProjectsScreen(viewModel: projectsViewModel)
+        case .none:
+            Text("Select a section")
         }
     }
 
