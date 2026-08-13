@@ -38,19 +38,15 @@ final class PRsViewModel {
         }
     }
 
+    // No view reads the diff from this screen any more, and fetching one takes the
+    // PR job lock that the agent panel needs, so selecting a row loads the detail only.
     func select(_ pr: PullRequest) async {
         selectToken += 1
         let token = selectToken
-        diffText = nil
         do {
             let detail = try await api.pullRequest(id: pr.id)
             guard token == selectToken else { return }
             selectedPr = detail
-            if detail.status != .merged {
-                let diff = try await api.diff(prId: pr.id).diff
-                guard token == selectToken else { return }
-                diffText = diff
-            }
         } catch {
             guard token == selectToken else { return }
             present(error)

@@ -33,13 +33,12 @@ final class MockPRsAPI: PRsAPI {
 @MainActor
 @Suite
 struct PRsViewModelTests {
-    @Test func selectFetchesDetailAndDiff() async {
+    @Test func selectFetchesTheDetailOnlyAndNeverTheDiff() async {
         let api = MockPRsAPI()
         let viewModel = PRsViewModel(api: api)
         await viewModel.select(samplePr(id: 1))
         #expect(viewModel.selectedPr?.id == 1)
-        #expect(viewModel.diffText == "--- a\n+++ b")
-        #expect(api.diffCalls == [1])
+        #expect(api.diffCalls.isEmpty, "a diff fetch would take the PR job lock the agent panel needs")
     }
 
     @Test func selectOnAnAlreadyMergedPrSkipsTheDiffCall() async {
