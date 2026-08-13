@@ -82,4 +82,22 @@ extension Theme {
         static let md: CGFloat = 8
         static let lg: CGFloat = 14
     }
+
+    enum FontSize {
+        static let screenTitle: CGFloat = 22
+        static let cardTitle: CGFloat = 15
+        static let body: CGFloat = 14
+        static let secondary: CGFloat = 13
+        static let tableMeta: CGFloat = 12
+        static let label: CGFloat = 11
+        static let tag: CGFloat = 10
+    }
+
+    static func heading(_ size: CGFloat) -> Font {
+        .custom("Inter-Medium", size: size)
+    }
+
+    static func body(_ size: CGFloat) -> Font {
+        .custom("Inter-Regular", size: size)
+    }
 }

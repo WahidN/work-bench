@@ -64,3 +64,17 @@ private func expectHex(_ color: Color, _ hex: String) {
     #expect(Theme.Radius.md == 8)
     #expect(Theme.Radius.lg == 14)
 }
+
+@Test func fontSizeScaleMatchesDesignTokens() {
+    #expect(Theme.FontSize.screenTitle == 22)
+    #expect(Theme.FontSize.cardTitle == 15)
+    #expect(Theme.FontSize.body == 14)
+    #expect(Theme.FontSize.secondary == 13)
+    #expect(Theme.FontSize.tableMeta == 12)
+    #expect(Theme.FontSize.label == 11)
+    #expect(Theme.FontSize.tag == 10)
+}
+
+@Test func headingAndBodyReturnDistinctFontsAtGivenSize() {
+    #expect(Theme.heading(15) != Theme.body(15))
+}
