@@ -2,18 +2,18 @@ import SwiftUI
 
 enum SidebarSection: String, CaseIterable, Identifiable {
     case today = "Today"
-    case tickets = "Tickets"
-    case pullRequests = "Pull Requests"
     case projects = "Projects"
+    case pullRequests = "Pull Requests"
+    case issues = "Issues"
 
     var id: String { rawValue }
 
     var symbol: String {
         switch self {
-        case .today: "sun.max"
-        case .tickets: "ticket"
+        case .today: "sun.horizon"
+        case .projects: "square.grid.2x2"
         case .pullRequests: "arrow.triangle.pull"
-        case .projects: "folder"
+        case .issues: "list.bullet.rectangle"
         }
     }
 }
@@ -40,7 +40,7 @@ struct ContentView: View {
             switch selection {
             case .today:
                 TodayScreen(viewModel: todayViewModel)
-            case .tickets:
+            case .issues:
                 TicketsScreen(viewModel: ticketsViewModel)
             case .pullRequests:
                 PRsScreen(viewModel: prsViewModel)
