@@ -49,3 +49,18 @@ private func expectHex(_ color: Color, _ hex: String) {
     expectHex(Theme.projectDotColors[1], "7EA8C4")
     expectHex(Theme.projectDotColors[7], "C49A9A")
 }
+
+@Test func spacingScaleMatchesDesignTokens() {
+    #expect(Theme.Space.s1 == 2.8)
+    #expect(Theme.Space.s2 == 5.6)
+    #expect(Theme.Space.s3 == 8.4)
+    #expect(Theme.Space.s4 == 11.2)
+    #expect(Theme.Space.s6 == 16.8)
+    #expect(Theme.Space.s8 == 22.4)
+}
+
+@Test func radiusScaleMatchesDesignTokens() {
+    #expect(Theme.Radius.sm == 4)
+    #expect(Theme.Radius.md == 8)
+    #expect(Theme.Radius.lg == 14)
+}

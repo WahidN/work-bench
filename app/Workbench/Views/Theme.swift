@@ -67,4 +67,19 @@ extension Theme {
         Color(hex: "8AA6C4"),
         Color(hex: "C49A9A")
     ]
+
+    enum Space {
+        static let s1: CGFloat = 2.8
+        static let s2: CGFloat = 5.6
+        static let s3: CGFloat = 8.4
+        static let s4: CGFloat = 11.2
+        static let s6: CGFloat = 16.8
+        static let s8: CGFloat = 22.4
+    }
+
+    enum Radius {
+        static let sm: CGFloat = 4
+        static let md: CGFloat = 8
+        static let lg: CGFloat = 14
+    }
 }
