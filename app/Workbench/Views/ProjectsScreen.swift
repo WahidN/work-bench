@@ -57,7 +57,7 @@ struct ProjectsScreen: View {
         }
         .background(Theme.background)
         .task { await viewModel.load() }
-        .onChange(of: viewModel.selectedProject?.id) { _, _ in
+        .onChange(of: viewModel.selectedProject?.id, initial: true) { _, _ in
             if let project = viewModel.selectedProject {
                 draft = ProjectDraft(project: project)
             }
