@@ -52,6 +52,8 @@ extension Theme {
     }
 
     static let sidebarGradientTop = Color(hex: "1A1C2B")
+    // The slide-over panel shares the sidebar's raised tone (#1a1c2b).
+    static let panelBackground = sidebarGradientTop
 
     static let nocturneBg = Color(hex: "161826")
     static let nocturneSurface = Color(hex: "232532")
