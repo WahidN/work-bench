@@ -41,7 +41,29 @@ final class MockAgentChatAPI: AgentChatAPI {
     private(set) var diffCalls: [Int] = []
     private(set) var mergeCalls: [Int] = []
 
-    func projectMessages(id: Int) async throws -> [ProjectMessage] { projectThread }
+    // A one-shot gate that lets a test suspend `projectMessages(id:)` mid-flight,
+    // then release it deterministically once the test has done whatever it needed
+    // to do while the call was in flight (close, or a superseding open).
+    var gateArmed = false
+    private(set) var gateEngaged = false
+    private var gateContinuation: CheckedContinuation<Void, Never>?
+
+    func releaseGate() {
+        gateEngaged = false
+        gateContinuation?.resume()
+        gateContinuation = nil
+    }
+
+    func projectMessages(id: Int) async throws -> [ProjectMessage] {
+        if gateArmed {
+            gateArmed = false
+            await withCheckedContinuation { continuation in
+                gateContinuation = continuation
+                gateEngaged = true
+            }
+        }
+        return projectThread
+    }
 
     func sendProjectMessage(id: Int, text: String) async throws -> ChatReply {
         sentProjectMessages.append(text)
@@ -231,5 +253,41 @@ struct AgentChatViewModelTests {
         #expect(viewModel.messages.isEmpty)
         #expect(viewModel.diffText == nil)
         #expect(viewModel.draft.isEmpty)
+    }
+
+    @Test func closeDuringAnInFlightLoadDiscardsTheStaleResult() async {
+        let api = MockAgentChatAPI()
+        api.projectThread = [ProjectMessage(id: 1, projectId: 3, role: .user, content: "stale", createdAt: "")]
+        let viewModel = AgentChatViewModel(api: api)
+
+        api.gateArmed = true
+        let inFlight = Task { await viewModel.open(.project(atlas)) }
+        while !api.gateEngaged { await Task.yield() }
+
+        viewModel.close()
+        api.releaseGate()
+        await inFlight.value
+
+        #expect(viewModel.isOpen == false)
+        #expect(viewModel.target == nil)
+        #expect(viewModel.messages.isEmpty, "the response for the closed load must not repopulate the thread")
+    }
+
+    @Test func aLaterOpenDiscardsAStaleInFlightLoad() async {
+        let api = MockAgentChatAPI()
+        api.projectThread = [ProjectMessage(id: 1, projectId: 3, role: .user, content: "stale", createdAt: "")]
+        api.ticketResult = sampleTicket(messages: [ticketMessage(1, .user, "fresh")])
+        let viewModel = AgentChatViewModel(api: api)
+
+        api.gateArmed = true
+        let inFlight = Task { await viewModel.open(.project(atlas)) }
+        while !api.gateEngaged { await Task.yield() }
+
+        await viewModel.open(.ticket(sampleTicket()))
+        api.releaseGate()
+        await inFlight.value
+
+        #expect(viewModel.target == .ticket(api.ticketResult), "the superseding target must win")
+        #expect(viewModel.messages.map(\.content) == ["fresh"], "the stale project response must not overwrite the ticket thread")
     }
 }
