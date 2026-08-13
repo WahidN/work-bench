@@ -90,7 +90,7 @@ private func expectHex(_ color: Color, _ hex: String) {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd app && xcodebuild test -scheme Workbench -destination 'platform=macOS' -only-testing:WorkbenchTests/ThemeTests`
+Run: `cd app && xcodebuild test -scheme Workbench -destination 'platform=macOS' -only-testing:WorkbenchTests`
 Expected: FAIL to build — `Theme.Neutral`, `Theme.Accent`, `Theme.nocturneBg`, `Theme.projectDotColors` don't exist yet.
 
 - [ ] **Step 3: Add the hex initializer and color tokens**
@@ -156,7 +156,7 @@ extension Theme {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd app && xcodebuild test -scheme Workbench -destination 'platform=macOS' -only-testing:WorkbenchTests/ThemeTests`
+Run: `cd app && xcodebuild test -scheme Workbench -destination 'platform=macOS' -only-testing:WorkbenchTests`
 Expected: PASS — all 4 tests green.
 
 - [ ] **Step 5: Commit**
@@ -198,7 +198,7 @@ Append to `ThemeTests.swift`:
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd app && xcodebuild test -scheme Workbench -destination 'platform=macOS' -only-testing:WorkbenchTests/ThemeTests`
+Run: `cd app && xcodebuild test -scheme Workbench -destination 'platform=macOS' -only-testing:WorkbenchTests`
 Expected: FAIL to build — `Theme.Space` and `Theme.Radius` don't exist yet.
 
 - [ ] **Step 3: Add the scales**
@@ -224,7 +224,7 @@ enum Radius {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd app && xcodebuild test -scheme Workbench -destination 'platform=macOS' -only-testing:WorkbenchTests/ThemeTests`
+Run: `cd app && xcodebuild test -scheme Workbench -destination 'platform=macOS' -only-testing:WorkbenchTests`
 Expected: PASS — 6 tests green.
 
 - [ ] **Step 5: Commit**
@@ -281,7 +281,7 @@ Append to `ThemeTests.swift`:
 
 - [ ] **Step 3: Run tests to verify they fail**
 
-Run: `cd app && xcodebuild test -scheme Workbench -destination 'platform=macOS' -only-testing:WorkbenchTests/ThemeTests`
+Run: `cd app && xcodebuild test -scheme Workbench -destination 'platform=macOS' -only-testing:WorkbenchTests`
 Expected: FAIL to build — `Theme.FontSize`, `Theme.heading`, `Theme.body` don't exist yet.
 
 - [ ] **Step 4: Add the font size scale and font helpers**
@@ -310,8 +310,8 @@ static func body(_ size: CGFloat) -> Font {
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `cd app && xcodebuild test -scheme Workbench -destination 'platform=macOS' -only-testing:WorkbenchTests/ThemeTests`
-Expected: PASS — 9 tests green.
+Run: `cd app && xcodebuild test -scheme Workbench -destination 'platform=macOS' -only-testing:WorkbenchTests`
+Expected: PASS — 8 tests green.
 
 - [ ] **Step 6: Commit**
 
