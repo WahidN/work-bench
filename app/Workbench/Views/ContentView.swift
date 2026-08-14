@@ -78,6 +78,9 @@ struct ContentView: View {
         // A PR panel takes its title from the linked ticket, so the tickets have to
         // be loaded even before the Issues screen has ever been opened.
         .task { await ticketsViewModel.load() }
+        // Today's rail and the sidebar count both read the PR list, so it can no
+        // longer wait for the Pull requests screen to be opened.
+        .task { await prsViewModel.load() }
         .task {
             var previousKeys: Set<String> = []
             var isFirstCycle = true
@@ -104,7 +107,16 @@ struct ContentView: View {
     private var content: some View {
         switch selection {
         case .today:
-            TodayScreen(viewModel: todayViewModel)
+            TodayScreen(
+                viewModel: todayViewModel,
+                projects: projectsViewModel.projects,
+                tickets: ticketsViewModel.tickets,
+                prs: prsViewModel.pullRequests,
+                onOpenAgent: openAgent,
+                onTogglePinTicket: { ticket in Task { await ticketsViewModel.togglePin(ticket) } },
+                onTogglePinPullRequest: { pr in Task { await prsViewModel.togglePin(pr) } },
+                onNavigate: { selection = $0 }
+            )
         case .issues:
             TicketsScreen(viewModel: ticketsViewModel, onOpenAgent: openAgent)
         case .pullRequests:
