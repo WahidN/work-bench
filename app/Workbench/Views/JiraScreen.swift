@@ -157,6 +157,7 @@ private struct JiraIssueRow: View {
                     .font(.system(size: Theme.FontSize.tableMeta))
                     .foregroundStyle(isBusy ? Theme.Neutral.n700 : Theme.nocturneAccent)
                     .disabled(isBusy)
+                    .help("Create a pull request for this issue's fix")
             }
             JiraIconButton(
                 symbol: row.isPinned ? "pin.fill" : "pin",
@@ -171,6 +172,7 @@ private struct JiraIssueRow: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.Neutral.n600)
                 .help("Open in Jira")
+                .accessibilityLabel("Open in Jira")
             }
             // Present but inert until the per-issue agent thread ships in the next phase.
             Image(systemName: "sparkles")
