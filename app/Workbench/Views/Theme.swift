@@ -51,6 +51,16 @@ extension Theme {
         static let a900 = Color(hex: "2B2741")
     }
 
+    /// Status hues from the handoff. Kept low-chroma and deliberately outside the
+    /// neutral and accent ramps, which is why they are literal values here.
+    enum Status {
+        static let needsReview = Accent.a400
+        static let changesRequested = Color(hex: "C49AB0")
+        static let approved = Color(hex: "8FBF9F")
+        static let blocked = Color(hex: "C4B18A")
+        static let draft = Neutral.n500
+    }
+
     static let sidebarGradientTop = Color(hex: "1A1C2B")
     // The slide-over panel shares the sidebar's raised tone (#1a1c2b).
     static let panelBackground = sidebarGradientTop

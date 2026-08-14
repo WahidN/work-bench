@@ -82,3 +82,11 @@ private func expectHex(_ color: Color, _ hex: String) {
 @Test func sidebarGradientTopMatchesDesignTokens() {
     expectHex(Theme.sidebarGradientTop, "1A1C2B")
 }
+
+@Test func statusColorsMatchDesignTokens() {
+    expectHex(Theme.Status.needsReview, "B5ABFC")
+    expectHex(Theme.Status.changesRequested, "C49AB0")
+    expectHex(Theme.Status.approved, "8FBF9F")
+    expectHex(Theme.Status.blocked, "C4B18A")
+    expectHex(Theme.Status.draft, "9397AB")
+}
