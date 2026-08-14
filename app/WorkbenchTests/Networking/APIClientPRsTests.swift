@@ -22,6 +22,21 @@ struct APIClientPRsTests {
         #expect(pr.messages?.count == 1)
     }
 
+    @Test func setPrPinnedPatchesThePinRoute() async throws {
+        var capturedPath: String?
+        let session = mockedSession { request in
+            capturedPath = request.url?.path
+            return jsonResponse(request.url!, status: 200, body: """
+            {"id":142,"ticketId":1,"projectId":1,"branch":"fix/github-1","number":142,
+             "url":"https://github.com/x/pull/142","status":"open","lastReviewScore":4.6,"pinned":true,
+             "createdAt":"2026-08-12T00:00:00.000Z"}
+            """)
+        }
+        let pr = try await APIClient(session: session, keychain: testKeychain).setPrPinned(id: 142, pinned: true)
+        #expect(capturedPath == "/prs/142/pin")
+        #expect(pr.pinned == true)
+    }
+
     @Test func diffReturnsTheDiffText() async throws {
         let session = mockedSession { request in jsonResponse(request.url!, status: 200, body: #"{"diff":"--- a/x.ts\n+++ b/x.ts"}"#) }
         let result = try await APIClient(session: session, keychain: testKeychain).diff(prId: 1)

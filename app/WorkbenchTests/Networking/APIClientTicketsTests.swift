@@ -36,6 +36,24 @@ struct APIClientTicketsTests {
         #expect(reply.reply == "Sounds good.")
     }
 
+    @Test func setTicketPinnedPatchesThePinRoute() async throws {
+        var capturedPath: String?
+        var capturedBody: [String: Any]?
+        let session = mockedSession { request in
+            capturedPath = request.url?.path
+            capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
+            return jsonResponse(request.url!, status: 200, body: """
+            {"id":7,"source":"github","sourceId":"GH-demo#1","projectId":1,"title":"Fix null check",
+             "body":"desc","url":"https://x","analysis":null,"status":"new","prId":null,"pinned":true,
+             "createdAt":"2026-08-12T00:00:00.000Z"}
+            """)
+        }
+        let ticket = try await APIClient(session: session, keychain: testKeychain).setTicketPinned(id: 7, pinned: true)
+        #expect(capturedPath == "/tickets/7/pin")
+        #expect(capturedBody?["pinned"] as? Bool == true)
+        #expect(ticket.pinned == true)
+    }
+
     @Test func createPrReturnsTicketStatusAndPrId() async throws {
         let session = mockedSession { request in
             jsonResponse(request.url!, status: 200, body: #"{"ticketStatus":"in_review","prId":5}"#)

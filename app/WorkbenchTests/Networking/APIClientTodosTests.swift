@@ -39,6 +39,25 @@ struct APIClientTodosTests {
         #expect(todo.done == true)
     }
 
+    @Test func setTodoPriorityPatchesOnlyThePriorityField() async throws {
+        var capturedBody: [String: Any]?
+        var capturedMethod: String?
+        let session = mockedSession { request in
+            capturedMethod = request.httpMethod
+            capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
+            return jsonResponse(request.url!, status: 200, body: """
+            {"id":1,"source":"manual","sourceId":null,"text":"x","body":"","url":null,
+             "projectId":null,"canPromote":false,"done":false,"promotedTicketId":null,
+             "priority":"high","dueAt":"2026-08-14","doneAt":null,"createdAt":"2026-08-12T00:00:00.000Z"}
+            """)
+        }
+        let todo = try await APIClient(session: session, keychain: testKeychain).setTodoPriority(id: 1, priority: .high)
+        #expect(capturedMethod == "PATCH")
+        #expect(capturedBody?["priority"] as? String == "high")
+        #expect(capturedBody?["done"] == nil, "a priority change must not send done, or the engine would reopen the task")
+        #expect(todo.priority == .high)
+    }
+
     @Test func promoteTodoReturnsTheTicketOnSuccess() async throws {
         let session = mockedSession { request in
             jsonResponse(request.url!, status: 200, body: """

@@ -129,7 +129,11 @@ extension APIClient {
     }
 
     func setTodoDone(id: Int, done: Bool) async throws -> Todo {
-        try await send("PATCH", "/todos/\(id)", body: ["done": done])
+        try await send("PATCH", "/todos/\(id)", body: TodoUpdate(done: done))
+    }
+
+    func setTodoPriority(id: Int, priority: TodoPriority) async throws -> Todo {
+        try await send("PATCH", "/todos/\(id)", body: TodoUpdate(priority: priority))
     }
 
     func promoteTodo(id: Int) async throws -> Ticket {
@@ -153,6 +157,10 @@ extension APIClient {
     func createPr(ticketId: Int) async throws -> FixResult {
         try await send("POST", "/tickets/\(ticketId)/create-pr", body: nil)
     }
+
+    func setTicketPinned(id: Int, pinned: Bool) async throws -> Ticket {
+        try await send("PATCH", "/tickets/\(id)/pin", body: ["pinned": pinned])
+    }
 }
 
 extension APIClient {
@@ -174,5 +182,9 @@ extension APIClient {
 
     func mergePr(id: Int) async throws -> PrChatResult {
         try await send("POST", "/prs/\(id)/merge", body: nil)
+    }
+
+    func setPrPinned(id: Int, pinned: Bool) async throws -> PullRequest {
+        try await send("PATCH", "/prs/\(id)/pin", body: ["pinned": pinned])
     }
 }
