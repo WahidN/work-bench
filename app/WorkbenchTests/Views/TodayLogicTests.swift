@@ -259,3 +259,32 @@ struct TodayLogicColorTests {
         #expect(TodayLogic.statusColor(PrStatus.merged) == Theme.Status.approved)
     }
 }
+
+@Test func pinnedTodoRendersAsAPseudoTaskAtTheTopOfToday() {
+    var pinnedJira = todo(id: 5, text: "[MR-1] Fix the importer", projectId: nil, source: .jira, sourceId: "JIRA-MR-1")
+    pinnedJira.pinned = true
+    let sections = TodayLogic.sections(
+        todos: [todo(id: 1), pinnedJira],
+        pinnedTickets: [], pinnedPullRequests: [], tickets: [], projects: projects, today: "2026-08-14"
+    )
+
+    let today = sections.first { $0.label == "Today" }!
+    #expect(today.rows.map(\.id) == ["todo-5", "todo-1"], "a pinned row leads, like a pinned ticket does")
+    let pinnedRow = today.rows[0]
+    #expect(pinnedRow.tag == TodayLogic.pinnedTag)
+    #expect(pinnedRow.ref == "MR-1")
+    #expect(pinnedRow.priority == nil)
+    #expect(pinnedRow.projectDot == Theme.nocturneAccent)
+    #expect(pinnedRow.source == .pinnedTodo(pinnedJira))
+}
+
+@Test func aPinnedTodoIsNeverAlsoARegularRow() {
+    var pinnedManual = todo(id: 7)
+    pinnedManual.pinned = true
+    let sections = TodayLogic.sections(
+        todos: [pinnedManual],
+        pinnedTickets: [], pinnedPullRequests: [], tickets: [], projects: projects, today: "2026-08-14"
+    )
+
+    #expect(sections.flatMap(\.rows).map(\.id) == ["todo-7"], "exactly one row, not one pinned and one normal")
+}

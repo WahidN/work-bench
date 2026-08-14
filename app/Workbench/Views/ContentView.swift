@@ -116,7 +116,8 @@ struct ContentView: View {
                 onTogglePinTicket: { ticket in Task { await ticketsViewModel.togglePin(ticket) } },
                 onTogglePinPullRequest: { pr in Task { await prsViewModel.togglePin(pr) } },
                 onNavigate: { selection = $0 },
-                onDidPromote: { Task { await ticketsViewModel.load() } }
+                onDidPromote: { Task { await ticketsViewModel.load() } },
+                onTogglePinTodo: { todo in Task { await todayViewModel.togglePin(todo) } }
             )
         case .issues:
             TicketsScreen(viewModel: ticketsViewModel, onOpenAgent: openAgent)

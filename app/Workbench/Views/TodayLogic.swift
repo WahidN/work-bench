@@ -2,6 +2,7 @@ import SwiftUI
 
 enum TodayTaskSource: Equatable {
     case todo(Todo)
+    case pinnedTodo(Todo)
     case pinnedTicket(Ticket)
     case pinnedPullRequest(PullRequest)
 }
@@ -72,11 +73,14 @@ enum TodayLogic {
         projects: [Project],
         today: String
     ) -> [TodaySection] {
-        let open = todos.filter { !$0.done }
+        let pinnedTodoRows = todos.filter(\.pinned).map { pinnedRow(for: $0, projects: projects) }
+        let unpinned = todos.filter { !$0.pinned }
+        let open = unpinned.filter { !$0.done }
         let overdue = open.filter { isOverdue($0, today: today) }.map { row(for: $0, projects: projects) }
         let dueToday = open.filter { !isOverdue($0, today: today) }.map { row(for: $0, projects: projects) }
-        let done = todos.filter(\.done).map { row(for: $0, projects: projects) }
-        let pinned = pinnedTickets.map { row(for: $0, projects: projects) }
+        let done = unpinned.filter(\.done).map { row(for: $0, projects: projects) }
+        let pinned = pinnedTodoRows
+            + pinnedTickets.map { row(for: $0, projects: projects) }
             + pinnedPullRequests.map { row(for: $0, tickets: tickets, projects: projects) }
 
         var sections: [TodaySection] = []
@@ -107,6 +111,24 @@ enum TodayLogic {
             refSymbol: issueSymbol,
             tag: todo.source == .jira ? jiraTag : nil,
             priority: todo.done ? nil : todo.priority
+        )
+    }
+
+    /// A pinned todo, pulled onto Today from the Jira screen, renders like a pinned
+    /// ticket or PR: accent dot, its ref as the link, tag "Pinned", no priority. Its
+    /// checkbox unpins rather than completing, which the view routes on the source.
+    static func pinnedRow(for todo: Todo, projects: [Project]) -> TodayTaskRow {
+        TodayTaskRow(
+            id: "todo-\(todo.id)",
+            source: .pinnedTodo(todo),
+            title: todo.text,
+            isDone: false,
+            projectName: projectName(projectId: todo.projectId, projects: projects),
+            projectDot: Theme.nocturneAccent,
+            ref: WorkItemRef.todo(todo),
+            refSymbol: issueSymbol,
+            tag: pinnedTag,
+            priority: nil
         )
     }
 

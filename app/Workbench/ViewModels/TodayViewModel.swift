@@ -6,6 +6,7 @@ protocol TodayAPI {
     func setTodoDone(id: Int, done: Bool) async throws -> Todo
     func promoteTodo(id: Int) async throws -> Ticket
     func setTodoPriority(id: Int, priority: TodoPriority) async throws -> Todo
+    func setTodoPinned(id: Int, pinned: Bool) async throws -> Todo
 }
 
 extension APIClient: TodayAPI {}
@@ -84,6 +85,17 @@ final class TodayViewModel {
     func promote(_ todo: Todo) async {
         do {
             _ = try await api.promoteTodo(id: todo.id)
+            await load()
+        } catch {
+            present(error)
+        }
+    }
+
+    /// Unpinning a Jira todo removes it from Today's list entirely, so reload
+    /// rather than patching the row in place.
+    func togglePin(_ todo: Todo) async {
+        do {
+            _ = try await api.setTodoPinned(id: todo.id, pinned: !todo.pinned)
             await load()
         } catch {
             present(error)

@@ -10,6 +10,7 @@ struct TodayScreen: View {
     let onTogglePinPullRequest: (PullRequest) -> Void
     let onNavigate: (SidebarSection) -> Void
     let onDidPromote: () -> Void
+    let onTogglePinTodo: (Todo) -> Void
 
     @State private var draft = ""
 
@@ -104,6 +105,7 @@ struct TodayScreen: View {
     private func toggle(_ row: TodayTaskRow) {
         switch row.source {
         case .todo(let todo): Task { await viewModel.toggleDone(todo) }
+        case .pinnedTodo(let todo): onTogglePinTodo(todo)
         case .pinnedTicket(let ticket): onTogglePinTicket(ticket)
         case .pinnedPullRequest(let pr): onTogglePinPullRequest(pr)
         }
@@ -232,7 +234,7 @@ private struct TaskRow: View {
     private var checkboxLabel: String {
         switch row.source {
         case .todo: "Toggle task"
-        case .pinnedTicket, .pinnedPullRequest: "Unpin"
+        case .pinnedTodo, .pinnedTicket, .pinnedPullRequest: "Unpin"
         }
     }
 

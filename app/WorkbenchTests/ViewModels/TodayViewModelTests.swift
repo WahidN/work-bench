@@ -8,10 +8,12 @@ final class MockTodayAPI: TodayAPI {
     var setTodoDoneResult: Result<Todo, Error>?
     var promoteTodoResult: Result<Ticket, Error>?
     var setTodoPriorityResult: Result<Todo, Error>?
+    var setTodoPinnedResult: Result<Todo, Error>?
     private(set) var createTodoCalls: [String] = []
     private(set) var setTodoDoneCalls: [(id: Int, done: Bool)] = []
     private(set) var promoteTodoCalls: [Int] = []
     private(set) var setTodoPriorityCalls: [(id: Int, priority: TodoPriority)] = []
+    private(set) var setTodoPinnedCalls: [(id: Int, pinned: Bool)] = []
 
     func today() async throws -> TodayResponse { try todayResult.get() }
     func createTodo(text: String) async throws -> Todo {
@@ -29,6 +31,10 @@ final class MockTodayAPI: TodayAPI {
     func setTodoPriority(id: Int, priority: TodoPriority) async throws -> Todo {
         setTodoPriorityCalls.append((id, priority))
         return try setTodoPriorityResult!.get()
+    }
+    func setTodoPinned(id: Int, pinned: Bool) async throws -> Todo {
+        setTodoPinnedCalls.append((id, pinned))
+        return try setTodoPinnedResult!.get()
     }
 }
 
@@ -119,5 +125,30 @@ struct TodayViewModelTests {
         await viewModel.promote(sampleTodo(id: 1))
         #expect(api.promoteTodoCalls == [1])
         #expect(viewModel.needsInput.count == 1, "promote should reload Today so the newly-created ticket shows up")
+    }
+
+    @Test func togglePinSendsTheInverseAndReloads() async {
+        let api = MockTodayAPI()
+        var pinned = sampleTodo(id: 1)
+        pinned.pinned = true
+        api.todayResult = .success(TodayResponse(needsInput: [], todos: [pinned]))
+        var unpinned = sampleTodo(id: 1)
+        unpinned.pinned = false
+        api.setTodoPinnedResult = .success(unpinned)
+        let viewModel = TodayViewModel(api: api)
+        await viewModel.load()
+        await viewModel.togglePin(pinned)
+
+        #expect(api.setTodoPinnedCalls.first?.pinned == false, "toggling a pinned row unpins it")
+        #expect(viewModel.todos.count == 1, "the list is reloaded rather than patched, because unpinning can remove the row")
+    }
+
+    @Test func togglePinSurfacesAnError() async {
+        let api = MockTodayAPI()
+        api.setTodoPinnedResult = .failure(APIError.serverError("boom"))
+        let viewModel = TodayViewModel(api: api)
+        await viewModel.togglePin(sampleTodo(id: 1))
+
+        #expect(viewModel.errorMessage != nil)
     }
 }
