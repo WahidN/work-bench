@@ -17,7 +17,7 @@ struct APIClientTodosTests {
             capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
             return jsonResponse(request.url!, status: 201, body: """
             {"id":1,"source":"manual","sourceId":null,"text":"renew SSL cert","body":"","url":null,
-             "projectId":null,"canPromote":false,"done":false,"promotedTicketId":null,"createdAt":"2026-08-12T00:00:00.000Z"}
+             "projectId":null,"canPromote":false,"done":false,"promotedTicketId":null,"priority":"med","createdAt":"2026-08-12T00:00:00.000Z"}
             """)
         }
         let todo = try await APIClient(session: session, keychain: testKeychain).createTodo(text: "renew SSL cert")
@@ -31,7 +31,7 @@ struct APIClientTodosTests {
             capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
             return jsonResponse(request.url!, status: 200, body: """
             {"id":1,"source":"manual","sourceId":null,"text":"x","body":"","url":null,
-             "projectId":null,"canPromote":false,"done":true,"promotedTicketId":null,"createdAt":"2026-08-12T00:00:00.000Z"}
+             "projectId":null,"canPromote":false,"done":true,"promotedTicketId":null,"priority":"med","createdAt":"2026-08-12T00:00:00.000Z"}
             """)
         }
         let todo = try await APIClient(session: session, keychain: testKeychain).setTodoDone(id: 1, done: true)
@@ -43,7 +43,7 @@ struct APIClientTodosTests {
         let session = mockedSession { request in
             jsonResponse(request.url!, status: 200, body: """
             {"id":1,"source":"jira","sourceId":"JIRA-DEMO-1","projectId":1,"title":"Update env vars",
-             "body":"b","url":"u","analysis":null,"status":"new","prId":null,"createdAt":"2026-08-12T00:00:00.000Z"}
+             "body":"b","url":"u","analysis":null,"status":"new","prId":null,"pinned":false,"createdAt":"2026-08-12T00:00:00.000Z"}
             """)
         }
         let ticket = try await APIClient(session: session, keychain: testKeychain).promoteTodo(id: 1)

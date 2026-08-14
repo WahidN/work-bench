@@ -23,4 +23,5 @@ struct PullRequest: Codable, Identifiable, Equatable {
     var lastReviewScore: Double?
     let createdAt: String
     var messages: [PullRequestMessage]?
+    var pinned: Bool = false
 }

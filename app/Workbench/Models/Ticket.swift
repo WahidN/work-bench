@@ -47,4 +47,5 @@ struct Ticket: Codable, Identifiable, Equatable {
     var prId: Int?
     let createdAt: String
     var messages: [TicketMessage]?
+    var pinned: Bool = false
 }

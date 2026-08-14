@@ -14,7 +14,7 @@ struct APIClientTicketsTests {
         let session = mockedSession { request in
             jsonResponse(request.url!, status: 200, body: """
             {"id":1,"source":"github","sourceId":"GH-1","projectId":1,"title":"t","body":"b","url":"u",
-             "analysis":null,"status":"sparring","prId":null,"createdAt":"2026-08-12T00:00:00.000Z",
+             "analysis":null,"status":"sparring","prId":null,"pinned":false,"createdAt":"2026-08-12T00:00:00.000Z",
              "messages":[{"id":1,"ticketId":1,"role":"user","content":"go ahead","createdAt":"2026-08-12T00:00:00.000Z"}]}
             """)
         }

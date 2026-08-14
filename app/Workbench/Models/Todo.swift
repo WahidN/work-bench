@@ -3,6 +3,10 @@ enum TodoSource: String, Codable {
     case jira
 }
 
+enum TodoPriority: String, Codable {
+    case high, med, low
+}
+
 struct Todo: Codable, Identifiable, Equatable {
     let id: Int
     let source: TodoSource
@@ -15,4 +19,7 @@ struct Todo: Codable, Identifiable, Equatable {
     var done: Bool
     let promotedTicketId: Int?
     let createdAt: String
+    var priority: TodoPriority = .med
+    var dueAt: String?
+    var doneAt: String?
 }

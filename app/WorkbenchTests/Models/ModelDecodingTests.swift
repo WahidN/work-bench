@@ -30,7 +30,7 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     let json = """
     {"id":1,"source":"jira","sourceId":"JIRA-DEMO-1","text":"[DEMO-1] Update env vars",
      "body":"Redirect loop.","url":"https://x/browse/DEMO-1","projectId":1,
-     "canPromote":true,"done":false,"promotedTicketId":null,"createdAt":"2026-08-12T00:00:00.000Z"}
+     "canPromote":true,"done":false,"promotedTicketId":null,"priority":"med","createdAt":"2026-08-12T00:00:00.000Z"}
     """
     let todo = try decode(Todo.self, json)
     #expect(todo.source == .jira)
@@ -41,7 +41,7 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     let json = """
     {"id":2,"source":"manual","sourceId":null,"text":"renew SSL cert","body":"",
      "url":null,"projectId":null,"canPromote":false,"done":false,
-     "promotedTicketId":null,"createdAt":"2026-08-12T00:00:00.000Z"}
+     "promotedTicketId":null,"priority":"med","createdAt":"2026-08-12T00:00:00.000Z"}
     """
     let todo = try decode(Todo.self, json)
     #expect(todo.source == .manual)
@@ -51,7 +51,7 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
 @Test func decodesTicketListShapeWithoutMessages() throws {
     let json = """
     {"id":1,"source":"github","sourceId":"GH-demo#1","projectId":1,"title":"Fix null check",
-     "body":"desc","url":"https://x","analysis":null,"status":"new","prId":null,
+     "body":"desc","url":"https://x","analysis":null,"status":"new","prId":null,"pinned":false,
      "createdAt":"2026-08-12T00:00:00.000Z"}
     """
     let ticket = try decode(Ticket.self, json)
@@ -64,7 +64,7 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     {"id":1,"source":"github","sourceId":"GH-demo#1","projectId":1,"title":"Fix null check",
      "body":"desc","url":"https://x",
      "analysis":{"summary":"s","rootCause":"r","proposedFix":"p","affectedFiles":["a.ts"],"confidence":"high"},
-     "status":"sparring","prId":null,"createdAt":"2026-08-12T00:00:00.000Z",
+     "status":"sparring","prId":null,"pinned":false,"createdAt":"2026-08-12T00:00:00.000Z",
      "messages":[{"id":1,"ticketId":1,"role":"user","content":"add retry logic","createdAt":"2026-08-12T00:00:00.000Z"}]}
     """
     let ticket = try decode(Ticket.self, json)
@@ -76,7 +76,7 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
 @Test func decodesPullRequestListShapeWithoutMessages() throws {
     let json = """
     {"id":142,"ticketId":1,"projectId":1,"branch":"fix/github-1","number":142,
-     "url":"https://github.com/x/pull/142","status":"open","lastReviewScore":4.6,
+     "url":"https://github.com/x/pull/142","status":"open","lastReviewScore":4.6,"pinned":false,
      "createdAt":"2026-08-12T00:00:00.000Z"}
     """
     let pr = try decode(PullRequest.self, json)
@@ -88,7 +88,7 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
 @Test func decodesPullRequestDetailShapeWithMessages() throws {
     let json = """
     {"id":142,"ticketId":1,"projectId":1,"branch":"fix/github-1","number":142,
-     "url":"https://github.com/x/pull/142","status":"needs_attention","lastReviewScore":3.2,
+     "url":"https://github.com/x/pull/142","status":"needs_attention","lastReviewScore":3.2,"pinned":false,
      "createdAt":"2026-08-12T00:00:00.000Z",
      "messages":[{"id":1,"prId":142,"role":"assistant","content":"Fix ready for review.","createdAt":"2026-08-12T00:00:00.000Z"}]}
     """
@@ -105,7 +105,7 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
      ],
      "todos":[{"id":1,"source":"manual","sourceId":null,"text":"call client","body":"",
        "url":null,"projectId":null,"canPromote":false,"done":false,
-       "promotedTicketId":null,"createdAt":"2026-08-12T00:00:00.000Z"}]}
+       "promotedTicketId":null,"priority":"med","createdAt":"2026-08-12T00:00:00.000Z"}]}
     """
     let today = try decode(TodayResponse.self, json)
     #expect(today.needsInput.count == 2)
@@ -125,4 +125,31 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     #expect(message.projectId == 3)
     #expect(message.role == .assistant)
     #expect(message.content == "two PRs are waiting")
+}
+
+@Test func decodesTodoPriorityDueAndDoneStamps() throws {
+    let json = """
+    {"id":3,"source":"manual","sourceId":null,"text":"cut the release branch","body":"",
+     "url":null,"projectId":2,"canPromote":false,"done":true,"promotedTicketId":null,
+     "priority":"high","dueAt":"2026-08-13","doneAt":"2026-08-14","createdAt":"2026-08-13T00:00:00.000Z"}
+    """
+    let todo = try decode(Todo.self, json)
+    #expect(todo.priority == .high)
+    #expect(todo.dueAt == "2026-08-13")
+    #expect(todo.doneAt == "2026-08-14")
+}
+
+@Test func decodesPinnedFlagsOnTicketAndPullRequest() throws {
+    let ticketJson = """
+    {"id":1,"source":"github","sourceId":"GH-demo#1","projectId":1,"title":"Fix null check",
+     "body":"desc","url":"https://x","analysis":null,"status":"new","prId":null,"pinned":true,
+     "createdAt":"2026-08-12T00:00:00.000Z"}
+    """
+    let prJson = """
+    {"id":142,"ticketId":1,"projectId":1,"branch":"fix/github-1","number":142,
+     "url":"https://github.com/x/pull/142","status":"open","lastReviewScore":4.6,"pinned":true,
+     "createdAt":"2026-08-12T00:00:00.000Z"}
+    """
+    #expect(try decode(Ticket.self, ticketJson).pinned == true)
+    #expect(try decode(PullRequest.self, prJson).pinned == true)
 }
