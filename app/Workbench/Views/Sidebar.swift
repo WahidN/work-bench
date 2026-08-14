@@ -3,6 +3,7 @@ import SwiftUI
 struct Sidebar: View {
     let selection: SidebarSection
     let todos: [Todo]
+    let jiraTodos: [Todo]
     let tickets: [Ticket]
     let prs: [PullRequest]
     let projects: [Project]
@@ -59,7 +60,7 @@ struct Sidebar: View {
                         Image(systemName: section.symbol).font(.system(size: 16))
                         Text(section.rawValue).font(.system(size: Theme.FontSize.body))
                         Spacer()
-                        Text("\(SidebarLogic.navCount(for: section, todos: todos, tickets: tickets, prs: prs, projects: projects))")
+                        Text("\(SidebarLogic.navCount(for: section, todos: todos, jiraTodos: jiraTodos, tickets: tickets, prs: prs, projects: projects))")
                             .font(.system(size: Theme.FontSize.label))
                             .foregroundStyle(Theme.Neutral.n600)
                             .monospacedDigit()

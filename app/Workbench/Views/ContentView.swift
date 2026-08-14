@@ -4,7 +4,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
     case today = "Today"
     case projects = "Projects"
     case pullRequests = "Pull requests"
-    case issues = "Issues"
+    case issues = "Jira"
 
     var id: String { rawValue }
 
@@ -26,12 +26,14 @@ struct ContentView: View {
     @State private var prsViewModel = PRsViewModel()
     @State private var projectsViewModel = ProjectsViewModel()
     @State private var agentChatViewModel = AgentChatViewModel()
+    @State private var jiraViewModel = JiraViewModel()
 
     var body: some View {
         HStack(spacing: 0) {
             Sidebar(
                 selection: selection,
                 todos: todayViewModel.todos,
+                jiraTodos: jiraViewModel.todos,
                 tickets: ticketsViewModel.tickets,
                 prs: prsViewModel.pullRequests,
                 projects: projectsViewModel.projects,
@@ -81,6 +83,9 @@ struct ContentView: View {
         // Today's rail and the sidebar count both read the PR list, so it can no
         // longer wait for the Pull requests screen to be opened.
         .task { await prsViewModel.load() }
+        // The sidebar's Jira count reads this list, so it cannot wait for the
+        // screen to be opened.
+        .task { await jiraViewModel.load() }
         .task {
             var previousKeys: Set<String> = []
             var isFirstCycle = true
@@ -120,7 +125,7 @@ struct ContentView: View {
                 onTogglePinTodo: { todo in Task { await todayViewModel.togglePin(todo) } }
             )
         case .issues:
-            TicketsScreen(viewModel: ticketsViewModel, onOpenAgent: openAgent)
+            JiraScreen(viewModel: jiraViewModel, projects: projectsViewModel.projects, tickets: ticketsViewModel.tickets)
         case .pullRequests:
             PRsScreen(viewModel: prsViewModel, onOpenAgent: openAgent)
         case .projects:

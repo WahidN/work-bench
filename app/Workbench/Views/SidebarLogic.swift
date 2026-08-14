@@ -4,6 +4,7 @@ enum SidebarLogic {
     static func navCount(
         for section: SidebarSection,
         todos: [Todo],
+        jiraTodos: [Todo],
         tickets: [Ticket],
         prs: [PullRequest],
         projects: [Project]
@@ -12,7 +13,9 @@ enum SidebarLogic {
         case .today: todos.filter { !$0.done }.count
         case .projects: projects.count
         case .pullRequests: prs.count
-        case .issues: tickets.count
+        // Jira work not yet started. Promoted issues are counted by the pipeline
+        // surfaces instead, and they are no longer waiting on the user here.
+        case .issues: jiraTodos.filter { $0.source == .jira && $0.promotedTicketId == nil && !$0.done }.count
         }
     }
 

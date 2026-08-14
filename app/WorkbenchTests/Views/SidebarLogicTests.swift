@@ -13,14 +13,9 @@ private func pr(id: Int) -> PullRequest {
                 url: nil, status: .open, lastReviewScore: nil, createdAt: "2026-08-13T00:00:00.000Z")
 }
 
-private func ticket(id: Int) -> Ticket {
-    Ticket(id: id, source: .github, sourceId: "GH-\(id)", projectId: 1, title: "t\(id)", body: "b", url: "u",
-           analysis: nil, status: .new, prId: nil, createdAt: "2026-08-13T00:00:00.000Z")
-}
-
 @Test func navCountForTodayCountsOnlyIncompleteTodos() {
     let todos = [todo(id: 1, projectId: 1, done: false), todo(id: 2, projectId: 1, done: true)]
-    #expect(SidebarLogic.navCount(for: .today, todos: todos, tickets: [], prs: [], projects: []) == 1)
+    #expect(SidebarLogic.navCount(for: .today, todos: todos, jiraTodos: [], tickets: [], prs: [], projects: []) == 1)
 }
 
 @Test func navCountForProjectsCountsAllProjects() {
@@ -28,17 +23,28 @@ private func ticket(id: Int) -> Ticket {
         Project(id: 1, name: "a", repoPath: "/a", defaultBranch: "main", githubRepo: nil, jiraProjectKey: nil, sentryProjectSlug: nil),
         Project(id: 2, name: "b", repoPath: "/b", defaultBranch: "main", githubRepo: nil, jiraProjectKey: nil, sentryProjectSlug: nil)
     ]
-    #expect(SidebarLogic.navCount(for: .projects, todos: [], tickets: [], prs: [], projects: projects) == 2)
+    #expect(SidebarLogic.navCount(for: .projects, todos: [], jiraTodos: [], tickets: [], prs: [], projects: projects) == 2)
 }
 
 @Test func navCountForPullRequestsCountsAllPRs() {
     let prs = [pr(id: 1), pr(id: 2)]
-    #expect(SidebarLogic.navCount(for: .pullRequests, todos: [], tickets: [], prs: prs, projects: []) == 2)
+    #expect(SidebarLogic.navCount(for: .pullRequests, todos: [], jiraTodos: [], tickets: [], prs: prs, projects: []) == 2)
 }
 
-@Test func navCountForIssuesCountsAllTickets() {
-    let tickets = [ticket(id: 1), ticket(id: 2), ticket(id: 3)]
-    #expect(SidebarLogic.navCount(for: .issues, todos: [], tickets: tickets, prs: [], projects: []) == 3)
+@Test func navCountForJiraCountsUnpromotedJiraIssues() {
+    var promoted = Todo(id: 2, source: .jira, sourceId: "JIRA-MR-2", text: "[MR-2] Rotate keys", body: "",
+                        url: nil, projectId: nil, canPromote: true, done: true, promotedTicketId: 9,
+                        createdAt: "2026-08-14T00:00:00.000Z")
+    promoted.pinned = false
+    let open = Todo(id: 1, source: .jira, sourceId: "JIRA-MR-1", text: "[MR-1] Fix the importer", body: "",
+                    url: nil, projectId: nil, canPromote: true, done: false, promotedTicketId: nil,
+                    createdAt: "2026-08-14T00:00:00.000Z")
+
+    let count = SidebarLogic.navCount(
+        for: .issues, todos: [], jiraTodos: [open, promoted], tickets: [], prs: [], projects: []
+    )
+
+    #expect(count == 1, "the count is Jira work not yet started, not the ticket count")
 }
 
 @Test func projectOpenCountCountsOnlyIncompleteTodosForThatProject() {
