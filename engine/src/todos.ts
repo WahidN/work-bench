@@ -10,7 +10,7 @@ function rowToTodo(row: any): Todo {
     id: row.id, source: row.source, sourceId: row.source_id, text: row.text, body: row.body, url: row.url,
     projectId: row.project_id, canPromote: !!row.can_promote, done: !!row.done,
     promotedTicketId: row.promoted_ticket_id, priority: row.priority, dueAt: row.due_at,
-    doneAt: row.done_at, createdAt: row.created_at,
+    doneAt: row.done_at, pinned: !!row.pinned, createdAt: row.created_at,
   };
 }
 
@@ -57,6 +57,11 @@ export function setTodoPriority(db: Database.Database, id: number, priority: Tod
   db.prepare('UPDATE todos SET priority = ? WHERE id = ?').run(priority, id);
   const row = db.prepare('SELECT * FROM todos WHERE id = ?').get(id);
   return row ? rowToTodo(row) : null;
+}
+
+export function setTodoPinned(db: Database.Database, id: number, pinned: boolean): Todo | null {
+  db.prepare('UPDATE todos SET pinned = ? WHERE id = ?').run(pinned ? 1 : 0, id);
+  return getTodo(db, id);
 }
 
 export function upsertJiraTodo(db: Database.Database, issue: SourceIssue, project: Project | null): void {

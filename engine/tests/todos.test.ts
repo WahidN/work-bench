@@ -7,7 +7,7 @@ import { recordPr } from '../src/prs.js';
 import * as analyze from '../src/analyze.js';
 import {
   listTodos, getTodo, createManualTodo, setTodoDone, upsertJiraTodo, reconcileJiraTodos, promoteTodo, getTodayView,
-  setTodoPriority, listTodayTodos, localDate,
+  setTodoPriority, setTodoPinned, listTodayTodos, localDate,
 } from '../src/todos.js';
 
 vi.mock('../src/analyze.js');
@@ -213,5 +213,27 @@ describe('getTodayView', () => {
     );
     expect(view.needsInput.some((i) => i.id === doneTicket.id && i.kind === 'ticket')).toBe(false);
     expect(view.todos.map((t) => t.text)).toEqual(['unrelated task']);
+  });
+});
+
+describe('pinning a todo', () => {
+  it('defaults to not pinned and toggles both ways', () => {
+    const todo = createManualTodo(db, 'reply to client');
+
+    expect(todo.pinned).toBe(false);
+    expect(setTodoPinned(db, todo.id, true)!.pinned).toBe(true);
+    expect(setTodoPinned(db, todo.id, false)!.pinned).toBe(false);
+  });
+
+  it('returns null for a todo that does not exist', () => {
+    expect(setTodoPinned(db, 999, true)).toBeNull();
+  });
+
+  it('leaves done and priority untouched', () => {
+    const todo = createManualTodo(db, 'cut the release branch', { priority: 'high' });
+    const pinned = setTodoPinned(db, todo.id, true)!;
+
+    expect(pinned.done).toBe(false);
+    expect(pinned.priority).toBe('high');
   });
 });

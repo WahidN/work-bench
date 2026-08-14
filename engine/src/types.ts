@@ -26,6 +26,7 @@ export interface Todo {
   priority: TodoPriority;
   dueAt: string | null;
   doneAt: string | null;
+  pinned: boolean;
   createdAt: string;
 }
 

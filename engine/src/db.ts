@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS todos (
   priority TEXT NOT NULL DEFAULT 'med' CHECK (priority IN ('high','med','low')),
   due_at TEXT,
   done_at TEXT,
+  pinned INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   UNIQUE(source, source_id)
 );
@@ -112,6 +113,8 @@ const MIGRATIONS: string[] = [
    ALTER TABLE todos ADD COLUMN done_at TEXT;
    ALTER TABLE tickets ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
    ALTER TABLE prs ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;`,
+  // 2: Jira screen. Pin a Jira issue onto Today.
+  `ALTER TABLE todos ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;`,
 ];
 
 function isEmptyDatabase(db: Database.Database): boolean {
