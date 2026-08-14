@@ -43,6 +43,7 @@ export interface Ticket {
   analysis: Analysis | null;
   status: TicketStatus;
   prId: number | null;
+  pinned: boolean;
   createdAt: string;
 }
 
@@ -65,6 +66,7 @@ export interface Pr {
   url: string | null;
   status: PrStatus;
   lastReviewScore: number | null;
+  pinned: boolean;
   createdAt: string;
 }
 

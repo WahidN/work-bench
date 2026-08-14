@@ -5,7 +5,7 @@ function rowToPr(row: any): Pr {
   return {
     id: row.id, ticketId: row.ticket_id, projectId: row.project_id, branch: row.branch,
     number: row.number, url: row.url, status: row.status,
-    lastReviewScore: row.last_review_score, createdAt: row.created_at,
+    lastReviewScore: row.last_review_score, pinned: !!row.pinned, createdAt: row.created_at,
   };
 }
 
@@ -38,6 +38,11 @@ export function recordPr(db: Database.Database, input: RecordPrInput): Pr {
     )
     .run({ ...input, createdAt: new Date().toISOString() });
   return getPr(db, Number(result.lastInsertRowid))!;
+}
+
+export function setPrPinned(db: Database.Database, id: number, pinned: boolean): Pr | null {
+  db.prepare('UPDATE prs SET pinned = ? WHERE id = ?').run(pinned ? 1 : 0, id);
+  return getPr(db, id);
 }
 
 export function updatePrStatus(

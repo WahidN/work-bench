@@ -4,7 +4,7 @@ import type { Ticket, TicketMessage } from '../src/types.js';
 
 const ticket: Ticket = {
   id: 1, source: 'github', sourceId: 'GH-1', projectId: 1, title: 'Fix null check',
-  body: 'desc', url: 'https://x', analysis: null, status: 'sparring', prId: null, createdAt: '2026-01-01',
+  body: 'desc', url: 'https://x', analysis: null, status: 'sparring', prId: null, pinned: false, createdAt: '2026-01-01',
 };
 
 const messages: TicketMessage[] = [

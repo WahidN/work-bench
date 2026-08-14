@@ -4,7 +4,7 @@ import { openDb } from '../src/db.js';
 import { createProject } from '../src/projects.js';
 import {
   createTicket, getTicket, findTicketBySource, updateTicketStatus,
-  addTicketMessage, listTicketMessages, listTickets,
+  addTicketMessage, listTicketMessages, listTickets, setTicketPinned,
 } from '../src/tickets.js';
 import { recordPr } from '../src/prs.js';
 
@@ -64,5 +64,22 @@ describe('tickets', () => {
     const t2 = createTicket(db, { source: 'github', sourceId: 'GH-demo#2', projectId, title: 't2', body: 'b', url: 'u', analysis: null });
     updateTicketStatus(db, t2.id, 'in_review', null);
     expect(listTickets(db, { status: 'in_review' }).map((t) => t.id)).toEqual([t2.id]);
+  });
+});
+
+describe('pinning a ticket', () => {
+  it('defaults to not pinned and toggles both ways', () => {
+    const ticket = createTicket(db, {
+      source: 'github', sourceId: 'GH-pin', projectId,
+      title: 'Fix null check', body: 'b', url: 'u', analysis: null,
+    });
+
+    expect(ticket.pinned).toBe(false);
+    expect(setTicketPinned(db, ticket.id, true)!.pinned).toBe(true);
+    expect(setTicketPinned(db, ticket.id, false)!.pinned).toBe(false);
+  });
+
+  it('returns null for a ticket that does not exist', () => {
+    expect(setTicketPinned(db, 999, true)).toBeNull();
   });
 });

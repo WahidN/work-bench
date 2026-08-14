@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import { openDb } from '../src/db.js';
 import { createProject } from '../src/projects.js';
 import { createTicket } from '../src/tickets.js';
-import { recordPr, getPr, updatePrStatus, addPrMessage, listPrMessages } from '../src/prs.js';
+import { recordPr, getPr, updatePrStatus, addPrMessage, listPrMessages, setPrPinned } from '../src/prs.js';
 
 let db: Database.Database;
 let ticketId: number;
@@ -43,5 +43,22 @@ describe('prs', () => {
     addPrMessage(db, pr.id, 'user', 'also guard email');
     addPrMessage(db, pr.id, 'assistant', 'done, re-reviewed 4.8/5');
     expect(listPrMessages(db, pr.id).map((m) => m.content)).toEqual(['also guard email', 'done, re-reviewed 4.8/5']);
+  });
+});
+
+describe('pinning a PR', () => {
+  it('defaults to not pinned and toggles both ways', () => {
+    const pr = recordPr(db, {
+      ticketId, projectId, branch: 'fix/gh-demo-1',
+      number: 142, url: 'https://github.com/x/pull/142', status: 'open',
+    });
+
+    expect(pr.pinned).toBe(false);
+    expect(setPrPinned(db, pr.id, true)!.pinned).toBe(true);
+    expect(setPrPinned(db, pr.id, false)!.pinned).toBe(false);
+  });
+
+  it('returns null for a PR that does not exist', () => {
+    expect(setPrPinned(db, 999, true)).toBeNull();
   });
 });

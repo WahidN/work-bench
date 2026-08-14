@@ -6,7 +6,7 @@ function rowToTicket(row: any): Ticket {
     id: row.id, source: row.source, sourceId: row.source_id, projectId: row.project_id,
     title: row.title, body: row.body, url: row.url,
     analysis: row.analysis_json ? JSON.parse(row.analysis_json) : null,
-    status: row.status, prId: row.pr_id, createdAt: row.created_at,
+    status: row.status, prId: row.pr_id, pinned: !!row.pinned, createdAt: row.created_at,
   };
 }
 
@@ -49,6 +49,11 @@ export function createTicket(db: Database.Database, input: CreateTicketInput): T
       createdAt: new Date().toISOString(),
     });
   return getTicket(db, Number(result.lastInsertRowid))!;
+}
+
+export function setTicketPinned(db: Database.Database, id: number, pinned: boolean): Ticket | null {
+  db.prepare('UPDATE tickets SET pinned = ? WHERE id = ?').run(pinned ? 1 : 0, id);
+  return getTicket(db, id);
 }
 
 export function updateTicketStatus(
