@@ -5,6 +5,7 @@ protocol TodayAPI {
     func createTodo(text: String) async throws -> Todo
     func setTodoDone(id: Int, done: Bool) async throws -> Todo
     func promoteTodo(id: Int) async throws -> Ticket
+    func setTodoPriority(id: Int, priority: TodoPriority) async throws -> Todo
 }
 
 extension APIClient: TodayAPI {}
@@ -56,10 +57,27 @@ final class TodayViewModel {
 
     func toggleDone(_ todo: Todo) async {
         do {
-            _ = try await api.setTodoDone(id: todo.id, done: !todo.done)
-            todos.removeAll { $0.id == todo.id }
+            let updated = try await api.setTodoDone(id: todo.id, done: !todo.done)
+            replace(updated)
         } catch {
             present(error)
+        }
+    }
+
+    func cyclePriority(_ todo: Todo) async {
+        do {
+            let updated = try await api.setTodoPriority(id: todo.id, priority: TodayLogic.nextPriority(after: todo.priority))
+            replace(updated)
+        } catch {
+            present(error)
+        }
+    }
+
+    private func replace(_ todo: Todo) {
+        if let index = todos.firstIndex(where: { $0.id == todo.id }) {
+            todos[index] = todo
+        } else {
+            todos.append(todo)
         }
     }
 

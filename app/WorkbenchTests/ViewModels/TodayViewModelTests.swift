@@ -7,9 +7,11 @@ final class MockTodayAPI: TodayAPI {
     var createTodoResult: Result<Todo, Error>?
     var setTodoDoneResult: Result<Todo, Error>?
     var promoteTodoResult: Result<Ticket, Error>?
+    var setTodoPriorityResult: Result<Todo, Error>?
     private(set) var createTodoCalls: [String] = []
     private(set) var setTodoDoneCalls: [(id: Int, done: Bool)] = []
     private(set) var promoteTodoCalls: [Int] = []
+    private(set) var setTodoPriorityCalls: [(id: Int, priority: TodoPriority)] = []
 
     func today() async throws -> TodayResponse { try todayResult.get() }
     func createTodo(text: String) async throws -> Todo {
@@ -24,11 +26,18 @@ final class MockTodayAPI: TodayAPI {
         promoteTodoCalls.append(id)
         return try promoteTodoResult!.get()
     }
+    func setTodoPriority(id: Int, priority: TodoPriority) async throws -> Todo {
+        setTodoPriorityCalls.append((id, priority))
+        return try setTodoPriorityResult!.get()
+    }
 }
 
-private func sampleTodo(id: Int = 1, done: Bool = false) -> Todo {
-    Todo(id: id, source: .manual, sourceId: nil, text: "x", body: "", url: nil,
-         projectId: nil, canPromote: false, done: done, promotedTicketId: nil, createdAt: "2026-08-12T00:00:00.000Z")
+private func sampleTodo(id: Int = 1, done: Bool = false, priority: TodoPriority = .med) -> Todo {
+    var todo = Todo(id: id, source: .manual, sourceId: nil, text: "x", body: "", url: nil,
+                    projectId: nil, canPromote: false, done: done, promotedTicketId: nil,
+                    createdAt: "2026-08-12T00:00:00.000Z")
+    todo.priority = priority
+    return todo
 }
 
 private func sampleTicket() -> Ticket {
@@ -66,16 +75,39 @@ struct TodayViewModelTests {
         #expect(viewModel.todos.map(\.id) == [2])
     }
 
-    @Test func toggleDoneRemovesTheTodoFromTheLocalList() async {
+    @Test func toggleDoneKeepsTheTodoSoTheDoneSectionCanShowIt() async {
         let api = MockTodayAPI()
         api.todayResult = .success(TodayResponse(needsInput: [], todos: [sampleTodo(id: 1)]))
         api.setTodoDoneResult = .success(sampleTodo(id: 1, done: true))
         let viewModel = TodayViewModel(api: api)
         await viewModel.load()
         await viewModel.toggleDone(sampleTodo(id: 1))
-        #expect(api.setTodoDoneCalls.first?.id == 1)
+
         #expect(api.setTodoDoneCalls.first?.done == true)
-        #expect(viewModel.todos.isEmpty, "GET /todos only ever returns open todos, so a completed one should disappear from the local list too")
+        #expect(viewModel.todos.count == 1)
+        #expect(viewModel.todos[0].done, "GET /today returns today's completions, so the row moves to Done instead of vanishing")
+    }
+
+    @Test func cyclePriorityWritesTheNextPriorityAndStoresTheResult() async {
+        let api = MockTodayAPI()
+        api.todayResult = .success(TodayResponse(needsInput: [], todos: [sampleTodo(id: 1, priority: .med)]))
+        api.setTodoPriorityResult = .success(sampleTodo(id: 1, priority: .low))
+        let viewModel = TodayViewModel(api: api)
+        await viewModel.load()
+        await viewModel.cyclePriority(sampleTodo(id: 1, priority: .med))
+
+        #expect(api.setTodoPriorityCalls.first?.id == 1)
+        #expect(api.setTodoPriorityCalls.first?.priority == .low, "med cycles to low")
+        #expect(viewModel.todos[0].priority == .low)
+    }
+
+    @Test func cyclePrioritySurfacesAnError() async {
+        let api = MockTodayAPI()
+        api.setTodoPriorityResult = .failure(APIError.serverError("boom"))
+        let viewModel = TodayViewModel(api: api)
+        await viewModel.cyclePriority(sampleTodo(id: 1))
+
+        #expect(viewModel.errorMessage != nil)
     }
 
     @Test func promoteReloadsAfterSucceeding() async {
