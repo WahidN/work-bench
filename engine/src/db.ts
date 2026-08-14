@@ -27,6 +27,9 @@ CREATE TABLE IF NOT EXISTS todos (
   can_promote INTEGER NOT NULL DEFAULT 0,
   done INTEGER NOT NULL DEFAULT 0,
   promoted_ticket_id INTEGER REFERENCES tickets(id),
+  priority TEXT NOT NULL DEFAULT 'med' CHECK (priority IN ('high','med','low')),
+  due_at TEXT,
+  done_at TEXT,
   created_at TEXT NOT NULL,
   UNIQUE(source, source_id)
 );
@@ -42,6 +45,7 @@ CREATE TABLE IF NOT EXISTS tickets (
   analysis_json TEXT,
   status TEXT NOT NULL CHECK (status IN ('new','sparring','in_review','done','needs_attention')) DEFAULT 'new',
   pr_id INTEGER REFERENCES prs(id),
+  pinned INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   UNIQUE(source, source_id)
 );
@@ -63,6 +67,7 @@ CREATE TABLE IF NOT EXISTS prs (
   url TEXT,
   status TEXT NOT NULL CHECK (status IN ('open','needs_attention','merged')) DEFAULT 'open',
   last_review_score REAL,
+  pinned INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
 
@@ -95,11 +100,41 @@ CREATE TABLE IF NOT EXISTS jobs (
 CREATE INDEX IF NOT EXISTS idx_jobs_target ON jobs(target_type, target_id, status);
 `;
 
+// SQLite has no "ADD COLUMN IF NOT EXISTS", so every change to a table that
+// already exists in someone's database goes in this list, append-only. The file's
+// PRAGMA user_version records how many entries have been applied. SCHEMA above is
+// always the current shape, so a brand new file is stamped as fully migrated and
+// never replays these.
+const MIGRATIONS: string[] = [
+  // 1: Phase 4. Task priority, due date, completion stamp, and pin flags.
+  `ALTER TABLE todos ADD COLUMN priority TEXT NOT NULL DEFAULT 'med' CHECK (priority IN ('high','med','low'));
+   ALTER TABLE todos ADD COLUMN due_at TEXT;
+   ALTER TABLE todos ADD COLUMN done_at TEXT;
+   ALTER TABLE tickets ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE prs ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;`,
+];
+
+function isEmptyDatabase(db: Database.Database): boolean {
+  const row = db.prepare(`SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table'`).get() as { n: number };
+  return row.n === 0;
+}
+
+function migrate(db: Database.Database): void {
+  const applied = db.pragma('user_version', { simple: true }) as number;
+  for (let version = applied; version < MIGRATIONS.length; version++) {
+    db.transaction(() => db.exec(MIGRATIONS[version]))();
+    db.pragma(`user_version = ${version + 1}`);
+  }
+}
+
 export function openDb(path: string = DB_PATH): Database.Database {
   mkdirSync(dirname(path), { recursive: true });
   const db = new Database(path);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
+  const isNew = isEmptyDatabase(db);
   db.exec(SCHEMA);
+  if (isNew) db.pragma(`user_version = ${MIGRATIONS.length}`);
+  else migrate(db);
   return db;
 }
