@@ -128,3 +128,50 @@ describe('PATCH /todos/:id', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('GET /todos', () => {
+  it('returns only open todos by default', async () => {
+    setTodoDone(db, todoId, true);
+
+    const res = await auth(request(app).get('/todos'));
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it('returns completed todos too when asked for any', async () => {
+    setTodoDone(db, todoId, true);
+
+    const res = await auth(request(app).get('/todos?done=any'));
+
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].done).toBe(true);
+  });
+
+  it('400s on an unknown done filter', async () => {
+    const res = await auth(request(app).get('/todos?done=maybe'));
+
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('PATCH /todos/:id/pin', () => {
+  it('pins and unpins the todo', async () => {
+    const pinned = await auth(request(app).patch(`/todos/${todoId}/pin`)).send({ pinned: true });
+    expect(pinned.status).toBe(200);
+    expect(pinned.body.pinned).toBe(true);
+
+    const unpinned = await auth(request(app).patch(`/todos/${todoId}/pin`)).send({ pinned: false });
+    expect(unpinned.body.pinned).toBe(false);
+  });
+
+  it('400s when pinned is not a boolean', async () => {
+    const res = await auth(request(app).patch(`/todos/${todoId}/pin`)).send({ pinned: 'yes' });
+    expect(res.status).toBe(400);
+  });
+
+  it('404s for a todo that does not exist', async () => {
+    const res = await auth(request(app).patch('/todos/999/pin')).send({ pinned: true });
+    expect(res.status).toBe(404);
+  });
+});

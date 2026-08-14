@@ -1,10 +1,17 @@
 import type { Express } from 'express';
 import type Database from 'better-sqlite3';
-import { listTodos, createManualTodo, setTodoDone, setTodoPriority, getTodo, promoteTodo } from '../../todos.js';
+import { listTodos, createManualTodo, setTodoDone, setTodoPriority, getTodo, promoteTodo, setTodoPinned } from '../../todos.js';
 import { acquireJob, finishJob } from '../../jobs.js';
 
 export function registerTodosRoutes(app: Express, db: Database.Database): void {
-  app.get('/todos', (_req, res) => res.json(listTodos(db, { done: false })));
+  app.get('/todos', (req, res) => {
+    const done = req.query.done;
+    if (done !== undefined && done !== 'open' && done !== 'any') {
+      res.status(400).json({ error: 'done must be open or any' });
+      return;
+    }
+    res.json(done === 'any' ? listTodos(db) : listTodos(db, { done: false }));
+  });
 
   app.post('/todos', (req, res) => {
     const text = req.body?.text;
@@ -62,5 +69,14 @@ export function registerTodosRoutes(app: Express, db: Database.Database): void {
       else if (message.includes('cannot be promoted')) res.status(400).json({ error: message });
       else res.status(500).json({ error: message });
     }
+  });
+
+  app.patch('/todos/:id/pin', (req, res) => {
+    const pinned = req.body?.pinned;
+    if (typeof pinned !== 'boolean') { res.status(400).json({ error: 'pinned must be a boolean' }); return; }
+
+    const todo = setTodoPinned(db, Number(req.params.id), pinned);
+    if (!todo) { res.status(404).json({ error: 'not found' }); return; }
+    res.json(todo);
   });
 }
