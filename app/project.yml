@@ -16,6 +16,12 @@ targets:
       path: Workbench/Info.plist
       properties:
         NSHumanReadableCopyright: ""
+        # Registers the bundled Inter faces at launch, so Theme.heading and
+        # Theme.body resolve instead of silently falling back to the system font.
+        # The value is "." because Xcode copies the .ttf files flat into
+        # Contents/Resources rather than preserving the Resources/Fonts folder,
+        # and this path is not searched recursively.
+        ATSApplicationFontsPath: "."
   WorkbenchTests:
     type: bundle.unit-test
     platform: macOS
