@@ -22,4 +22,5 @@ struct Todo: Codable, Identifiable, Equatable {
     var priority: TodoPriority = .med
     var dueAt: String?
     var doneAt: String?
+    var pinned: Bool = false
 }

@@ -18,11 +18,18 @@ final class APIClient {
         self.keychain = keychain
     }
 
-    private func makeRequest(_ method: String, _ path: String, body: Encodable?) throws -> URLRequest {
+    private func makeRequest(_ method: String, _ path: String, query: [String: String]? = nil, body: Encodable?) throws -> URLRequest {
         guard let token = try keychain.readSecret(account: "api-token") else {
             throw APIError.transportFailed("No Workbench engine token found in Keychain. Is the engine running?")
         }
-        var request = URLRequest(url: Self.baseURL.appendingPathComponent(path))
+        var components = URLComponents(url: Self.baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
+        if let query, !query.isEmpty {
+            components?.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+        }
+        guard let url = components?.url else {
+            throw APIError.transportFailed("Could not build a URL for \(path)")
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if let body {
@@ -67,8 +74,8 @@ final class APIClient {
         }
     }
 
-    func send<Response: Decodable>(_ method: String, _ path: String, body: Encodable?) async throws -> Response {
-        let request = try makeRequest(method, path, body: body)
+    func send<Response: Decodable>(_ method: String, _ path: String, query: [String: String]? = nil, body: Encodable?) async throws -> Response {
+        let request = try makeRequest(method, path, query: query, body: body)
         let (data, response) = try await fetch(request)
         try validate(response, data: data)
         do {
@@ -120,8 +127,12 @@ extension APIClient {
 }
 
 extension APIClient {
-    func todos() async throws -> [Todo] {
-        try await send("GET", "/todos", body: nil)
+    func todos(includeDone: Bool = false) async throws -> [Todo] {
+        try await send("GET", "/todos", query: includeDone ? ["done": "any"] : nil, body: nil)
+    }
+
+    func setTodoPinned(id: Int, pinned: Bool) async throws -> Todo {
+        try await send("PATCH", "/todos/\(id)/pin", body: ["pinned": pinned])
     }
 
     func createTodo(text: String) async throws -> Todo {

@@ -30,7 +30,7 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     let json = """
     {"id":1,"source":"jira","sourceId":"JIRA-DEMO-1","text":"[DEMO-1] Update env vars",
      "body":"Redirect loop.","url":"https://x/browse/DEMO-1","projectId":1,
-     "canPromote":true,"done":false,"promotedTicketId":null,"priority":"med","createdAt":"2026-08-12T00:00:00.000Z"}
+     "canPromote":true,"done":false,"promotedTicketId":null,"priority":"med","pinned":false,"createdAt":"2026-08-12T00:00:00.000Z"}
     """
     let todo = try decode(Todo.self, json)
     #expect(todo.source == .jira)
@@ -41,7 +41,7 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     let json = """
     {"id":2,"source":"manual","sourceId":null,"text":"renew SSL cert","body":"",
      "url":null,"projectId":null,"canPromote":false,"done":false,
-     "promotedTicketId":null,"priority":"med","createdAt":"2026-08-12T00:00:00.000Z"}
+     "promotedTicketId":null,"priority":"med","pinned":false,"createdAt":"2026-08-12T00:00:00.000Z"}
     """
     let todo = try decode(Todo.self, json)
     #expect(todo.source == .manual)
@@ -105,7 +105,7 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
      ],
      "todos":[{"id":1,"source":"manual","sourceId":null,"text":"call client","body":"",
        "url":null,"projectId":null,"canPromote":false,"done":false,
-       "promotedTicketId":null,"priority":"med","createdAt":"2026-08-12T00:00:00.000Z"}]}
+       "promotedTicketId":null,"priority":"med","pinned":false,"createdAt":"2026-08-12T00:00:00.000Z"}]}
     """
     let today = try decode(TodayResponse.self, json)
     #expect(today.needsInput.count == 2)
@@ -131,7 +131,7 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     let json = """
     {"id":3,"source":"manual","sourceId":null,"text":"cut the release branch","body":"",
      "url":null,"projectId":2,"canPromote":false,"done":true,"promotedTicketId":null,
-     "priority":"high","dueAt":"2026-08-13","doneAt":"2026-08-14","createdAt":"2026-08-13T00:00:00.000Z"}
+     "priority":"high","dueAt":"2026-08-13","doneAt":"2026-08-14","pinned":false,"createdAt":"2026-08-13T00:00:00.000Z"}
     """
     let todo = try decode(Todo.self, json)
     #expect(todo.priority == .high)
@@ -152,4 +152,14 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     """
     #expect(try decode(Ticket.self, ticketJson).pinned == true)
     #expect(try decode(PullRequest.self, prJson).pinned == true)
+}
+
+@Test func decodesTodoPinnedFlag() throws {
+    let json = """
+    {"id":4,"source":"jira","sourceId":"JIRA-MR-1","text":"[MR-1] Fix the importer","body":"",
+     "url":"https://x/browse/MR-1","projectId":null,"canPromote":false,"done":false,
+     "promotedTicketId":null,"priority":"med","dueAt":null,"doneAt":null,"pinned":true,
+     "createdAt":"2026-08-14T00:00:00.000Z"}
+    """
+    #expect(try decode(Todo.self, json).pinned == true)
 }
