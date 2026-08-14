@@ -94,6 +94,29 @@ describe('listTodayTodos', () => {
 
     expect(listTodayTodos(db).map((t) => t.id)).toEqual([doneToday.id]);
   });
+
+  it('includes a pinned jira todo', () => {
+    upsertJiraTodo(db, { source: 'jira', sourceId: 'JIRA-MR-1', title: '[MR-1] Fix the importer', url: 'https://x/browse/MR-1', body: '', projectKey: 'MR' }, null);
+    const [jira] = listTodos(db).filter((t) => t.source === 'jira');
+    setTodoPinned(db, jira.id, true);
+
+    expect(listTodayTodos(db).map((t) => t.id)).toContain(jira.id);
+  });
+
+  it('still excludes an unpinned jira todo', () => {
+    upsertJiraTodo(db, { source: 'jira', sourceId: 'JIRA-MR-2', title: '[MR-2] Rotate the keys', url: 'https://x/browse/MR-2', body: '', projectKey: 'MR' }, null);
+
+    expect(listTodayTodos(db)).toEqual([]);
+  });
+
+  it('excludes a pinned todo completed on an earlier day', () => {
+    const todo = createManualTodo(db, 'old pinned task');
+    setTodoPinned(db, todo.id, true);
+    setTodoDone(db, todo.id, true);
+    db.prepare(`UPDATE todos SET done_at = '2026-08-01' WHERE id = ?`).run(todo.id);
+
+    expect(listTodayTodos(db)).toEqual([]);
+  });
 });
 
 describe('upsertJiraTodo / reconcileJiraTodos', () => {

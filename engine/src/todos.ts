@@ -134,12 +134,16 @@ export interface TodayView {
   todos: Todo[];
 }
 
-/// Today's task list: the user's own tasks, open plus whatever they completed
-/// today. Mirrored Jira todos are deliberately excluded; they get their own
-/// screen, because one todo per assigned Jira issue swamps a day view.
+/// Today's task list: the user's own tasks plus anything pinned from another
+/// screen, open plus whatever was completed today. An unpinned mirrored Jira
+/// todo stays out; one todo per assigned Jira issue would swamp a day view.
 export function listTodayTodos(db: Database.Database): Todo[] {
   return db
-    .prepare(`SELECT * FROM todos WHERE source = 'manual' AND (done = 0 OR done_at = ?) ORDER BY created_at`)
+    .prepare(
+      `SELECT * FROM todos
+        WHERE (source = 'manual' OR pinned = 1) AND (done = 0 OR done_at = ?)
+        ORDER BY created_at`
+    )
     .all(localDate())
     .map(rowToTodo);
 }
