@@ -25,13 +25,13 @@ import Foundation
     #expect(AppHeaderLogic.kicker(for: .pullRequests, projectCount: 0, todayDateString: "") == "GitHub")
 }
 
-@Test func kickerForIssuesIsJiraGitHub() {
-    #expect(AppHeaderLogic.kicker(for: .issues, projectCount: 0, todayDateString: "") == "Jira · GitHub")
+@Test func kickerForIssuesIsJira() {
+    #expect(AppHeaderLogic.kicker(for: .issues, projectCount: 0, todayDateString: "") == "Jira")
 }
 
 @Test func headingsMatchEachSection() {
     #expect(AppHeaderLogic.heading(for: .today) == "Today")
     #expect(AppHeaderLogic.heading(for: .projects) == "Projects")
     #expect(AppHeaderLogic.heading(for: .pullRequests) == "Pull requests")
-    #expect(AppHeaderLogic.heading(for: .issues) == "Issues")
+    #expect(AppHeaderLogic.heading(for: .issues) == "Jira")
 }

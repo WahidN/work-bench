@@ -17,7 +17,7 @@ enum AppHeaderLogic {
         case .today: todayDateString
         case .projects: "\(projectCount) project\(projectCount == 1 ? "" : "s")"
         case .pullRequests: "GitHub"
-        case .issues: "Jira · GitHub"
+        case .issues: "Jira"
         }
     }
 
@@ -26,7 +26,7 @@ enum AppHeaderLogic {
         case .today: "Today"
         case .projects: "Projects"
         case .pullRequests: "Pull requests"
-        case .issues: "Issues"
+        case .issues: "Jira"
         }
     }
 }

@@ -50,7 +50,7 @@ describe('openDb', () => {
     db.close();
   });
 
-  it('adds the phase 4 columns to a database created before them', () => {
+  it('adds the migrated columns to a database created before them', () => {
     dir = mkdtempSync(join(tmpdir(), 'workbench-db-'));
     const path = join(dir, 'legacy.db');
 

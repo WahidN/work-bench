@@ -20,6 +20,7 @@ struct JiraRow: Identifiable, Equatable {
     let showsCreatePr: Bool
     let ticketId: Int?
     let isPinned: Bool
+    let showsPin: Bool
     let url: String?
 }
 
@@ -85,6 +86,7 @@ enum JiraLogic {
                     showsCreatePr: canCreatePr(ticket),
                     ticketId: ticket?.id,
                     isPinned: todo.pinned,
+                    showsPin: todo.promotedTicketId == nil,
                     url: (todo.url?.isEmpty ?? true) ? nil : todo.url
                 )
             }

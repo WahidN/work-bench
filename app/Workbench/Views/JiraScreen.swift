@@ -4,6 +4,7 @@ struct JiraScreen: View {
     @Bindable var viewModel: JiraViewModel
     let projects: [Project]
     let tickets: [Ticket]
+    let onDidMutate: () -> Void
 
     private var groups: [JiraProjectGroup] {
         JiraLogic.groups(todos: viewModel.todos, projects: projects)
@@ -77,9 +78,9 @@ struct JiraScreen: View {
                         JiraIssueRow(
                             row: row,
                             isBusy: viewModel.busyTodoId == row.id,
-                            onPromote: { Task { await viewModel.promote(row) } },
+                            onPromote: { Task { await viewModel.promote(row); onDidMutate() } },
                             onTogglePin: { Task { await viewModel.togglePin(row) } },
-                            onCreatePr: { Task { await viewModel.createPr(row) } }
+                            onCreatePr: { Task { await viewModel.createPr(row); onDidMutate() } }
                         )
                     }
                 }
@@ -159,12 +160,14 @@ private struct JiraIssueRow: View {
                     .disabled(isBusy)
                     .help("Create a pull request for this issue's fix")
             }
-            JiraIconButton(
-                symbol: row.isPinned ? "pin.fill" : "pin",
-                tint: row.isPinned ? Theme.nocturneAccent : Theme.Neutral.n700,
-                label: row.isPinned ? "Pinned" : "Pin to today",
-                action: onTogglePin
-            )
+            if row.showsPin {
+                JiraIconButton(
+                    symbol: row.isPinned ? "pin.fill" : "pin",
+                    tint: row.isPinned ? Theme.nocturneAccent : Theme.Neutral.n700,
+                    label: row.isPinned ? "Pinned" : "Pin to today",
+                    action: onTogglePin
+                )
+            }
             if let url = row.url, let link = URL(string: url) {
                 Link(destination: link) {
                     Image(systemName: "arrow.up.right.square").font(.system(size: 14))

@@ -125,7 +125,12 @@ struct ContentView: View {
                 onTogglePinTodo: { todo in Task { await todayViewModel.togglePin(todo) } }
             )
         case .issues:
-            JiraScreen(viewModel: jiraViewModel, projects: projectsViewModel.projects, tickets: ticketsViewModel.tickets)
+            JiraScreen(
+                viewModel: jiraViewModel,
+                projects: projectsViewModel.projects,
+                tickets: ticketsViewModel.tickets,
+                onDidMutate: { Task { await ticketsViewModel.load() } }
+            )
         case .pullRequests:
             PRsScreen(viewModel: prsViewModel, onOpenAgent: openAgent)
         case .projects:

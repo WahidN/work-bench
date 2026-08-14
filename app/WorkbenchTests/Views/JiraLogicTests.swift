@@ -165,3 +165,15 @@ private func ticket(id: Int, status: TicketStatus, prId: Int? = nil) -> Ticket {
 
     #expect(rows[0].isPinned)
 }
+
+@Test func thePinIsHiddenOnceARowIsPromoted() {
+    let unpromoted = JiraLogic.rows(todos: [jiraTodo(id: 1)], key: "MR", tickets: [])
+    #expect(unpromoted[0].showsPin)
+
+    let promoted = JiraLogic.rows(
+        todos: [jiraTodo(id: 1, promotedTicketId: 9, done: true)],
+        key: "MR",
+        tickets: [ticket(id: 9, status: .sparring)]
+    )
+    #expect(promoted[0].showsPin == false, "a promoted issue's ticket is pinnable from Today instead")
+}
