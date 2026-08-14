@@ -69,6 +69,31 @@ describe('listTodayTodos', () => {
 
     expect(listTodayTodos(db).map((t) => t.id)).toEqual([open.id, doneToday.id]);
   });
+
+  const jiraIssue = { source: 'jira' as const, sourceId: 'JIRA-DEMO-1', title: '[DEMO-1] Update env vars', url: 'https://x/browse/DEMO-1', body: 'Redirect loop on logout.', projectKey: 'DEMO' };
+
+  it('excludes a mirrored jira todo even though it is open', () => {
+    const open = createManualTodo(db, 'still open');
+    upsertJiraTodo(db, jiraIssue, null);
+
+    expect(listTodayTodos(db).map((t) => t.id)).toEqual([open.id]);
+  });
+
+  it('excludes a jira todo completed today', () => {
+    const open = createManualTodo(db, 'still open');
+    upsertJiraTodo(db, jiraIssue, null);
+    const jiraTodo = listTodos(db).find((t) => t.source === 'jira')!;
+    setTodoDone(db, jiraTodo.id, true);
+
+    expect(listTodayTodos(db).map((t) => t.id)).toEqual([open.id]);
+  });
+
+  it('includes a manual todo completed today', () => {
+    const doneToday = createManualTodo(db, 'done today');
+    setTodoDone(db, doneToday.id, true);
+
+    expect(listTodayTodos(db).map((t) => t.id)).toEqual([doneToday.id]);
+  });
 });
 
 describe('upsertJiraTodo / reconcileJiraTodos', () => {
