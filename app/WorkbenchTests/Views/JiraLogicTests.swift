@@ -143,6 +143,16 @@ private func ticket(id: Int, status: TicketStatus, prId: Int? = nil) -> Ticket {
     #expect(rows[0].stateLabel == "In review")
 }
 
+@Test func aPromotableStatusWithAnExistingPrStillDoesNotOfferCreatePr() {
+    let rows = JiraLogic.rows(
+        todos: [jiraTodo(id: 1, promotedTicketId: 9, done: true)],
+        key: "MR",
+        tickets: [ticket(id: 9, status: .sparring, prId: 4)]
+    )
+
+    #expect(rows[0].showsCreatePr == false, "a PR already exists, even though the status alone would allow one")
+}
+
 @Test func aPromotedRowWhoseTicketIsNotLoadedYetShowsNoState() {
     let rows = JiraLogic.rows(todos: [jiraTodo(id: 1, promotedTicketId: 9, done: true)], key: "MR", tickets: [])
 
