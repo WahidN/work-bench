@@ -29,10 +29,14 @@ export function registerTodosRoutes(app: Express, db: Database.Database): void {
       res.status(400).json({ error: 'priority must be high, med or low' });
       return;
     }
+    if (done !== undefined && typeof done !== 'boolean') {
+      res.status(400).json({ error: 'done must be a boolean' });
+      return;
+    }
     let todo = getTodo(db, id);
     if (!todo) { res.status(404).json({ error: 'not found' }); return; }
 
-    if (done !== undefined) todo = setTodoDone(db, id, Boolean(done));
+    if (done !== undefined) todo = setTodoDone(db, id, done);
     if (priority !== undefined) todo = setTodoPriority(db, id, priority);
     res.json(todo);
   });

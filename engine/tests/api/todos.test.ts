@@ -104,6 +104,12 @@ describe('PATCH /todos/:id', () => {
     expect(res.body.priority).toBe('low');
   });
 
+  it('400s when done is not a boolean', async () => {
+    const res = await auth(request(app).patch(`/todos/${todoId}`)).send({ done: 'false' });
+
+    expect(res.status).toBe(400);
+  });
+
   it('400s on an unknown priority', async () => {
     const res = await auth(request(app).patch(`/todos/${todoId}`)).send({ priority: 'urgent' });
 

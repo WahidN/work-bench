@@ -223,4 +223,39 @@ struct TodayLogicPriorityTests {
         let date = DateComponents(calendar: .current, year: 2026, month: 8, day: 14, hour: 0, minute: 30).date!
         #expect(TodayLogic.dayString(for: date) == "2026-08-14")
     }
+
+    @Test func priorityColorsMatchTheTokenRamp() {
+        #expect(TodayLogic.priorityColor(.high) == Theme.Accent.a300)
+        #expect(TodayLogic.priorityColor(.med) == Theme.Neutral.n500)
+        #expect(TodayLogic.priorityColor(.low) == Theme.Neutral.n700)
+    }
+}
+
+@Suite
+struct TodayLogicColorTests {
+    @Test func sectionLabelColorsMatchTheTokenRamp() {
+        let sections = TodayLogic.sections(
+            todos: [todo(id: 1, dueAt: "2026-08-12"), todo(id: 2, done: true, dueAt: "2026-08-14")],
+            pinnedTickets: [], pinnedPullRequests: [], tickets: [], projects: projects, today: "2026-08-14"
+        )
+
+        #expect(sections.map(\.label) == ["Overdue", "Today", "Done"])
+        #expect(sections[0].color == Theme.Accent.a300)
+        #expect(sections[1].color == Theme.Neutral.n500)
+        #expect(sections[2].color == Theme.Neutral.n700)
+    }
+
+    @Test func ticketStatusColorsCoverAllFiveCases() {
+        #expect(TodayLogic.statusColor(TicketStatus.new) == Theme.Status.needsReview)
+        #expect(TodayLogic.statusColor(TicketStatus.sparring) == Theme.Status.changesRequested)
+        #expect(TodayLogic.statusColor(TicketStatus.inReview) == Theme.Status.approved)
+        #expect(TodayLogic.statusColor(TicketStatus.done) == Theme.Status.approved)
+        #expect(TodayLogic.statusColor(TicketStatus.needsAttention) == Theme.Status.blocked)
+    }
+
+    @Test func prStatusColorsCoverAllThreeCases() {
+        #expect(TodayLogic.statusColor(PrStatus.open) == Theme.Status.needsReview)
+        #expect(TodayLogic.statusColor(PrStatus.needsAttention) == Theme.Status.changesRequested)
+        #expect(TodayLogic.statusColor(PrStatus.merged) == Theme.Status.approved)
+    }
 }

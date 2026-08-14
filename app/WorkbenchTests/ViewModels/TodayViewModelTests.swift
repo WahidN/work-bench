@@ -83,6 +83,7 @@ struct TodayViewModelTests {
         await viewModel.load()
         await viewModel.toggleDone(sampleTodo(id: 1))
 
+        #expect(api.setTodoDoneCalls.first?.id == 1)
         #expect(api.setTodoDoneCalls.first?.done == true)
         #expect(viewModel.todos.count == 1)
         #expect(viewModel.todos[0].done, "GET /today returns today's completions, so the row moves to Done instead of vanishing")

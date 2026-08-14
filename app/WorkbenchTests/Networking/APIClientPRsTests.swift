@@ -24,8 +24,12 @@ struct APIClientPRsTests {
 
     @Test func setPrPinnedPatchesThePinRoute() async throws {
         var capturedPath: String?
+        var capturedMethod: String?
+        var capturedBody: [String: Any]?
         let session = mockedSession { request in
             capturedPath = request.url?.path
+            capturedMethod = request.httpMethod
+            capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
             return jsonResponse(request.url!, status: 200, body: """
             {"id":142,"ticketId":1,"projectId":1,"branch":"fix/github-1","number":142,
              "url":"https://github.com/x/pull/142","status":"open","lastReviewScore":4.6,"pinned":true,
@@ -34,6 +38,8 @@ struct APIClientPRsTests {
         }
         let pr = try await APIClient(session: session, keychain: testKeychain).setPrPinned(id: 142, pinned: true)
         #expect(capturedPath == "/prs/142/pin")
+        #expect(capturedMethod == "PATCH")
+        #expect(capturedBody?["pinned"] as? Bool == true)
         #expect(pr.pinned == true)
     }
 

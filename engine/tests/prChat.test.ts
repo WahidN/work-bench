@@ -3,8 +3,8 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { openDb } from '../src/db.js';
 import { createProject } from '../src/projects.js';
-import { createTicket, getTicket } from '../src/tickets.js';
-import { recordPr, getPr, listPrMessages } from '../src/prs.js';
+import { createTicket, getTicket, setTicketPinned } from '../src/tickets.js';
+import { recordPr, getPr, listPrMessages, setPrPinned } from '../src/prs.js';
 import * as git from '../src/git.js';
 import * as claude from '../src/claude.js';
 import * as review from '../src/review.js';
@@ -68,6 +68,18 @@ describe('sendPrMessage: merge', () => {
 
     expect(result.action).toBe('merged');
     expect(git.mergePr).toHaveBeenCalledWith('/repos/demo/.worktrees/fix-github-1');
+    expect(getPr(db, prId)!.status).toBe('merged');
+    expect(getTicket(db, ticketId)!.status).toBe('done');
+  });
+
+  it('clears the pin on both the PR and its ticket', async () => {
+    setPrPinned(db, prId, true);
+    setTicketPinned(db, ticketId, true);
+
+    await sendPrMessage(db, prId, 'merge it');
+
+    expect(getPr(db, prId)!.pinned).toBe(false);
+    expect(getTicket(db, ticketId)!.pinned).toBe(false);
     expect(getPr(db, prId)!.status).toBe('merged');
     expect(getTicket(db, ticketId)!.status).toBe('done');
   });

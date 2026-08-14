@@ -77,6 +77,18 @@ struct PRsViewModelTests {
         #expect(viewModel.pullRequests.first?.status == .merged)
     }
 
+    @Test func loadClearsAPriorErrorOnceTheEngineIsBackUp() async {
+        let api = MockPRsAPI()
+        api.pullRequestsResult = .failure(APIError.transportFailed("no engine"))
+        let viewModel = PRsViewModel(api: api)
+        await viewModel.load()
+        #expect(viewModel.errorMessage != nil)
+
+        api.pullRequestsResult = .success([samplePr(id: 1)])
+        await viewModel.load()
+        #expect(viewModel.errorMessage == nil)
+    }
+
     @Test func togglePinFlipsTheFlagAndStoresTheUpdatedPr() async {
         var pinned = samplePr(id: 1)
         pinned.pinned = true

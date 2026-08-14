@@ -9,6 +9,7 @@ struct TodayScreen: View {
     let onTogglePinTicket: (Ticket) -> Void
     let onTogglePinPullRequest: (PullRequest) -> Void
     let onNavigate: (SidebarSection) -> Void
+    let onDidPromote: () -> Void
 
     @State private var draft = ""
 
@@ -26,14 +27,17 @@ struct TodayScreen: View {
     var body: some View {
         HStack(alignment: .top, spacing: Theme.Space.s8) {
             ScrollView {
-                VStack(alignment: .leading, spacing: Theme.Space.s6) {
+                LazyVStack(alignment: .leading, spacing: Theme.Space.s6) {
                     quickAdd
                     ForEach(sections) { section in
                         TaskSectionView(
                             section: section,
                             onToggle: toggle,
                             onCyclePriority: { todo in Task { await viewModel.cyclePriority(todo) } },
-                            onPromote: { todo in Task { await viewModel.promote(todo) } }
+                            onPromote: { todo in Task {
+                                await viewModel.promote(todo)
+                                onDidPromote()
+                            } }
                         )
                     }
                 }
@@ -120,7 +124,7 @@ private struct TaskSectionView: View {
     let onPromote: (Todo) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.s2) {
+        VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s3) {
                 Text(section.label)
                     .font(.system(size: Theme.FontSize.secondary))
@@ -147,6 +151,7 @@ private struct TaskRow: View {
     let onCyclePriority: (Todo) -> Void
     let onPromote: (Todo) -> Void
     @State private var isHovered = false
+    @State private var isCheckboxHovered = false
 
     private var todo: Todo? {
         if case .todo(let todo) = row.source { return todo }
@@ -203,7 +208,7 @@ private struct TaskRow: View {
                 .frame(width: 17, height: 17)
                 .overlay(
                     RoundedRectangle(cornerRadius: 5)
-                        .strokeBorder(row.isDone ? Theme.nocturneAccent : Theme.Neutral.n700, lineWidth: 1)
+                        .strokeBorder(checkboxBorderColor, lineWidth: 1)
                 )
                 .overlay {
                     if row.isDone {
@@ -215,7 +220,20 @@ private struct TaskRow: View {
         }
         .buttonStyle(.plain)
         .padding(.top, 2)
-        .accessibilityLabel(row.tag == TodayLogic.pinnedTag ? "Unpin" : "Toggle task")
+        .onHover { isCheckboxHovered = $0 }
+        .accessibilityLabel(checkboxLabel)
+    }
+
+    private var checkboxBorderColor: Color {
+        if row.isDone { return Theme.nocturneAccent }
+        return isCheckboxHovered ? Theme.nocturneAccent : Theme.Neutral.n700
+    }
+
+    private var checkboxLabel: String {
+        switch row.source {
+        case .todo: "Toggle task"
+        case .pinnedTicket, .pinnedPullRequest: "Unpin"
+        }
     }
 
     private var meta: some View {

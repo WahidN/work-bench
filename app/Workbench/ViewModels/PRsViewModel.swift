@@ -34,6 +34,7 @@ final class PRsViewModel {
     func load() async {
         do {
             pullRequests = try await api.pullRequests()
+            errorMessage = nil
         } catch {
             present(error)
         }

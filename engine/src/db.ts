@@ -122,8 +122,10 @@ function isEmptyDatabase(db: Database.Database): boolean {
 function migrate(db: Database.Database): void {
   const applied = db.pragma('user_version', { simple: true }) as number;
   for (let version = applied; version < MIGRATIONS.length; version++) {
-    db.transaction(() => db.exec(MIGRATIONS[version]))();
-    db.pragma(`user_version = ${version + 1}`);
+    db.transaction(() => {
+      db.exec(MIGRATIONS[version]);
+      db.exec(`PRAGMA user_version = ${version + 1};`);
+    })();
   }
 }
 

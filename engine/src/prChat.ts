@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import { getProject } from './projects.js';
-import { getPr, addPrMessage, updatePrStatus } from './prs.js';
-import { getTicket, updateTicketStatus } from './tickets.js';
+import { getPr, addPrMessage, updatePrStatus, setPrPinned } from './prs.js';
+import { getTicket, updateTicketStatus, setTicketPinned } from './tickets.js';
 import { openWorktree, removeWorktree, commitAll, pushBranch, getDiff, mergePr } from './git.js';
 import { runClaude } from './claude.js';
 import { reviewDiff, reviewPasses, averageScore } from './review.js';
@@ -43,8 +43,12 @@ async function mergePrChat(db: Database.Database, pr: Pr, project: Project): Pro
     await removeWorktree(project.repoPath, worktreePath);
   }
   updatePrStatus(db, pr.id, 'merged', pr.lastReviewScore);
+  setPrPinned(db, pr.id, false);
   const ticket = getTicket(db, pr.ticketId);
-  if (ticket) updateTicketStatus(db, ticket.id, 'done', pr.id);
+  if (ticket) {
+    updateTicketStatus(db, ticket.id, 'done', pr.id);
+    setTicketPinned(db, ticket.id, false);
+  }
   const reply = `Merged ${pr.url}.`;
   addPrMessage(db, pr.id, 'assistant', reply);
   return { action: 'merged', reply };

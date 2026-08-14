@@ -51,8 +51,10 @@ extension Theme {
         static let a900 = Color(hex: "2B2741")
     }
 
-    /// Status hues from the handoff. Kept low-chroma and deliberately outside the
-    /// neutral and accent ramps, which is why they are literal values here.
+    /// Status hues from the handoff. `changesRequested`, `approved` and `blocked` are
+    /// genuinely ad-hoc, low-chroma hues outside the neutral and accent ramps, which is
+    /// why those three are literal values here. `needsReview` and `draft` alias the
+    /// accent and neutral ramps instead.
     enum Status {
         static let needsReview = Accent.a400
         static let changesRequested = Color(hex: "C49AB0")
