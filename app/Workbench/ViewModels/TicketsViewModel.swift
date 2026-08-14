@@ -5,6 +5,7 @@ protocol TicketsAPI {
     func ticket(id: Int) async throws -> Ticket
     func sendTicketMessage(id: Int, text: String) async throws -> ChatReply
     func createPr(ticketId: Int) async throws -> FixResult
+    func setTicketPinned(id: Int, pinned: Bool) async throws -> Ticket
 }
 
 extension APIClient: TicketsAPI {}
@@ -77,6 +78,17 @@ final class TicketsViewModel {
             await load()
         } catch {
             if token == selectToken { present(error) }
+        }
+    }
+
+    func togglePin(_ ticket: Ticket) async {
+        do {
+            let updated = try await api.setTicketPinned(id: ticket.id, pinned: !ticket.pinned)
+            if let index = tickets.firstIndex(where: { $0.id == updated.id }) {
+                tickets[index] = updated
+            }
+        } catch {
+            present(error)
         }
     }
 }

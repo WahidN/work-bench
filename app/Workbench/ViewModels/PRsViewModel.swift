@@ -6,6 +6,7 @@ protocol PRsAPI {
     func diff(prId: Int) async throws -> DiffResponse
     func sendPrMessage(id: Int, text: String) async throws -> PrChatResult
     func mergePr(id: Int) async throws -> PrChatResult
+    func setPrPinned(id: Int, pinned: Bool) async throws -> PullRequest
 }
 
 extension APIClient: PRsAPI {}
@@ -84,6 +85,17 @@ final class PRsViewModel {
             await load()
         } catch {
             if token == selectToken { present(error) }
+        }
+    }
+
+    func togglePin(_ pr: PullRequest) async {
+        do {
+            let updated = try await api.setPrPinned(id: pr.id, pinned: !pr.pinned)
+            if let index = pullRequests.firstIndex(where: { $0.id == updated.id }) {
+                pullRequests[index] = updated
+            }
+        } catch {
+            present(error)
         }
     }
 }

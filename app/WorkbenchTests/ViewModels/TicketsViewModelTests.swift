@@ -15,10 +15,12 @@ final class MockTicketsAPI: TicketsAPI {
     var ticketHandler: (Int) throws -> Ticket = { sampleTicket(id: $0) }
     var sendMessageResult: Result<ChatReply, Error> = .success(ChatReply(reply: "ok"))
     var createPrResult: Result<FixResult, Error> = .success(FixResult(ticketStatus: .inReview, prId: 1))
+    var setTicketPinnedResult: Result<Ticket, Error>?
     private(set) var ticketCalls: [Int] = []
     private(set) var sendMessageCalls: [(id: Int, text: String)] = []
     private(set) var createPrCalls: [Int] = []
     private(set) var ticketsCalls = 0
+    private(set) var setTicketPinnedCalls: [(id: Int, pinned: Bool)] = []
 
     func tickets() async throws -> [Ticket] {
         ticketsCalls += 1
@@ -35,6 +37,10 @@ final class MockTicketsAPI: TicketsAPI {
     func createPr(ticketId: Int) async throws -> FixResult {
         createPrCalls.append(ticketId)
         return try createPrResult.get()
+    }
+    func setTicketPinned(id: Int, pinned: Bool) async throws -> Ticket {
+        setTicketPinnedCalls.append((id, pinned))
+        return try setTicketPinnedResult!.get()
     }
 }
 
@@ -89,5 +95,19 @@ struct TicketsViewModelTests {
         await viewModel.select(sampleTicket(id: 1))
         await viewModel.createPr()
         #expect(viewModel.errorMessage == "ticket already has a PR")
+    }
+
+    @Test func togglePinFlipsTheFlagAndStoresTheUpdatedTicket() async {
+        var pinned = sampleTicket(id: 1)
+        pinned.pinned = true
+        let api = MockTicketsAPI()
+        api.ticketsResult = .success([sampleTicket(id: 1)])
+        api.setTicketPinnedResult = .success(pinned)
+        let viewModel = TicketsViewModel(api: api)
+        await viewModel.load()
+        await viewModel.togglePin(sampleTicket(id: 1))
+
+        #expect(api.setTicketPinnedCalls.first?.pinned == true)
+        #expect(viewModel.tickets[0].pinned)
     }
 }
