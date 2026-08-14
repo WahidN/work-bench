@@ -3,14 +3,22 @@ import { getProject } from './projects.js';
 import { getTicket, listTickets, findTicketBySource, createTicket } from './tickets.js';
 import { listPrs } from './prs.js';
 import { analyzeIssue } from './analyze.js';
-import type { Todo, SourceIssue, Project, Ticket, TicketStatus, PrStatus } from './types.js';
+import type { Todo, SourceIssue, Project, Ticket, TicketStatus, PrStatus, TodoPriority } from './types.js';
 
 function rowToTodo(row: any): Todo {
   return {
     id: row.id, source: row.source, sourceId: row.source_id, text: row.text, body: row.body, url: row.url,
     projectId: row.project_id, canPromote: !!row.can_promote, done: !!row.done,
-    promotedTicketId: row.promoted_ticket_id, createdAt: row.created_at,
+    promotedTicketId: row.promoted_ticket_id, priority: row.priority, dueAt: row.due_at,
+    doneAt: row.done_at, createdAt: row.created_at,
   };
+}
+
+/** The local calendar date as YYYY-MM-DD. Not the UTC date: a task added at 00:30 belongs to that day. */
+export function localDate(date: Date = new Date()): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 export function listTodos(db: Database.Database, filter: { done?: boolean } = {}): Todo[] {
@@ -25,18 +33,28 @@ export function getTodo(db: Database.Database, id: number): Todo | null {
   return row ? rowToTodo(row) : null;
 }
 
-export function createManualTodo(db: Database.Database, text: string): Todo {
+export function createManualTodo(
+  db: Database.Database,
+  text: string,
+  options: { priority?: TodoPriority; dueAt?: string } = {}
+): Todo {
   const result = db
     .prepare(
-      `INSERT INTO todos (source, source_id, text, body, can_promote, done, created_at)
-       VALUES ('manual', NULL, ?, '', 0, 0, ?)`
+      `INSERT INTO todos (source, source_id, text, body, can_promote, done, priority, due_at, created_at)
+       VALUES ('manual', NULL, ?, '', 0, 0, ?, ?, ?)`
     )
-    .run(text, new Date().toISOString());
+    .run(text, options.priority ?? 'med', options.dueAt ?? localDate(), new Date().toISOString());
   return rowToTodo(db.prepare('SELECT * FROM todos WHERE id = ?').get(result.lastInsertRowid));
 }
 
 export function setTodoDone(db: Database.Database, id: number, done: boolean): Todo | null {
-  db.prepare('UPDATE todos SET done = ? WHERE id = ?').run(done ? 1 : 0, id);
+  db.prepare('UPDATE todos SET done = ?, done_at = ? WHERE id = ?').run(done ? 1 : 0, done ? localDate() : null, id);
+  const row = db.prepare('SELECT * FROM todos WHERE id = ?').get(id);
+  return row ? rowToTodo(row) : null;
+}
+
+export function setTodoPriority(db: Database.Database, id: number, priority: TodoPriority): Todo | null {
+  db.prepare('UPDATE todos SET priority = ? WHERE id = ?').run(priority, id);
   const row = db.prepare('SELECT * FROM todos WHERE id = ?').get(id);
   return row ? rowToTodo(row) : null;
 }
@@ -78,7 +96,8 @@ export async function promoteTodo(db: Database.Database, todoId: number): Promis
     source: 'jira', sourceId: todo.sourceId, projectId: project.id,
     title: todo.text, body: todo.body, url: todo.url ?? '', analysis,
   });
-  db.prepare('UPDATE todos SET done = 1, promoted_ticket_id = ? WHERE id = ?').run(ticket.id, todo.id);
+  db.prepare('UPDATE todos SET done = 1, done_at = ?, promoted_ticket_id = ? WHERE id = ?')
+    .run(localDate(), ticket.id, todo.id);
   return ticket;
 }
 
@@ -110,6 +129,14 @@ export interface TodayView {
   todos: Todo[];
 }
 
+/** Today's task list: everything still open, plus whatever was completed today. */
+export function listTodayTodos(db: Database.Database): Todo[] {
+  return db
+    .prepare('SELECT * FROM todos WHERE done = 0 OR done_at = ? ORDER BY created_at')
+    .all(localDate())
+    .map(rowToTodo);
+}
+
 export function getTodayView(db: Database.Database): TodayView {
   const tickets = listTickets(db).filter(
     (t) => t.status === 'new' || t.status === 'sparring' || t.status === 'needs_attention'
@@ -127,5 +154,5 @@ export function getTodayView(db: Database.Database): TodayView {
     }),
   ];
 
-  return { needsInput, todos: listTodos(db, { done: false }) };
+  return { needsInput, todos: listTodayTodos(db) };
 }

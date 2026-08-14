@@ -7,6 +7,7 @@ import { recordPr } from '../src/prs.js';
 import * as analyze from '../src/analyze.js';
 import {
   listTodos, getTodo, createManualTodo, setTodoDone, upsertJiraTodo, reconcileJiraTodos, promoteTodo, getTodayView,
+  setTodoPriority, listTodayTodos, localDate,
 } from '../src/todos.js';
 
 vi.mock('../src/analyze.js');
@@ -29,6 +30,44 @@ describe('manual todos', () => {
     setTodoDone(db, todo.id, true);
     expect(listTodos(db, { done: false })).toEqual([]);
     expect(listTodos(db, { done: true })[0].done).toBe(true);
+  });
+
+  it('defaults a new manual todo to med priority and due today', () => {
+    const todo = createManualTodo(db, 'reply to client');
+    expect(todo.priority).toBe('med');
+    expect(todo.dueAt).toBe(localDate());
+    expect(todo.doneAt).toBeNull();
+  });
+
+  it('stamps done_at when completed and clears it when reopened', () => {
+    const todo = createManualTodo(db, 'renew SSL cert');
+    expect(setTodoDone(db, todo.id, true)!.doneAt).toBe(localDate());
+    expect(setTodoDone(db, todo.id, false)!.doneAt).toBeNull();
+  });
+
+  it('setTodoPriority writes the new priority and leaves done untouched', () => {
+    const todo = createManualTodo(db, 'cut the release branch');
+    const updated = setTodoPriority(db, todo.id, 'high');
+    expect(updated!.priority).toBe('high');
+    expect(updated!.done).toBe(false);
+  });
+
+  it('rejects a priority outside the allowed set', () => {
+    const todo = createManualTodo(db, 'bogus');
+    expect(() => setTodoPriority(db, todo.id, 'urgent' as any)).toThrow(/CHECK/);
+  });
+});
+
+describe('listTodayTodos', () => {
+  it('returns open todos and the ones completed today, but not older completions', () => {
+    const open = createManualTodo(db, 'still open');
+    const doneToday = createManualTodo(db, 'done today');
+    const doneLastWeek = createManualTodo(db, 'done last week');
+    setTodoDone(db, doneToday.id, true);
+    setTodoDone(db, doneLastWeek.id, true);
+    db.prepare(`UPDATE todos SET done_at = '2026-08-01' WHERE id = ?`).run(doneLastWeek.id);
+
+    expect(listTodayTodos(db).map((t) => t.id)).toEqual([open.id, doneToday.id]);
   });
 });
 

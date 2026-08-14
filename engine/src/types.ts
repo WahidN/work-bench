@@ -10,6 +10,8 @@ export interface Project {
 
 export type TodoSource = 'manual' | 'jira';
 
+export type TodoPriority = 'high' | 'med' | 'low';
+
 export interface Todo {
   id: number;
   source: TodoSource;
@@ -21,6 +23,9 @@ export interface Todo {
   canPromote: boolean;
   done: boolean;
   promotedTicketId: number | null;
+  priority: TodoPriority;
+  dueAt: string | null;
+  doneAt: string | null;
   createdAt: string;
 }
 
