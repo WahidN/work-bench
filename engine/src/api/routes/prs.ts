@@ -1,6 +1,6 @@
 import type { Express } from 'express';
 import type Database from 'better-sqlite3';
-import { listPrs, getPr, listPrMessages } from '../../prs.js';
+import { listPrs, getPr, listPrMessages, setPrPinned } from '../../prs.js';
 import { getProject } from '../../projects.js';
 import { sendPrMessage } from '../../prChat.js';
 import { acquireJob, finishJob } from '../../jobs.js';
@@ -76,5 +76,14 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
       finishJob(db, job.id, 'failed', String(err));
       res.status(500).json({ error: String(err) });
     }
+  });
+
+  app.patch('/prs/:id/pin', (req, res) => {
+    const pinned = req.body?.pinned;
+    if (typeof pinned !== 'boolean') { res.status(400).json({ error: 'pinned must be a boolean' }); return; }
+
+    const pr = setPrPinned(db, Number(req.params.id), pinned);
+    if (!pr) { res.status(404).json({ error: 'not found' }); return; }
+    res.json(pr);
   });
 }

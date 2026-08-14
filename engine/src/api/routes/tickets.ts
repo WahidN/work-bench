@@ -1,6 +1,6 @@
 import type { Express } from 'express';
 import type Database from 'better-sqlite3';
-import { listTickets, getTicket, listTicketMessages } from '../../tickets.js';
+import { listTickets, getTicket, listTicketMessages, setTicketPinned } from '../../tickets.js';
 import { sendTicketMessage } from '../../ticketChat.js';
 import { runFixPipeline } from '../../fixPipeline.js';
 import { acquireJob, finishJob } from '../../jobs.js';
@@ -54,5 +54,14 @@ export function registerTicketsRoutes(app: Express, db: Database.Database): void
       finishJob(db, job.id, 'failed', String(err));
       res.status(500).json({ error: String(err) });
     }
+  });
+
+  app.patch('/tickets/:id/pin', (req, res) => {
+    const pinned = req.body?.pinned;
+    if (typeof pinned !== 'boolean') { res.status(400).json({ error: 'pinned must be a boolean' }); return; }
+
+    const ticket = setTicketPinned(db, Number(req.params.id), pinned);
+    if (!ticket) { res.status(404).json({ error: 'not found' }); return; }
+    res.json(ticket);
   });
 }

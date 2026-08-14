@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import Database from 'better-sqlite3';
 import { openDb } from '../../src/db.js';
-import { createManualTodo, promoteTodo } from '../../src/todos.js';
+import { createManualTodo, promoteTodo, setTodoDone } from '../../src/todos.js';
 import { createServer } from '../../src/api/server.js';
 
 // Only promoteTodo is faked; the rest of the module stays real so the todo rows
@@ -75,5 +75,50 @@ describe('POST /todos/:id/promote', () => {
     const res = await auth(request(app).post(`/todos/${todoId}/promote`));
 
     expect(res.status).toBe(500);
+  });
+});
+
+describe('PATCH /todos/:id', () => {
+  it('marks a todo done', async () => {
+    const res = await auth(request(app).patch(`/todos/${todoId}`)).send({ done: true });
+
+    expect(res.status).toBe(200);
+    expect(res.body.done).toBe(true);
+    expect(res.body.doneAt).not.toBeNull();
+  });
+
+  it('changes only the priority and leaves done alone', async () => {
+    const res = await auth(request(app).patch(`/todos/${todoId}`)).send({ priority: 'high' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.priority).toBe('high');
+    expect(res.body.done).toBe(false);
+  });
+
+  it('does not reopen a completed todo when only the priority is sent', async () => {
+    setTodoDone(db, todoId, true);
+
+    const res = await auth(request(app).patch(`/todos/${todoId}`)).send({ priority: 'low' });
+
+    expect(res.body.done).toBe(true);
+    expect(res.body.priority).toBe('low');
+  });
+
+  it('400s on an unknown priority', async () => {
+    const res = await auth(request(app).patch(`/todos/${todoId}`)).send({ priority: 'urgent' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('400s when neither done nor priority is sent', async () => {
+    const res = await auth(request(app).patch(`/todos/${todoId}`)).send({});
+
+    expect(res.status).toBe(400);
+  });
+
+  it('404s for a todo that does not exist', async () => {
+    const res = await auth(request(app).patch('/todos/999')).send({ done: true });
+
+    expect(res.status).toBe(404);
   });
 });

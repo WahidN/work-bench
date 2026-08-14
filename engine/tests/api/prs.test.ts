@@ -122,3 +122,24 @@ describe('POST /prs/:id/merge', () => {
     await chatCall;
   });
 });
+
+describe('PATCH /prs/:id/pin', () => {
+  it('pins and unpins the PR', async () => {
+    const pinned = await auth(request(app).patch(`/prs/${prId}/pin`)).send({ pinned: true });
+    expect(pinned.status).toBe(200);
+    expect(pinned.body.pinned).toBe(true);
+
+    const unpinned = await auth(request(app).patch(`/prs/${prId}/pin`)).send({ pinned: false });
+    expect(unpinned.body.pinned).toBe(false);
+  });
+
+  it('400s when pinned is not a boolean', async () => {
+    const res = await auth(request(app).patch(`/prs/${prId}/pin`)).send({ pinned: 'yes' });
+    expect(res.status).toBe(400);
+  });
+
+  it('404s for a PR that does not exist', async () => {
+    const res = await auth(request(app).patch('/prs/999/pin')).send({ pinned: true });
+    expect(res.status).toBe(404);
+  });
+});
