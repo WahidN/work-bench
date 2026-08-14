@@ -69,6 +69,20 @@ private func ticket(source: TicketSource, sourceId: String, status: TicketStatus
     #expect(WorkItemRef.ticket(ticket(source: .jira, sourceId: "ATL-441")) == "ATL-441")
 }
 
+@Test func todoRefStripsTheJiraPrefix() {
+    let jiraTodo = Todo(id: 1, source: .jira, sourceId: "JIRA-ATL-441", text: "[ATL-441] Refunds double-charge",
+                        body: "", url: nil, projectId: 3, canPromote: true, done: false,
+                        promotedTicketId: nil, createdAt: "2026-08-13T00:00:00.000Z")
+    #expect(WorkItemRef.todo(jiraTodo) == "ATL-441")
+}
+
+@Test func todoRefIsNilForAManualTask() {
+    let manualTodo = Todo(id: 2, source: .manual, sourceId: nil, text: "cut the release branch",
+                          body: "", url: nil, projectId: nil, canPromote: false, done: false,
+                          promotedTicketId: nil, createdAt: "2026-08-13T00:00:00.000Z")
+    #expect(WorkItemRef.todo(manualTodo) == nil)
+}
+
 @Test func pullRequestStatusLabelsMatchTheMockup() {
     #expect(WorkItemStatusLabel.pullRequest(.open) == "Needs review")
     #expect(WorkItemStatusLabel.pullRequest(.needsAttention) == "Changes requested")

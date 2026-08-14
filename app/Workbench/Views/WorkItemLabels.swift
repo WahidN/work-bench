@@ -39,6 +39,12 @@ enum WorkItemRef {
             return String(withoutPrefix[withoutPrefix.index(after: lastSlash)...])
         }
     }
+
+    /// "JIRA-ATL-441" -> "ATL-441". Nil for a manual task, which has no source reference.
+    static func todo(_ todo: Todo) -> String? {
+        guard todo.source == .jira, let sourceId = todo.sourceId else { return nil }
+        return stripping("JIRA-", from: sourceId)
+    }
 }
 
 enum WorkItemStatusLabel {
