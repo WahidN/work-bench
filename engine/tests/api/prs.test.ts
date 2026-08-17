@@ -143,3 +143,17 @@ describe('PATCH /prs/:id/pin', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('GET /prs and /prs/:id', () => {
+  it('returns every field the app decodes, on both the list and the detail', async () => {
+    const listed = await auth(request(app).get('/prs'));
+    expect(listed.status).toBe(200);
+    for (const key of ['title', 'reviewState', 'isDraft', 'githubUpdatedAt', 'authoredByMe', 'assignedToMe', 'messageCount', 'pinned']) {
+      expect(listed.body[0]).toHaveProperty(key);
+    }
+    const detail = await auth(request(app).get(`/prs/${listed.body[0].id}`));
+    for (const key of ['title', 'reviewState', 'isDraft', 'githubUpdatedAt', 'authoredByMe', 'assignedToMe', 'messageCount']) {
+      expect(detail.body).toHaveProperty(key);
+    }
+  });
+});
