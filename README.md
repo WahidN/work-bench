@@ -122,7 +122,6 @@ revision instruction.
 ```
 engine/   Node + TypeScript server, SQLite, source adapters, fix pipeline
 app/      SwiftUI macOS app (project.yml drives XcodeGen)
-docs/     Design spec and the phased redesign plans
 ```
 
 ## Status
@@ -133,7 +132,3 @@ the Today dashboard, the Projects card grid, and a dedicated Jira screen.
 
 Not built yet: the command palette, the final token cleanup, and the Raycast
 quick-add extension.
-
-The design spec is in
-[`docs/superpowers/specs/2026-08-11-workbench-design.md`](docs/superpowers/specs/2026-08-11-workbench-design.md)
-and the phase plans are in [`docs/superpowers/plans/`](docs/superpowers/plans/).
