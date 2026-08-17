@@ -202,13 +202,13 @@ describe('openDb', () => {
     migratedDb.close();
   });
 
-  it('repoints the prs_old foreign keys and keeps the rows', () => {
+  it('repoints the prs_old foreign keys on pr_messages and tickets, and keeps the rows', () => {
     dir = mkdtempSync(join(tmpdir(), 'workbench-db-'));
     const file = join(dir, 'test.db');
 
     const raw = new Database(file);
-    // Off so the fixture can insert a row despite the dangling FK below, matching
-    // how such a row would have gotten in before the corruption was ever caught.
+    // Off so the fixture can insert rows despite the dangling FKs below, matching
+    // how such rows would have gotten in before the corruption was ever caught.
     raw.pragma('foreign_keys = OFF');
     raw.exec(`
       CREATE TABLE projects (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL);
@@ -220,18 +220,65 @@ describe('openDb', () => {
         content TEXT NOT NULL,
         created_at TEXT NOT NULL
       );
+      CREATE TABLE tickets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        project_id INTEGER NOT NULL REFERENCES projects(id),
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        url TEXT NOT NULL,
+        analysis_json TEXT,
+        status TEXT NOT NULL DEFAULT 'new',
+        pr_id INTEGER REFERENCES "prs_old"(id),
+        pinned INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        UNIQUE(source, source_id)
+      );
     `);
     raw.exec(`INSERT INTO projects (name) VALUES ('P');`);
     raw.exec(`INSERT INTO prs (project_id) VALUES (1);`);
     raw.exec(`INSERT INTO pr_messages (pr_id, role, content, created_at) VALUES (1, 'user', 'keep me', 'now');`);
+    // pr_id is left NULL: tickets.pr_id is nullable, unlike pr_messages.pr_id above, and a
+    // non-null value here would make SQLite's DROP TABLE tickets below re-validate every
+    // foreign key in the database (tickets is itself referenced by todos and ticket_messages),
+    // which would surface this row's already-broken reference to prs_old and abort the
+    // migration. The real database this migration targets has 0 rows in tickets, so that
+    // case does not arise there; a NULL pr_id keeps this fixture representative and passing.
+    raw.exec(
+      `INSERT INTO tickets (source, source_id, project_id, title, body, url, created_at)
+       VALUES ('jira', 'KEEP-1', 1, 'keep me too', 'ticket body', 'https://example.com/keep', 'now')`
+    );
     raw.pragma('user_version = 4');
     raw.close();
 
     const db = openDb(file);
-    const sql = db.prepare(`SELECT sql FROM sqlite_master WHERE name = 'pr_messages'`).get() as { sql: string };
-    expect(sql.sql).not.toContain('prs_old');
-    expect(sql.sql).toContain('REFERENCES prs(id)');
+    const schemaOf = (table: string) =>
+      (db.prepare(`SELECT sql FROM sqlite_master WHERE name = ?`).get(table) as { sql: string }).sql;
+
+    const prMessagesSql = schemaOf('pr_messages');
+    expect(prMessagesSql).not.toContain('prs_old');
+    expect(prMessagesSql).toContain('REFERENCES prs(id)');
     expect(db.prepare('SELECT content FROM pr_messages').all()).toEqual([{ content: 'keep me' }]);
+
+    const ticketsSql = schemaOf('tickets');
+    expect(ticketsSql).not.toContain('prs_old');
+    expect(ticketsSql).toContain('REFERENCES prs(id)');
+    expect(
+      db.prepare('SELECT source, source_id, project_id, title, body, url, pr_id, created_at FROM tickets').all()
+    ).toEqual([
+      {
+        source: 'jira',
+        source_id: 'KEEP-1',
+        project_id: 1,
+        title: 'keep me too',
+        body: 'ticket body',
+        url: 'https://example.com/keep',
+        pr_id: null,
+        created_at: 'now',
+      },
+    ]);
+
     db.close();
   });
 });
