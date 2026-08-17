@@ -30,6 +30,10 @@ enum ProjectsLogic {
         }
     }
 
+    static func prCountLabel(_ count: Int) -> String {
+        "\(count) \(count == 1 ? "PR" : "PRs")"
+    }
+
     static func activeCount(_ projects: [Project]) -> Int {
         projects.filter { $0.status == .active }.count
     }

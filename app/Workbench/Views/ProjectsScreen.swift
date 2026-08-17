@@ -62,7 +62,7 @@ private struct ProjectCardView: View {
 
                 Spacer(minLength: Theme.Space.s3)
 
-                Text("\(card.openCount) open · \(card.prCount) PRs · \(card.activity)")
+                Text("\(card.openCount) open · \(ProjectsLogic.prCountLabel(card.prCount)) · \(card.activity)")
                     .font(.system(size: Theme.FontSize.tableMeta))
                     .foregroundStyle(Theme.Neutral.n600)
                     .padding(.top, Theme.Space.s3)

@@ -101,6 +101,12 @@ private let noon = ISO8601DateFormatter().date(from: "2026-08-17T12:00:00Z")!
     #expect(cards[0].prCount == 2, "open and needs-attention both count, only merged is excluded")
 }
 
+@Test func prCountLabelPluralisesOnlyBeyondOne() {
+    #expect(ProjectsLogic.prCountLabel(0) == "0 PRs")
+    #expect(ProjectsLogic.prCountLabel(1) == "1 PR")
+    #expect(ProjectsLogic.prCountLabel(2) == "2 PRs")
+}
+
 @Test func emptyStateTextIsTheExactCopy() {
     #expect(ProjectsLogic.emptyStateText == "No projects yet. Add one to get started.")
 }
