@@ -3,7 +3,7 @@ import Foundation
 @testable import Workbench
 
 private func makePr(
-    id: Int, number: Int = 24, projectId: Int = 1, draft: Bool = false,
+    id: Int, number: Int? = 24, projectId: Int = 1, draft: Bool = false,
     review: PrReviewState? = nil, authored: Bool = false, assigned: Bool = false,
     messages: Int = 0, updated: String? = "2026-08-17T10:00:00Z"
 ) -> PullRequest {
@@ -71,5 +71,11 @@ private let project = Project(
         let rows = PRsLogic.rows(prs: [orphan], projects: [project], filter: .assignedToMe, now: Date())
         #expect(rows.first?.projectName == "")
         #expect(rows.first?.ref == "#24")
+    }
+
+    @Test func dropsTheHashWhenTheNumberIsMissing() {
+        let noNumberYet = makePr(id: 1, number: nil, assigned: true)
+        let rows = PRsLogic.rows(prs: [noNumberYet], projects: [project], filter: .assignedToMe, now: Date())
+        #expect(rows.first?.ref == "acv-website")
     }
 }

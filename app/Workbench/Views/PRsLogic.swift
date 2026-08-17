@@ -1,4 +1,4 @@
-import SwiftUI
+import Foundation
 
 enum PrFilter: String, CaseIterable, Identifiable {
     case assignedToMe
@@ -58,12 +58,12 @@ enum PRsLogic {
         prs.filter { keep($0, filter) }.map { pr in
             let project = projects.first { $0.id == pr.projectId }
             let repo = project?.githubRepo.map(repoName(from:)) ?? ""
-            let number = pr.number.map(String.init) ?? ""
+            let ref = pr.number.map { "\(repo)#\($0)" } ?? repo
             return PrRow(
                 id: pr.id,
                 pr: pr,
                 title: pr.title,
-                ref: "\(repo)#\(number)",
+                ref: ref,
                 projectName: project?.name ?? "",
                 statusLabel: statusLabel(pr),
                 updatedText: updatedText(pr, now: now),
