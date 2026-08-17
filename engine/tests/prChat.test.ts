@@ -4,7 +4,7 @@ import Database from 'better-sqlite3';
 import { openDb } from '../src/db.js';
 import { createProject } from '../src/projects.js';
 import { createTicket, getTicket, setTicketPinned } from '../src/tickets.js';
-import { recordPr, getPr, listPrMessages, setPrPinned } from '../src/prs.js';
+import { recordPr, getPr, listPrMessages, setPrPinned, upsertGithubPr } from '../src/prs.js';
 import * as git from '../src/git.js';
 import * as claude from '../src/claude.js';
 import * as review from '../src/review.js';
@@ -17,11 +17,21 @@ vi.mock('../src/review.js');
 let db: Database.Database;
 let prId: number;
 let ticketId: number;
+let projectId: number;
+
+// An ingested pull request: no ticket, and its own title is all the context there is.
+function ingestedPr() {
+  return upsertGithubPr(db, {
+    projectId, number: 88, title: 'Bump the deploy timeout', url: 'https://github.com/x/pull/88',
+    githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: false,
+    assignedToMe: true, reviewState: 'review_required', branch: 'feat/deploy-timeout',
+  });
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
   db = openDb(':memory:');
-  const projectId = createProject(db, {
+  projectId = createProject(db, {
     name: 'demo', repoPath: '/repos/demo', defaultBranch: 'main',
     githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null,
   }).id;
@@ -109,5 +119,58 @@ describe('sendPrMessage: revise', () => {
     const result = await sendPrMessage(db, prId, 'do something vague');
     expect(result.reply).toContain("didn't find a change");
     expect(git.pushBranch).not.toHaveBeenCalled();
+  });
+
+  it('reviews against the ticket when the PR has one', async () => {
+    vi.mocked(review.reviewDiff).mockResolvedValue({
+      correctness: 5, completeness: 5, quality: 5, tests: 5, regressionRisk: 5, findings: [],
+    });
+    vi.mocked(review.reviewPasses).mockReturnValue(true);
+    vi.mocked(review.averageScore).mockReturnValue(5);
+
+    await sendPrMessage(db, prId, 'also guard the email field');
+
+    expect(review.reviewDiff).toHaveBeenCalledWith(
+      '/repos/demo/.worktrees/fix-github-1',
+      expect.objectContaining({ title: 'Fix null check', body: 'b' }),
+      'diff'
+    );
+    expect(vi.mocked(claude.runClaude).mock.calls[0][0].prompt).toContain('Fix null check');
+  });
+});
+
+describe('sendPrMessage: a PR with no ticket', () => {
+  it('revises using the pull request title instead of a ticket', async () => {
+    const pr = ingestedPr();
+    vi.mocked(git.openWorktree).mockResolvedValue('/repos/demo/.worktrees/feat-deploy-timeout');
+    vi.mocked(review.reviewDiff).mockResolvedValue({
+      correctness: 5, completeness: 5, quality: 5, tests: 5, regressionRisk: 5, findings: [],
+    });
+    vi.mocked(review.reviewPasses).mockReturnValue(true);
+    vi.mocked(review.averageScore).mockReturnValue(5);
+
+    const result = await sendPrMessage(db, pr.id, 'also guard the email field');
+
+    expect(result.action).toBe('revised');
+    expect(vi.mocked(claude.runClaude).mock.calls[0][0].prompt).toContain('Bump the deploy timeout');
+    expect(review.reviewDiff).toHaveBeenCalledWith(
+      '/repos/demo/.worktrees/feat-deploy-timeout',
+      { title: 'Bump the deploy timeout', body: '' },
+      'diff'
+    );
+    expect(listPrMessages(db, pr.id).map((m) => m.role)).toEqual(['user', 'assistant']);
+  });
+
+  it('merges without touching a ticket', async () => {
+    const pr = ingestedPr();
+    const result = await sendPrMessage(db, pr.id, 'merge it');
+
+    expect(result.action).toBe('merged');
+    expect(getPr(db, pr.id)!.status).toBe('merged');
+  });
+
+  it('stores nothing for a pull request that does not exist', async () => {
+    await expect(sendPrMessage(db, 999, 'hello')).rejects.toThrow('PR 999 not found');
+    expect(listPrMessages(db, 999)).toEqual([]);
   });
 });
