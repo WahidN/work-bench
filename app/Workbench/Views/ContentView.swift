@@ -27,6 +27,7 @@ struct ContentView: View {
     @State private var projectsViewModel = ProjectsViewModel()
     @State private var agentChatViewModel = AgentChatViewModel()
     @State private var jiraViewModel = JiraViewModel()
+    @State private var projectSheet: ProjectSheetMode?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -49,7 +50,7 @@ struct ContentView: View {
                     section: selection,
                     activeProjectCount: ProjectsLogic.activeCount(projectsViewModel.projects),
                     onOpenAgent: openProjectChat,
-                    onAddProject: {}
+                    onAddProject: { projectSheet = .create }
                 )
                 content
             }
@@ -73,6 +74,34 @@ struct ContentView: View {
                 }
             }
             .animation(.easeOut(duration: 0.16), value: agentChatViewModel.isOpen)
+            .sheet(item: $projectSheet) { mode in
+                let canDelete: Bool = {
+                    if case .edit = mode { return true }
+                    return false
+                }()
+                ProjectFormSheet(
+                    mode: mode,
+                    onSave: { draft in
+                        Task {
+                            switch mode {
+                            case .create:
+                                await projectsViewModel.create(draft.asInput())
+                            case .edit(let project):
+                                await projectsViewModel.update(project, draft.asUpdate())
+                            }
+                            if projectsViewModel.errorMessage == nil { projectSheet = nil }
+                        }
+                    },
+                    onDelete: canDelete ? {
+                        guard case .edit(let project) = mode else { return }
+                        Task {
+                            await projectsViewModel.delete(project)
+                            if projectsViewModel.errorMessage == nil { projectSheet = nil }
+                        }
+                    } : nil,
+                    onCancel: { projectSheet = nil }
+                )
+            }
         }
         .background(Theme.nocturneBg)
         .frame(minWidth: 900, minHeight: 560)
@@ -135,7 +164,16 @@ struct ContentView: View {
         case .pullRequests:
             PRsScreen(viewModel: prsViewModel, onOpenAgent: openAgent)
         case .projects:
-            ProjectsScreen(viewModel: projectsViewModel)
+            ProjectsScreen(
+                cards: ProjectsLogic.cards(
+                    projects: projectsViewModel.projects,
+                    todos: jiraViewModel.todos,
+                    tickets: ticketsViewModel.tickets,
+                    prs: prsViewModel.pullRequests,
+                    now: Date()
+                ),
+                onSelect: { project in projectSheet = .edit(project) }
+            )
         }
     }
 

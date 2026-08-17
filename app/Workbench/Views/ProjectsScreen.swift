@@ -1,114 +1,91 @@
 import SwiftUI
 
 struct ProjectsScreen: View {
-    @Bindable var viewModel: ProjectsViewModel
-    @State private var draft = ProjectDraft()
-    @State private var isCreatingNew = false
-
-    var body: some View {
-        HStack(spacing: 0) {
-            List(
-                viewModel.projects,
-                selection: Binding<Int?>(
-                    get: { isCreatingNew ? nil : viewModel.selectedProject?.id },
-                    set: { id in
-                        isCreatingNew = false
-                        viewModel.selectedProject = viewModel.projects.first { $0.id == id }
-                    }
-                )
-            ) { project in
-                Text(project.name).foregroundStyle(Theme.textPrimary)
-            }
-            .frame(width: 200)
-            .listStyle(.sidebar)
-            .safeAreaInset(edge: .bottom) {
-                Button("+ Add project") {
-                    draft = ProjectDraft()
-                    isCreatingNew = true
-                }
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            Divider()
-
-            if isCreatingNew {
-                ProjectFormView(draft: $draft, saveTitle: "Create", onSave: {
-                    Task {
-                        await viewModel.create(draft.asInput())
-                        if viewModel.errorMessage == nil {
-                            isCreatingNew = false
-                        }
-                    }
-                }, onRemove: nil)
-            } else if viewModel.selectedProject != nil {
-                ProjectFormView(draft: $draft, saveTitle: "Save", onSave: {
-                    guard let project = viewModel.selectedProject else { return }
-                    Task { await viewModel.update(project, draft.asUpdate()) }
-                }, onRemove: {
-                    guard let project = viewModel.selectedProject else { return }
-                    Task { await viewModel.delete(project) }
-                })
-            } else {
-                Text(viewModel.projects.isEmpty ? "No projects yet" : "Select a project")
-                    .foregroundStyle(Theme.textMuted)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
-        .background(Theme.background)
-        .task { await viewModel.load() }
-        .onChange(of: viewModel.selectedProject?.id, initial: true) { _, _ in
-            if let project = viewModel.selectedProject {
-                draft = ProjectDraft(project: project)
-            }
-        }
-        .alert(
-            "Error",
-            isPresented: Binding(get: { viewModel.errorMessage != nil }, set: { if !$0 { viewModel.errorMessage = nil } })
-        ) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(viewModel.errorMessage ?? "")
-        }
-    }
-}
-
-private struct ProjectFormView: View {
-    @Binding var draft: ProjectDraft
-    let saveTitle: String
-    let onSave: () -> Void
-    let onRemove: (() -> Void)?
+    let cards: [ProjectCard]
+    let onSelect: (Project) -> Void
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                labeledField("Name", text: $draft.name)
-                labeledField("Local repo path", text: $draft.repoPath)
-                labeledField("Default branch", text: $draft.defaultBranch)
-                labeledField("GitHub repo", text: $draft.githubRepo)
-                labeledField("Jira project key", text: $draft.jiraProjectKey)
-                labeledField("Sentry project slug", text: $draft.sentryProjectSlug)
-
-                HStack {
-                    Button(saveTitle, action: onSave)
-                        .tint(Theme.accent)
-                    if let onRemove {
-                        Button("Remove project", role: .destructive, action: onRemove)
+            if cards.isEmpty {
+                Text(ProjectsLogic.emptyStateText)
+                    .font(.system(size: Theme.FontSize.secondary))
+                    .foregroundStyle(Theme.Neutral.n600)
+                    .padding(Theme.Space.s8)
+            } else {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 280), spacing: Theme.Space.s4)],
+                    spacing: Theme.Space.s4
+                ) {
+                    ForEach(cards) { card in
+                        ProjectCardView(card: card, onSelect: { onSelect(card.project) })
                     }
                 }
+                .frame(maxWidth: 1180, alignment: .topLeading)
+                .padding(Theme.Space.s8)
             }
-            .padding(24)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Theme.nocturneBg)
     }
+}
 
-    private func labeledField(_ label: String, text: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label.uppercased()).font(.caption).foregroundStyle(Theme.textMuted)
-            TextField(label, text: text)
-                .textFieldStyle(.plain)
-                .padding(8)
-                .background(Theme.cardBackground)
-                .cornerRadius(6)
+private struct ProjectCardView: View {
+    let card: ProjectCard
+    let onSelect: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            VStack(alignment: .leading, spacing: Theme.Space.s3) {
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s3) {
+                    Circle().fill(card.dot).frame(width: 7, height: 7)
+                    Text(card.name)
+                        .font(Theme.heading(Theme.FontSize.cardTitle))
+                        .foregroundStyle(Theme.nocturneText)
+                    Spacer()
+                    Text(card.statusLabel)
+                        .font(.system(size: Theme.FontSize.tag))
+                        .foregroundStyle(Theme.Neutral.n400)
+                        .padding(.vertical, 2)
+                        .padding(.horizontal, 7)
+                        .background(Theme.Neutral.n900)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                }
+
+                if !card.blurb.isEmpty {
+                    Text(card.blurb)
+                        .font(.system(size: Theme.FontSize.tableMeta))
+                        .foregroundStyle(Theme.Neutral.n500)
+                        .lineSpacing(6)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer(minLength: Theme.Space.s3)
+
+                HStack(spacing: Theme.Space.s4) {
+                    Text("\(card.openCount) open")
+                    Text("\(card.prCount) PRs")
+                    Text(card.activity)
+                }
+                .font(.system(size: Theme.FontSize.tableMeta))
+                .foregroundStyle(Theme.Neutral.n600)
+                .padding(.top, Theme.Space.s3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .top) {
+                    Rectangle().fill(Theme.Neutral.n900).frame(height: 1)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 140, alignment: .topLeading)
+            .padding(Theme.Space.s6)
+            .background(Theme.nocturneSurface)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.md)
+                    .strokeBorder(isHovered ? Theme.Accent.a700 : Theme.Neutral.n900, lineWidth: 1)
+            )
         }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help("Edit \(card.name)")
     }
 }
