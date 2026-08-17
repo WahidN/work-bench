@@ -129,6 +129,31 @@ private let noon = ISO8601DateFormatter().date(from: "2026-08-17T12:00:00Z")!
     #expect(cards[0].activity == "no activity yet")
 }
 
+@Test func oneProjectsWorkNeverLeaksIntoAnothersCard() {
+    let cards = ProjectsLogic.cards(
+        projects: [project(id: 1), project(id: 2, name: "Relay")],
+        todos: [todo(id: 1, projectId: 2, createdAt: "2026-08-17T11:55:00.000Z")],
+        tickets: [ticket(id: 1, projectId: 2, createdAt: "2026-08-17T11:55:00.000Z")],
+        prs: [pullRequest(id: 1, projectId: 2, createdAt: "2026-08-17T11:55:00.000Z")],
+        now: noon
+    )
+
+    #expect(cards[0].activity == "no activity yet", "Relay's newer work must not date Atlas")
+    #expect(cards[0].openCount == 0)
+    #expect(cards[0].prCount == 0)
+    #expect(cards[1].activity == "5m ago")
+}
+
+@Test func aProjectWithOnlyTodosStillReportsActivity() {
+    let cards = ProjectsLogic.cards(
+        projects: [project(id: 1)],
+        todos: [todo(id: 1, projectId: 1, createdAt: "2026-08-17T10:00:00.000Z")],
+        tickets: [], prs: [], now: noon
+    )
+
+    #expect(cards[0].activity == "2h ago")
+}
+
 @Test func cardsKeepTheProjectsListOrderSoDotsMatchTheSidebar() {
     let cards = ProjectsLogic.cards(
         projects: [project(id: 5, name: "Beacon"), project(id: 9, name: "Compass")],
