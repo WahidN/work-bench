@@ -100,7 +100,13 @@ struct ContentView: View {
                             if projectsViewModel.errorMessage == nil { projectSheet = nil }
                         }
                     } : nil,
-                    onCancel: { projectSheet = nil }
+                    // Clears the error too: otherwise the alert, which is suppressed only
+                    // while the sheet is up, fires the moment it closes and re-shows an
+                    // error the user has already read inside the sheet.
+                    onCancel: {
+                        projectsViewModel.errorMessage = nil
+                        projectSheet = nil
+                    }
                 )
             }
             .alert(
