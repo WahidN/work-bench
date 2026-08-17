@@ -77,3 +77,89 @@ export function addPrMessage(db: Database.Database, prId: number, role: 'user' |
     .run(prId, role, content, new Date().toISOString());
   return rowToPrMessage(db.prepare('SELECT * FROM pr_messages WHERE id = ?').get(result.lastInsertRowid));
 }
+
+export interface UpsertGithubPrInput {
+  projectId: number;
+  number: number;
+  title: string;
+  url: string;
+  githubUpdatedAt: string;
+  isDraft: boolean;
+  authoredByMe: boolean;
+  assignedToMe: boolean;
+  reviewState: PrReviewState | null;
+  branch: string;
+}
+
+/// Matches on (project_id, number) so a PR the fix pipeline opened and the same
+/// PR seen from GitHub end up as one row instead of two. Status and ticket stay
+/// whatever the engine set; the branch is taken from GitHub, which reports the
+/// same name the pipeline pushed and gives an ingested PR a workable branch.
+export function findPrByNumber(db: Database.Database, projectId: number, number: number): Pr | null {
+  const row = db.prepare(`${PR_SELECT} WHERE p.project_id = ? AND p.number = ?`).get(projectId, number);
+  return row ? rowToPr(row) : null;
+}
+
+export function upsertGithubPr(db: Database.Database, input: UpsertGithubPrInput): Pr {
+  const existing = findPrByNumber(db, input.projectId, input.number);
+
+  const fields = {
+    title: input.title,
+    url: input.url,
+    githubUpdatedAt: input.githubUpdatedAt,
+    isDraft: input.isDraft ? 1 : 0,
+    authoredByMe: input.authoredByMe ? 1 : 0,
+    assignedToMe: input.assignedToMe ? 1 : 0,
+    reviewState: input.reviewState,
+    branch: input.branch,
+  };
+
+  if (existing) {
+    db.prepare(
+      `UPDATE prs SET title = @title, url = @url, github_updated_at = @githubUpdatedAt,
+       is_draft = @isDraft, authored_by_me = @authoredByMe, assigned_to_me = @assignedToMe,
+       review_state = @reviewState, branch = @branch WHERE id = @id`
+    ).run({ ...fields, id: existing.id });
+    return getPr(db, existing.id)!;
+  }
+
+  const result = db
+    .prepare(
+      `INSERT INTO prs (ticket_id, project_id, branch, number, url, status, created_at,
+         title, github_updated_at, is_draft, authored_by_me, assigned_to_me, review_state)
+       VALUES (NULL, @projectId, @branch, @number, @url, 'open', @createdAt,
+         @title, @githubUpdatedAt, @isDraft, @authoredByMe, @assignedToMe, @reviewState)`
+    )
+    .run({ ...fields, projectId: input.projectId, number: input.number, createdAt: new Date().toISOString() });
+  return getPr(db, Number(result.lastInsertRowid))!;
+}
+
+/// Deletes rows GitHub no longer returns, which is how a merged or closed PR
+/// leaves the inbox. Two guards: a row with no number is mid creation by the
+/// fix pipeline, and an empty fetch is far more likely a failed gh call than a
+/// genuinely empty inbox, so it reconciles nothing at all.
+export function reconcileGithubPrs(
+  db: Database.Database,
+  projectIds: number[],
+  seen: Array<{ projectId: number; number: number }>
+): number {
+  if (seen.length === 0 || projectIds.length === 0) return 0;
+  const keep = new Set(seen.map((s) => `${s.projectId}#${s.number}`));
+  const rows = db
+    .prepare(
+      `SELECT id, project_id, number FROM prs
+       WHERE number IS NOT NULL AND project_id IN (${projectIds.map(() => '?').join(',')})`
+    )
+    .all(...projectIds) as Array<{ id: number; project_id: number; number: number }>;
+
+  const doomed = rows.filter((row) => !keep.has(`${row.project_id}#${row.number}`));
+  const deleteMessages = db.prepare('DELETE FROM pr_messages WHERE pr_id = ?');
+  const deletePr = db.prepare('DELETE FROM prs WHERE id = ?');
+  db.transaction(() => {
+    for (const row of doomed) {
+      deleteMessages.run(row.id);
+      deletePr.run(row.id);
+    }
+  })();
+  return doomed.length;
+}

@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import { openDb } from '../src/db.js';
 import { createProject } from '../src/projects.js';
 import { createTicket } from '../src/tickets.js';
-import { recordPr, getPr, listPrs, updatePrStatus, addPrMessage, listPrMessages, setPrPinned } from '../src/prs.js';
+import { recordPr, getPr, listPrs, updatePrStatus, addPrMessage, listPrMessages, setPrPinned, upsertGithubPr, reconcileGithubPrs } from '../src/prs.js';
 
 let db: Database.Database;
 let ticketId: number;
@@ -88,5 +88,68 @@ describe('pinning a PR', () => {
 
   it('returns null for a PR that does not exist', () => {
     expect(setPrPinned(db, 999, true)).toBeNull();
+  });
+});
+
+describe('upserting a github PR', () => {
+  it('converges a pipeline PR and its github twin onto one row', () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+    const local = recordPr(db, { ticketId: null, projectId: project.id, branch: 'fix/x', number: 7, url: 'u', status: 'open' });
+
+    const merged = upsertGithubPr(db, {
+      projectId: project.id, number: 7, title: 'Fix x', url: 'u2',
+      githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false,
+      authoredByMe: true, assignedToMe: false, reviewState: 'approved', branch: 'fix/x',
+    });
+
+    expect(merged.id).toBe(local.id);
+    expect(listPrs(db)).toHaveLength(1);
+    expect(merged.title).toBe('Fix x');
+    expect(merged.branch).toBe('fix/x');
+  });
+
+  it('stores the head branch of a PR the pipeline never created', () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+    const pr = upsertGithubPr(db, {
+      projectId: project.id, number: 9, title: 'From github', url: 'u',
+      githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: true,
+      authoredByMe: false, assignedToMe: true, reviewState: null, branch: 'feat/from-github',
+    });
+    // The branch is what makes this row workable: openWorktree builds from
+    // origin/<branch>, so the agent panel needs nothing to exist locally.
+    expect(pr.branch).toBe('feat/from-github');
+    expect(pr.ticketId).toBeNull();
+    expect(pr.isDraft).toBe(true);
+  });
+});
+
+describe('reconciling github PRs', () => {
+  it('deletes a PR that no longer comes back from github', () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+    recordPr(db, { ticketId: null, projectId: project.id, branch: 'a', number: 1, url: 'u1', status: 'open' });
+    recordPr(db, { ticketId: null, projectId: project.id, branch: 'b', number: 2, url: 'u2', status: 'open' });
+
+    const removed = reconcileGithubPrs(db, [project.id], [{ projectId: project.id, number: 1 }]);
+    expect(removed).toBe(1);
+    expect(listPrs(db).map((p) => p.number)).toEqual([1]);
+  });
+
+  it('never deletes a PR that has no number yet', () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+    recordPr(db, { ticketId: null, projectId: project.id, branch: 'a', number: null, url: null, status: 'open' });
+    reconcileGithubPrs(db, [project.id], [{ projectId: project.id, number: 99 }]);
+    expect(listPrs(db)).toHaveLength(1);
+  });
+
+  it('skips reconciliation entirely when the fetch came back empty', () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+    recordPr(db, { ticketId: null, projectId: project.id, branch: 'a', number: 1, url: 'u1', status: 'open' });
+    expect(reconcileGithubPrs(db, [project.id], [])).toBe(0);
+    expect(listPrs(db)).toHaveLength(1);
   });
 });
