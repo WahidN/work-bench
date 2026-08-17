@@ -12,12 +12,19 @@ export function mapGithubIssue(raw: any, repo: string): SourceIssue {
   };
 }
 
+/// gh search issues wants owner/name, but a project can hold the full repository
+/// URL as it was copied from the browser. Anything else is passed through.
+export function toRepoSlug(repo: string): string {
+  const match = repo.match(/^(?:https?:\/\/)?(?:www\.)?github\.com\/(.+)$/i);
+  return (match ? match[1] : repo).replace(/\/+$/, '').replace(/\.git$/i, '');
+}
+
 export async function fetchGithubIssues(repos: string[]): Promise<SourceIssue[]> {
   const results: SourceIssue[] = [];
   for (const repo of repos) {
     try {
       const { stdout } = await execa('gh', [
-        'search', 'issues', '--assignee=@me', '--state=open', '--repo', repo,
+        'search', 'issues', '--assignee=@me', '--state=open', '--repo', toRepoSlug(repo),
         '--json', 'number,title,body,url',
       ]);
       const raws = JSON.parse(stdout || '[]');
