@@ -35,6 +35,19 @@ struct ProjectsViewModelTests {
         #expect(viewModel.selectedProject?.id == 1)
     }
 
+    @Test func loadClearsAnErrorLeftBehindByAnEarlierFailure() async {
+        let api = MockProjectsAPI()
+        api.projectsResult = .failure(APIError.transportFailed("engine is down"))
+        let viewModel = ProjectsViewModel(api: api)
+        await viewModel.load()
+        #expect(viewModel.errorMessage != nil)
+
+        api.projectsResult = .success([sampleProject(id: 1)])
+        await viewModel.load()
+        #expect(viewModel.errorMessage == nil)
+        #expect(viewModel.projects.map(\.id) == [1])
+    }
+
     @Test func createAppendsAndSelectsTheNewProject() async {
         let api = MockProjectsAPI()
         api.createResult = .success(sampleProject(id: 5, name: "new-one"))

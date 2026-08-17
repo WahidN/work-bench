@@ -14,6 +14,7 @@ enum ProjectSheetMode: Identifiable {
 
 struct ProjectFormSheet: View {
     let mode: ProjectSheetMode
+    let errorMessage: String?
     let onSave: (ProjectDraft) -> Void
     let onDelete: (() -> Void)?
     let onCancel: () -> Void
@@ -22,11 +23,13 @@ struct ProjectFormSheet: View {
 
     init(
         mode: ProjectSheetMode,
+        errorMessage: String?,
         onSave: @escaping (ProjectDraft) -> Void,
         onDelete: (() -> Void)?,
         onCancel: @escaping () -> Void
     ) {
         self.mode = mode
+        self.errorMessage = errorMessage
         self.onSave = onSave
         self.onDelete = onDelete
         self.onCancel = onCancel
@@ -72,12 +75,20 @@ struct ProjectFormSheet: View {
                 }
             }
 
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.system(size: Theme.FontSize.tableMeta))
+                    .foregroundStyle(Theme.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             HStack(spacing: Theme.Space.s3) {
                 Button(isCreating ? "Create" : "Save") { onSave(draft) }
                     .buttonStyle(.borderedProminent)
                     .tint(Theme.nocturneAccent)
                     .disabled(draft.name.trimmingCharacters(in: .whitespaces).isEmpty
-                              || draft.repoPath.trimmingCharacters(in: .whitespaces).isEmpty)
+                              || draft.repoPath.trimmingCharacters(in: .whitespaces).isEmpty
+                              || draft.defaultBranch.trimmingCharacters(in: .whitespaces).isEmpty)
                 Button("Cancel", action: onCancel)
                     .buttonStyle(.plain)
                     .foregroundStyle(Theme.Neutral.n400)

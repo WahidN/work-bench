@@ -81,6 +81,7 @@ struct ContentView: View {
                 }()
                 ProjectFormSheet(
                     mode: mode,
+                    errorMessage: projectsViewModel.errorMessage,
                     onSave: { draft in
                         Task {
                             switch mode {
@@ -105,7 +106,7 @@ struct ContentView: View {
             .alert(
                 "Error",
                 isPresented: Binding(
-                    get: { projectsViewModel.errorMessage != nil },
+                    get: { projectsViewModel.errorMessage != nil && !isProjectSheetOpen },
                     set: { if !$0 { projectsViewModel.errorMessage = nil } }
                 )
             ) {
@@ -185,7 +186,13 @@ struct ContentView: View {
                 ),
                 onSelect: { project in projectSheet = .edit(project) }
             )
+            .task { await projectsViewModel.load() }
         }
+    }
+
+    private var isProjectSheetOpen: Bool {
+        if case .some = projectSheet { return true }
+        return false
     }
 
     private var chatProject: Project? {

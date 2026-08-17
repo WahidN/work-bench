@@ -32,6 +32,7 @@ final class ProjectsViewModel {
             if selectedProject == nil {
                 selectedProject = projects.first
             }
+            errorMessage = nil
         } catch {
             present(error)
         }
