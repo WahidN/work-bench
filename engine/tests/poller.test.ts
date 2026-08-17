@@ -165,6 +165,21 @@ describe('runPollCycle', () => {
     });
   });
 
+  it('maps a pull request whose repo casing differs from the project', async () => {
+    const db = openDb(':memory:');
+    createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'Linku/ACV-Website', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+
+    vi.mocked(fetchMyOpenPrs).mockResolvedValue([{
+      repo: 'linku/acv-website', number: 24, title: 'Guard the deploy', url: 'u',
+      updatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+    }]);
+    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/deploy-guard' });
+
+    const summary = await runPollCycle(db);
+    expect(summary.prsSynced).toBe(1);
+    expect(listPrs(db)).toHaveLength(1);
+  });
+
   it('reports a github pull request failure without aborting the cycle', async () => {
     const db = openDb(':memory:');
     vi.mocked(fetchMyOpenPrs).mockRejectedValue(new Error('gh exploded'));

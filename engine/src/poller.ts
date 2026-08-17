@@ -31,7 +31,9 @@ async function syncGithubPrs(db: Database.Database, projects: Project[]): Promis
   const seen: Array<{ projectId: number; number: number }> = [];
 
   for (const pr of found) {
-    const project = mapped.find((p) => toRepoSlug(p.githubRepo!) === pr.repo);
+    // Lowered on both sides for the same reason fetchMyOpenPrs does it: GitHub
+    // repo names are case-insensitive and a project holds whatever was pasted.
+    const project = mapped.find((p) => toRepoSlug(p.githubRepo!).toLowerCase() === pr.repo.toLowerCase());
     if (!project) continue;
 
     const previous = findPrByNumber(db, project.id, pr.number);

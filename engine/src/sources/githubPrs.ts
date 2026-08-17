@@ -30,7 +30,10 @@ async function search(filter: '--author=@me' | '--assignee=@me'): Promise<any[]>
 }
 
 export async function fetchMyOpenPrs(repoSlugs: string[]): Promise<GithubPr[]> {
-  const mapped = new Set(repoSlugs.map(toRepoSlug));
+  // GitHub repo names are case-insensitive, and a project can hold any casing the
+  // user pasted, so the match is lowered on both sides. Only the comparison: the
+  // repo kept on the result is GitHub's own, which gh pr view is called with.
+  const mapped = new Set(repoSlugs.map((slug) => toRepoSlug(slug).toLowerCase()));
   if (mapped.size === 0) return [];
 
   let authored: any[];
@@ -46,7 +49,7 @@ export async function fetchMyOpenPrs(repoSlugs: string[]): Promise<GithubPr[]> {
   const take = (rows: any[], key: 'authoredByMe' | 'assignedToMe') => {
     for (const row of rows) {
       const repo = row.repository?.nameWithOwner ?? '';
-      if (!mapped.has(repo)) continue;
+      if (!mapped.has(repo.toLowerCase())) continue;
       const existing = byUrl.get(row.url);
       if (existing) {
         existing[key] = true;

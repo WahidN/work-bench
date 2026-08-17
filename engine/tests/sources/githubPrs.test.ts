@@ -42,6 +42,16 @@ describe('fetchMyOpenPrs', () => {
     expect(prs).toHaveLength(1);
   });
 
+  it('matches a project that stored the repo in different casing', async () => {
+    vi.mocked(execa).mockResolvedValue({
+      stdout: JSON.stringify([hit({ repository: { nameWithOwner: 'Linku/ACV-Website' } })]),
+    } as any);
+    const prs = await fetchMyOpenPrs(['linku/acv-website']);
+    expect(prs).toHaveLength(1);
+    // GitHub's own casing is kept, because gh pr view is called with it later.
+    expect(prs[0].repo).toBe('Linku/ACV-Website');
+  });
+
   it('returns nothing when there are no mapped repos, without shelling out', async () => {
     expect(await fetchMyOpenPrs([])).toEqual([]);
     expect(execa).not.toHaveBeenCalled();
