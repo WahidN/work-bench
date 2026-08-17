@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { openDb } from '../src/db.js';
 import { createProject } from '../src/projects.js';
-import { createTicket } from '../src/tickets.js';
+import { createTicket, getTicket, updateTicketStatus } from '../src/tickets.js';
 import { recordPr, getPr, listPrs, updatePrStatus, addPrMessage, listPrMessages, setPrPinned, upsertGithubPr, reconcileGithubPrs } from '../src/prs.js';
 
 let db: Database.Database;
@@ -143,6 +143,22 @@ describe('reconciling github PRs', () => {
     recordPr(db, { ticketId: null, projectId: project.id, branch: 'a', number: null, url: null, status: 'open' });
     reconcileGithubPrs(db, [project.id], [{ projectId: project.id, number: 99 }]);
     expect(listPrs(db)).toHaveLength(1);
+  });
+
+  it('deletes a pipeline PR that a ticket still points at', () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+    const ticket = createTicket(db, {
+      source: 'github', sourceId: 'GH-demo#1', projectId: project.id, title: 't', body: 'b', url: 'u', analysis: null,
+    });
+    const pr = recordPr(db, { ticketId: ticket.id, projectId: project.id, branch: 'fix/gh-demo-1', number: 42, url: 'u42', status: 'open' });
+    updateTicketStatus(db, ticket.id, 'in_review', pr.id);
+
+    const removed = reconcileGithubPrs(db, [project.id], [{ projectId: project.id, number: 7 }]);
+
+    expect(removed).toBe(1);
+    expect(listPrs(db)).toEqual([]);
+    expect(getTicket(db, ticket.id)!.prId).toBeNull();
   });
 
   it('skips reconciliation entirely when the fetch came back empty', () => {

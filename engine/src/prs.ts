@@ -154,10 +154,15 @@ export function reconcileGithubPrs(
 
   const doomed = rows.filter((row) => !keep.has(`${row.project_id}#${row.number}`));
   const deleteMessages = db.prepare('DELETE FROM pr_messages WHERE pr_id = ?');
+  // A ticket keeps pointing at the PR the fix pipeline opened for it, and
+  // foreign keys are enforced, so the reference has to go before the row does.
+  // The ticket itself stays: its history is worth more than the link.
+  const clearTicketLink = db.prepare('UPDATE tickets SET pr_id = NULL WHERE pr_id = ?');
   const deletePr = db.prepare('DELETE FROM prs WHERE id = ?');
   db.transaction(() => {
     for (const row of doomed) {
       deleteMessages.run(row.id);
+      clearTicketLink.run(row.id);
       deletePr.run(row.id);
     }
   })();
