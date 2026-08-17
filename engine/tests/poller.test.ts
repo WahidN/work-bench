@@ -6,14 +6,23 @@ import { listTickets } from '../src/tickets.js';
 import * as jiraSource from '../src/sources/jira.js';
 import * as sentrySource from '../src/sources/sentry.js';
 import * as githubSource from '../src/sources/github.js';
+import { fetchMyOpenPrs, fetchPrDetail } from '../src/sources/githubPrs.js';
 import * as analyze from '../src/analyze.js';
 import * as todos from '../src/todos.js';
+import { listPrs, upsertGithubPr } from '../src/prs.js';
 import { getSecret } from '../src/keychain.js';
 import { runPollCycle, startPoller } from '../src/poller.js';
 
 vi.mock('../src/sources/jira.js');
 vi.mock('../src/sources/sentry.js');
-vi.mock('../src/sources/github.js');
+// A factory keeps toRepoSlug real: poller.ts uses it to match a pull request's
+// repo against a project, and an automocked toRepoSlug would just return
+// undefined, so every pull request would fail to match its project.
+vi.mock('../src/sources/github.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/sources/github.js')>();
+  return { ...actual, fetchGithubIssues: vi.fn() };
+});
+vi.mock('../src/sources/githubPrs.js');
 vi.mock('../src/analyze.js');
 vi.mock('../src/todos.js');
 vi.mock('../src/keychain.js');
@@ -30,6 +39,7 @@ beforeEach(() => {
   vi.mocked(jiraSource.fetchAssignedJiraIssues).mockResolvedValue([]);
   vi.mocked(sentrySource.fetchSentryIssues).mockResolvedValue([]);
   vi.mocked(githubSource.fetchGithubIssues).mockResolvedValue([]);
+  vi.mocked(fetchMyOpenPrs).mockResolvedValue([]);
   vi.mocked(getSecret).mockResolvedValue('linku-bv');
   vi.mocked(todos.countJiraTodos).mockReturnValue(0);
 });
@@ -136,6 +146,45 @@ describe('runPollCycle', () => {
     await runPollCycle(db);
 
     expect(todos.reconcileJiraTodos).toHaveBeenCalledWith(db, []);
+  });
+
+  it('syncs github pull requests and reports the count', async () => {
+    const db = openDb(':memory:');
+    createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+
+    vi.mocked(fetchMyOpenPrs).mockResolvedValue([{
+      repo: 'linku/demo', number: 24, title: 'Guard the deploy', url: 'u',
+      updatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+    }]);
+    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/deploy-guard' });
+
+    const summary = await runPollCycle(db);
+    expect(summary.prsSynced).toBe(1);
+    expect(listPrs(db)[0]).toMatchObject({
+      number: 24, title: 'Guard the deploy', reviewState: 'approved', branch: 'feat/deploy-guard',
+    });
+  });
+
+  it('reports a github pull request failure without aborting the cycle', async () => {
+    const db = openDb(':memory:');
+    vi.mocked(fetchMyOpenPrs).mockRejectedValue(new Error('gh exploded'));
+    const summary = await runPollCycle(db);
+    expect(summary.sourceErrors.some((e) => e.includes('gh exploded'))).toBe(true);
+  });
+
+  it('keeps the previous review state and branch when the per-PR lookup fails', async () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+    upsertGithubPr(db, { projectId: project.id, number: 24, title: 't', url: 'u', githubUpdatedAt: 'x', isDraft: false, authoredByMe: true, assignedToMe: false, reviewState: 'approved', branch: 'feat/keep-me' });
+
+    vi.mocked(fetchMyOpenPrs).mockResolvedValue([{
+      repo: 'linku/demo', number: 24, title: 't', url: 'u',
+      updatedAt: '2026-08-17T11:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+    }]);
+    vi.mocked(fetchPrDetail).mockRejectedValue(new Error('rate limited'));
+
+    await runPollCycle(db);
+    expect(listPrs(db)[0]).toMatchObject({ reviewState: 'approved', branch: 'feat/keep-me' });
   });
 });
 
