@@ -141,8 +141,8 @@ const MIGRATIONS: string[] = [
   // child's foreign key to follow the rename before prs_old was dropped, leaving
   // both children referencing a table that no longer exists. Rebuilding each one
   // is the only way to change a foreign key clause in SQLite. Rows are copied, so
-  // this is lossless. Runs with foreign keys enforced, because PRAGMA
-  // foreign_keys does nothing inside the transaction migrate() opens.
+  // this is lossless. Relies on migrate() running it with foreign keys off, since
+  // dropping tickets would otherwise fail on every row that points at it.
   `CREATE TABLE pr_messages_rebuilt (
      id INTEGER PRIMARY KEY AUTOINCREMENT,
      pr_id INTEGER NOT NULL REFERENCES prs(id),
@@ -180,13 +180,32 @@ function isEmptyDatabase(db: Database.Database): boolean {
   return row.n === 0;
 }
 
+// Foreign keys are off for the whole run. A rebuild like migration 5 drops and
+// recreates a table, and the implicit delete a DROP TABLE performs fails under
+// enforcement whenever any child row points at it, which is the normal state of
+// an install that ran the fix pipeline. PRAGMA foreign_keys is a no-op inside a
+// transaction, so it has to be toggled out here rather than in the migration.
+// foreign_key_check afterwards is what keeps that safe: a migration that leaves
+// a dangling reference behind fails loudly instead of corrupting the file.
 function migrate(db: Database.Database): void {
   const applied = db.pragma('user_version', { simple: true }) as number;
-  for (let version = applied; version < MIGRATIONS.length; version++) {
-    db.transaction(() => {
-      db.exec(MIGRATIONS[version]);
-      db.exec(`PRAGMA user_version = ${version + 1};`);
-    })();
+  if (applied >= MIGRATIONS.length) return;
+
+  db.pragma('foreign_keys = OFF');
+  try {
+    for (let version = applied; version < MIGRATIONS.length; version++) {
+      db.transaction(() => {
+        db.exec(MIGRATIONS[version]);
+        db.exec(`PRAGMA user_version = ${version + 1};`);
+      })();
+    }
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
+
+  const violations = db.pragma('foreign_key_check') as unknown[];
+  if (violations.length > 0) {
+    throw new Error(`migration left ${violations.length} broken foreign key reference(s)`);
   }
 }
 

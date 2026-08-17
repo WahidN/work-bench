@@ -202,6 +202,77 @@ describe('openDb', () => {
     migratedDb.close();
   });
 
+  it('runs the tickets rebuild on a database where children still reference tickets', () => {
+    dir = mkdtempSync(join(tmpdir(), 'workbench-db-'));
+    const file = join(dir, 'test.db');
+
+    // The normal shape of any install that ran the fix pipeline: prs.ticket_id and
+    // todos.promoted_ticket_id are filled in, and tickets.pr_id points back. Dropping
+    // tickets under foreign key enforcement fails on exactly those rows.
+    const raw = new Database(file);
+    raw.pragma('foreign_keys = OFF');
+    raw.exec(`
+      CREATE TABLE projects (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL);
+      CREATE TABLE tickets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        project_id INTEGER NOT NULL REFERENCES projects(id),
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        url TEXT NOT NULL,
+        analysis_json TEXT,
+        status TEXT NOT NULL DEFAULT 'new',
+        pr_id INTEGER REFERENCES "prs_old"(id),
+        pinned INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        UNIQUE(source, source_id)
+      );
+      CREATE TABLE prs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticket_id INTEGER REFERENCES tickets(id),
+        project_id INTEGER NOT NULL REFERENCES projects(id),
+        branch TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE pr_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pr_id INTEGER NOT NULL REFERENCES "prs_old"(id),
+        role TEXT NOT NULL CHECK (role IN ('user','assistant')),
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE todos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        text TEXT NOT NULL,
+        done INTEGER NOT NULL DEFAULT 0,
+        promoted_ticket_id INTEGER REFERENCES tickets(id),
+        created_at TEXT NOT NULL
+      );
+    `);
+    raw.exec(`INSERT INTO projects (name) VALUES ('P');`);
+    raw.exec(
+      `INSERT INTO tickets (source, source_id, project_id, title, body, url, pr_id, created_at)
+       VALUES ('jira', 'KEEP-1', 1, 'keep me', 'body', 'https://example.com/keep', 1, 'now')`
+    );
+    raw.exec(`INSERT INTO prs (ticket_id, project_id, branch, created_at) VALUES (1, 1, 'fix/keep-1', 'now');`);
+    raw.exec(`INSERT INTO pr_messages (pr_id, role, content, created_at) VALUES (1, 'user', 'keep me', 'now');`);
+    raw.exec(`INSERT INTO todos (source, text, promoted_ticket_id, created_at) VALUES ('manual', 'promoted', 1, 'now');`);
+    raw.pragma('user_version = 4');
+    raw.close();
+
+    const db = openDb(file);
+
+    expect(db.pragma('user_version', { simple: true })).toBe(5);
+    expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
+    expect(db.pragma('foreign_key_check')).toEqual([]);
+    expect(db.prepare('SELECT ticket_id FROM prs').get()).toEqual({ ticket_id: 1 });
+    expect(db.prepare('SELECT promoted_ticket_id FROM todos').get()).toEqual({ promoted_ticket_id: 1 });
+    expect(db.prepare('SELECT title, pr_id FROM tickets').get()).toEqual({ title: 'keep me', pr_id: 1 });
+    db.close();
+  });
+
   it('repoints the prs_old foreign keys on pr_messages and tickets, and keeps the rows', () => {
     dir = mkdtempSync(join(tmpdir(), 'workbench-db-'));
     const file = join(dir, 'test.db');
@@ -239,12 +310,7 @@ describe('openDb', () => {
     raw.exec(`INSERT INTO projects (name) VALUES ('P');`);
     raw.exec(`INSERT INTO prs (project_id) VALUES (1);`);
     raw.exec(`INSERT INTO pr_messages (pr_id, role, content, created_at) VALUES (1, 'user', 'keep me', 'now');`);
-    // pr_id is left NULL: tickets.pr_id is nullable, unlike pr_messages.pr_id above, and a
-    // non-null value here would make SQLite's DROP TABLE tickets below re-validate every
-    // foreign key in the database (tickets is itself referenced by todos and ticket_messages),
-    // which would surface this row's already-broken reference to prs_old and abort the
-    // migration. The real database this migration targets has 0 rows in tickets, so that
-    // case does not arise there; a NULL pr_id keeps this fixture representative and passing.
+    // pr_id is left NULL here; the test above covers a ticket that points at a real PR.
     raw.exec(
       `INSERT INTO tickets (source, source_id, project_id, title, body, url, created_at)
        VALUES ('jira', 'KEEP-1', 1, 'keep me too', 'ticket body', 'https://example.com/keep', 'now')`
