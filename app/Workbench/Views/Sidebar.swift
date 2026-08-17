@@ -100,7 +100,7 @@ struct Sidebar: View {
                                     .lineLimit(1)
                                     .truncationMode(.tail)
                                 Spacer()
-                                Text("\(SidebarLogic.projectOpenCount(for: project, todos: todos))")
+                                Text("\(SidebarLogic.projectOpenCount(for: project, todos: jiraTodos))")
                                     .font(.system(size: Theme.FontSize.label))
                                     .foregroundStyle(Theme.Neutral.n600)
                                     .monospacedDigit()
