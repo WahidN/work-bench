@@ -12,10 +12,10 @@ enum AppHeaderLogic {
         return dateFormatter.string(from: date)
     }
 
-    static func kicker(for section: SidebarSection, projectCount: Int, todayDateString: String) -> String {
+    static func kicker(for section: SidebarSection, activeProjectCount: Int, todayDateString: String) -> String {
         switch section {
         case .today: todayDateString
-        case .projects: "\(projectCount) project\(projectCount == 1 ? "" : "s")"
+        case .projects: "\(activeProjectCount) active"
         case .pullRequests: "GitHub"
         case .issues: "Jira"
         }
@@ -33,15 +33,16 @@ enum AppHeaderLogic {
 
 struct AppHeader: View {
     let section: SidebarSection
-    let projectCount: Int
+    let activeProjectCount: Int
     let onOpenAgent: () -> Void
+    let onAddProject: () -> Void
 
     var body: some View {
         HStack(alignment: .center, spacing: Theme.Space.s4) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(AppHeaderLogic.kicker(
                     for: section,
-                    projectCount: projectCount,
+                    activeProjectCount: activeProjectCount,
                     todayDateString: AppHeaderLogic.todayDateString(for: Date())
                 ))
                     .font(.system(size: Theme.FontSize.label))
@@ -54,7 +55,11 @@ struct AppHeader: View {
                     .foregroundStyle(Theme.nocturneText)
             }
             Spacer()
-            AgentButton(onOpenAgent: onOpenAgent)
+            if section == .projects {
+                HeaderActionButton(title: "Add project", symbol: "plus", action: onAddProject)
+            } else {
+                HeaderActionButton(title: "Agent", symbol: "sparkles", action: onOpenAgent)
+            }
         }
         .padding(.vertical, Theme.Space.s6)
         .padding(.horizontal, Theme.Space.s8)
@@ -64,15 +69,17 @@ struct AppHeader: View {
     }
 }
 
-private struct AgentButton: View {
-    let onOpenAgent: () -> Void
+private struct HeaderActionButton: View {
+    let title: String
+    let symbol: String
+    let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: onOpenAgent) {
+        Button(action: action) {
             HStack(spacing: Theme.Space.s2) {
-                Image(systemName: "sparkles")
-                Text("Agent")
+                Image(systemName: symbol)
+                Text(title)
                     .font(Theme.heading(14))
             }
             .padding(.vertical, Theme.Space.s2)
@@ -87,6 +94,6 @@ private struct AgentButton: View {
                 .strokeBorder(Theme.nocturneAccent, lineWidth: 1)
         )
         .onHover { isHovered = $0 }
-        .help("Open the agent panel")
+        .help(title == "Agent" ? "Open the agent panel" : "Add a project")
     }
 }

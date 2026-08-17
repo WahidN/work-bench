@@ -13,20 +13,21 @@ import Foundation
 }
 
 @Test func kickerForTodayIsTheGivenDateString() {
-    #expect(AppHeaderLogic.kicker(for: .today, projectCount: 0, todayDateString: "Thursday, 13 August") == "Thursday, 13 August")
+    #expect(AppHeaderLogic.kicker(for: .today, activeProjectCount: 0, todayDateString: "Thursday, 13 August") == "Thursday, 13 August")
 }
 
-@Test func kickerForProjectsShowsThePluralizedCount() {
-    #expect(AppHeaderLogic.kicker(for: .projects, projectCount: 1, todayDateString: "") == "1 project")
-    #expect(AppHeaderLogic.kicker(for: .projects, projectCount: 8, todayDateString: "") == "8 projects")
+@Test func projectsKickerCountsActiveProjects() {
+    #expect(AppHeaderLogic.kicker(for: .projects, activeProjectCount: 8, todayDateString: "x") == "8 active")
+    #expect(AppHeaderLogic.kicker(for: .projects, activeProjectCount: 1, todayDateString: "x") == "1 active")
+    #expect(AppHeaderLogic.kicker(for: .projects, activeProjectCount: 0, todayDateString: "x") == "0 active")
 }
 
 @Test func kickerForPullRequestsIsGitHub() {
-    #expect(AppHeaderLogic.kicker(for: .pullRequests, projectCount: 0, todayDateString: "") == "GitHub")
+    #expect(AppHeaderLogic.kicker(for: .pullRequests, activeProjectCount: 0, todayDateString: "") == "GitHub")
 }
 
 @Test func kickerForIssuesIsJira() {
-    #expect(AppHeaderLogic.kicker(for: .issues, projectCount: 0, todayDateString: "") == "Jira")
+    #expect(AppHeaderLogic.kicker(for: .issues, activeProjectCount: 0, todayDateString: "") == "Jira")
 }
 
 @Test func headingsMatchEachSection() {

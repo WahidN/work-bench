@@ -47,8 +47,9 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 AppHeader(
                     section: selection,
-                    projectCount: projectsViewModel.projects.count,
-                    onOpenAgent: openProjectChat
+                    activeProjectCount: ProjectsLogic.activeCount(projectsViewModel.projects),
+                    onOpenAgent: openProjectChat,
+                    onAddProject: {}
                 )
                 content
             }
