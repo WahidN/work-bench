@@ -137,6 +137,42 @@ const MIGRATIONS: string[] = [
    ALTER TABLE prs ADD COLUMN github_updated_at TEXT;
    ALTER TABLE prs ADD COLUMN authored_by_me INTEGER NOT NULL DEFAULT 0;
    ALTER TABLE prs ADD COLUMN assigned_to_me INTEGER NOT NULL DEFAULT 0;`,
+  // 5: Repair. A past rebuild renamed prs to prs_old, and SQLite repointed every
+  // child's foreign key to follow the rename before prs_old was dropped, leaving
+  // both children referencing a table that no longer exists. Rebuilding each one
+  // is the only way to change a foreign key clause in SQLite. Rows are copied, so
+  // this is lossless. Runs with foreign keys enforced, because PRAGMA
+  // foreign_keys does nothing inside the transaction migrate() opens.
+  `CREATE TABLE pr_messages_rebuilt (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     pr_id INTEGER NOT NULL REFERENCES prs(id),
+     role TEXT NOT NULL CHECK (role IN ('user','assistant')),
+     content TEXT NOT NULL,
+     created_at TEXT NOT NULL
+   );
+   INSERT INTO pr_messages_rebuilt (id, pr_id, role, content, created_at)
+     SELECT id, pr_id, role, content, created_at FROM pr_messages;
+   DROP TABLE pr_messages;
+   ALTER TABLE pr_messages_rebuilt RENAME TO pr_messages;
+   CREATE TABLE tickets_rebuilt (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     source TEXT NOT NULL CHECK (source IN ('sentry','github','jira')),
+     source_id TEXT NOT NULL,
+     project_id INTEGER NOT NULL REFERENCES projects(id),
+     title TEXT NOT NULL,
+     body TEXT NOT NULL,
+     url TEXT NOT NULL,
+     analysis_json TEXT,
+     status TEXT NOT NULL CHECK (status IN ('new','sparring','in_review','done','needs_attention')) DEFAULT 'new',
+     pr_id INTEGER REFERENCES prs(id),
+     pinned INTEGER NOT NULL DEFAULT 0,
+     created_at TEXT NOT NULL,
+     UNIQUE(source, source_id)
+   );
+   INSERT INTO tickets_rebuilt (id, source, source_id, project_id, title, body, url, analysis_json, status, pr_id, pinned, created_at)
+     SELECT id, source, source_id, project_id, title, body, url, analysis_json, status, pr_id, pinned, created_at FROM tickets;
+   DROP TABLE tickets;
+   ALTER TABLE tickets_rebuilt RENAME TO tickets;`,
 ];
 
 function isEmptyDatabase(db: Database.Database): boolean {
