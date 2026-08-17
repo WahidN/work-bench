@@ -4,9 +4,9 @@ final class APIClient {
     static let baseURL = URL(string: "http://127.0.0.1:4173")!
 
     private let session: URLSession
-    private let keychain: KeychainClient
+    private let keychain: any SecretStore
 
-    init(session: URLSession? = nil, keychain: KeychainClient = KeychainClient()) {
+    init(session: URLSession? = nil, keychain: any SecretStore = KeychainClient()) {
         if let session {
             self.session = session
         } else {

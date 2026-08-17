@@ -8,35 +8,27 @@ private struct Echo: Decodable, Equatable {
 
 @Suite(.serialized)
 struct APIClientCoreTests {
-    let testKeychain = KeychainClient(service: "workbench-tests")
-
-    init() throws {
-        try testKeychain.writeSecret("test-token-123", account: "api-token")
-    }
-
     @Test func attachesBearerTokenFromKeychain() async throws {
         var capturedAuth: String?
         let session = mockedSession { request in
             capturedAuth = request.value(forHTTPHeaderField: "Authorization")
             return jsonResponse(request.url!, status: 200, body: #"{"value":1}"#)
         }
-        let client = APIClient(session: session, keychain: testKeychain)
+        let client = APIClient(session: session, keychain: StubSecretStore(token: "test-token-123"))
         let result: Echo = try await client.send("GET", "/today", body: nil)
         #expect(capturedAuth == "Bearer test-token-123")
         #expect(result == Echo(value: 1))
     }
 
     @Test func missingTokenThrowsTransportFailedWithoutMakingARequest() async throws {
-        try testKeychain.deleteSecret(account: "api-token")
         let session = mockedSession { _ in
             Issue.record("should not have made a request with no token")
             return jsonResponse(URL(string: "http://127.0.0.1:4173/today")!, status: 200, body: "{}")
         }
-        let client = APIClient(session: session, keychain: testKeychain)
+        let client = APIClient(session: session, keychain: StubSecretStore(token: nil))
         await #expect(throws: APIError.self) {
             let _: Echo = try await client.send("GET", "/today", body: nil)
         }
-        try testKeychain.writeSecret("test-token-123", account: "api-token")
     }
 
     @Test func mapsEachStatusCodeToTheRightAPIError() async throws {
@@ -49,7 +41,7 @@ struct APIClientCoreTests {
         ]
         for (status, body, expected) in cases {
             let session = mockedSession { request in jsonResponse(request.url!, status: status, body: body) }
-            let client = APIClient(session: session, keychain: testKeychain)
+            let client = APIClient(session: session, keychain: StubSecretStore())
             await #expect(throws: expected) {
                 let _: Echo = try await client.send("GET", "/today", body: nil)
             }
@@ -58,7 +50,7 @@ struct APIClientCoreTests {
 
     @Test func decodingFailureThrowsDecodingFailed() async throws {
         let session = mockedSession { request in jsonResponse(request.url!, status: 200, body: #"{"unexpectedShape":true}"#) }
-        let client = APIClient(session: session, keychain: testKeychain)
+        let client = APIClient(session: session, keychain: StubSecretStore())
         await #expect(throws: APIError.self) {
             let _: Echo = try await client.send("GET", "/today", body: nil)
         }
@@ -69,7 +61,7 @@ struct APIClientCoreTests {
             let response = HTTPURLResponse(url: request.url!, statusCode: 204, httpVersion: nil, headerFields: nil)!
             return (response, Data())
         }
-        let client = APIClient(session: session, keychain: testKeychain)
+        let client = APIClient(session: session, keychain: StubSecretStore())
         try await client.sendNoContent("DELETE", "/projects/1", body: nil)
     }
 
@@ -79,7 +71,7 @@ struct APIClientCoreTests {
             capturedBody = request.capturedBodyData()
             return jsonResponse(request.url!, status: 201, body: #"{"value":1}"#)
         }
-        let client = APIClient(session: session, keychain: testKeychain)
+        let client = APIClient(session: session, keychain: StubSecretStore())
         let _: Echo = try await client.send("POST", "/todos", body: ["text": "renew SSL cert"])
         let decoded = try JSONSerialization.jsonObject(with: capturedBody ?? Data()) as? [String: String]
         #expect(decoded?["text"] == "renew SSL cert")

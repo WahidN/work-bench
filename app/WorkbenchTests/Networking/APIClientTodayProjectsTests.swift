@@ -4,19 +4,13 @@ import Foundation
 
 @Suite(.serialized)
 struct APIClientTodayProjectsTests {
-    let testKeychain = KeychainClient(service: "workbench-tests")
-
-    init() throws {
-        try testKeychain.writeSecret("test-token", account: "api-token")
-    }
-
     @Test func todayHitsTheRightPathAndDecodesTheResponse() async throws {
         var capturedPath: String?
         let session = mockedSession { request in
             capturedPath = request.url?.path
             return jsonResponse(request.url!, status: 200, body: #"{"needsInput":[],"todos":[]}"#)
         }
-        let result = try await APIClient(session: session, keychain: testKeychain).today()
+        let result = try await APIClient(session: session, keychain: StubSecretStore()).today()
         #expect(capturedPath == "/today")
         #expect(result.needsInput.isEmpty)
     }
@@ -32,7 +26,7 @@ struct APIClientTodayProjectsTests {
             """)
         }
         let input = ProjectInput(name: "demo", repoPath: "/repos/demo", defaultBranch: "main", githubRepo: nil, jiraProjectKey: nil, sentryProjectSlug: nil)
-        let project = try await APIClient(session: session, keychain: testKeychain).createProject(input)
+        let project = try await APIClient(session: session, keychain: StubSecretStore()).createProject(input)
         #expect(capturedMethod == "POST")
         #expect(capturedBody?["name"] as? String == "demo")
         #expect(capturedBody?["githubRepo"] == nil, "nil optional fields should be omitted, not sent as null")
@@ -45,7 +39,7 @@ struct APIClientTodayProjectsTests {
         }
         let input = ProjectInput(name: "demo", repoPath: "", defaultBranch: "main", githubRepo: nil, jiraProjectKey: nil, sentryProjectSlug: nil)
         await #expect(throws: APIError.badRequest("repoPath is required")) {
-            _ = try await APIClient(session: session, keychain: testKeychain).createProject(input)
+            _ = try await APIClient(session: session, keychain: StubSecretStore()).createProject(input)
         }
     }
 
@@ -58,7 +52,7 @@ struct APIClientTodayProjectsTests {
             """)
         }
         let update = ProjectUpdate(defaultBranch: "develop")
-        let project = try await APIClient(session: session, keychain: testKeychain).updateProject(id: 1, update)
+        let project = try await APIClient(session: session, keychain: StubSecretStore()).updateProject(id: 1, update)
         #expect(capturedBody?.count == 1)
         #expect(capturedBody?["defaultBranch"] as? String == "develop")
         #expect(project.defaultBranch == "develop")
@@ -69,7 +63,7 @@ struct APIClientTodayProjectsTests {
             jsonResponse(request.url!, status: 409, body: #"{"error":"project still has tickets or todos referencing it"}"#)
         }
         await #expect(throws: APIError.conflict("project still has tickets or todos referencing it")) {
-            try await APIClient(session: session, keychain: testKeychain).deleteProject(id: 1)
+            try await APIClient(session: session, keychain: StubSecretStore()).deleteProject(id: 1)
         }
     }
 
@@ -77,6 +71,6 @@ struct APIClientTodayProjectsTests {
         let session = mockedSession { request in
             (HTTPURLResponse(url: request.url!, statusCode: 204, httpVersion: nil, headerFields: nil)!, Data())
         }
-        try await APIClient(session: session, keychain: testKeychain).deleteProject(id: 1)
+        try await APIClient(session: session, keychain: StubSecretStore()).deleteProject(id: 1)
     }
 }

@@ -5,12 +5,6 @@ import Foundation
 
 @Suite(.serialized)
 struct APIClientTodosTests {
-    let testKeychain = KeychainClient(service: "workbench-tests")
-
-    init() throws {
-        try testKeychain.writeSecret("test-token", account: "api-token")
-    }
-
     @Test func createTodoPostsTheTextField() async throws {
         var capturedBody: [String: Any]?
         let session = mockedSession { request in
@@ -20,7 +14,7 @@ struct APIClientTodosTests {
              "projectId":null,"canPromote":false,"done":false,"promotedTicketId":null,"priority":"med","pinned":false,"createdAt":"2026-08-12T00:00:00.000Z"}
             """)
         }
-        let todo = try await APIClient(session: session, keychain: testKeychain).createTodo(text: "renew SSL cert")
+        let todo = try await APIClient(session: session, keychain: StubSecretStore()).createTodo(text: "renew SSL cert")
         #expect(capturedBody?["text"] as? String == "renew SSL cert")
         #expect(todo.text == "renew SSL cert")
     }
@@ -34,7 +28,7 @@ struct APIClientTodosTests {
              "projectId":null,"canPromote":false,"done":true,"promotedTicketId":null,"priority":"med","pinned":false,"createdAt":"2026-08-12T00:00:00.000Z"}
             """)
         }
-        let todo = try await APIClient(session: session, keychain: testKeychain).setTodoDone(id: 1, done: true)
+        let todo = try await APIClient(session: session, keychain: StubSecretStore()).setTodoDone(id: 1, done: true)
         #expect(capturedBody?["done"] as? Bool == true)
         #expect(todo.done == true)
     }
@@ -51,7 +45,7 @@ struct APIClientTodosTests {
              "priority":"high","dueAt":"2026-08-14","doneAt":null,"pinned":false,"createdAt":"2026-08-12T00:00:00.000Z"}
             """)
         }
-        let todo = try await APIClient(session: session, keychain: testKeychain).setTodoPriority(id: 1, priority: .high)
+        let todo = try await APIClient(session: session, keychain: StubSecretStore()).setTodoPriority(id: 1, priority: .high)
         #expect(capturedMethod == "PATCH")
         #expect(capturedBody?["priority"] as? String == "high")
         #expect(capturedBody?["done"] == nil, "a priority change must not send done, or the engine would reopen the task")
@@ -65,14 +59,14 @@ struct APIClientTodosTests {
              "body":"b","url":"u","analysis":null,"status":"new","prId":null,"pinned":false,"createdAt":"2026-08-12T00:00:00.000Z"}
             """)
         }
-        let ticket = try await APIClient(session: session, keychain: testKeychain).promoteTodo(id: 1)
+        let ticket = try await APIClient(session: session, keychain: StubSecretStore()).promoteTodo(id: 1)
         #expect(ticket.source == .jira)
     }
 
     @Test func promoteTodoNotFoundSurfacesNotFound() async throws {
         let session = mockedSession { request in jsonResponse(request.url!, status: 404, body: #"{"error":"Todo 999 not found"}"#) }
         await #expect(throws: APIError.notFound("Todo 999 not found")) {
-            _ = try await APIClient(session: session, keychain: testKeychain).promoteTodo(id: 999)
+            _ = try await APIClient(session: session, keychain: StubSecretStore()).promoteTodo(id: 999)
         }
     }
 
@@ -81,14 +75,14 @@ struct APIClientTodosTests {
             jsonResponse(request.url!, status: 400, body: #"{"error":"Todo 1 cannot be promoted (not a Jira item)"}"#)
         }
         await #expect(throws: APIError.badRequest("Todo 1 cannot be promoted (not a Jira item)")) {
-            _ = try await APIClient(session: session, keychain: testKeychain).promoteTodo(id: 1)
+            _ = try await APIClient(session: session, keychain: StubSecretStore()).promoteTodo(id: 1)
         }
     }
 
     @Test func promoteTodoAlreadyRunningSurfacesConflict() async throws {
         let session = mockedSession { request in jsonResponse(request.url!, status: 409, body: #"{"error":"already working on this"}"#) }
         await #expect(throws: APIError.conflict("already working on this")) {
-            _ = try await APIClient(session: session, keychain: testKeychain).promoteTodo(id: 1)
+            _ = try await APIClient(session: session, keychain: StubSecretStore()).promoteTodo(id: 1)
         }
     }
 
@@ -98,7 +92,7 @@ struct APIClientTodosTests {
             capturedURL = request.url
             return jsonResponse(request.url!, status: 200, body: "[]")
         }
-        _ = try await APIClient(session: session, keychain: testKeychain).todos(includeDone: true)
+        _ = try await APIClient(session: session, keychain: StubSecretStore()).todos(includeDone: true)
         #expect(capturedURL?.path == "/todos")
         #expect(capturedURL?.query == "done=any", "a query string must not be percent-encoded into the path")
     }
@@ -109,7 +103,7 @@ struct APIClientTodosTests {
             capturedURL = request.url
             return jsonResponse(request.url!, status: 200, body: "[]")
         }
-        _ = try await APIClient(session: session, keychain: testKeychain).todos()
+        _ = try await APIClient(session: session, keychain: StubSecretStore()).todos()
         #expect(capturedURL?.query == nil)
     }
 
@@ -128,7 +122,7 @@ struct APIClientTodosTests {
              "createdAt":"2026-08-14T00:00:00.000Z"}
             """)
         }
-        let todo = try await APIClient(session: session, keychain: testKeychain).setTodoPinned(id: 4, pinned: true)
+        let todo = try await APIClient(session: session, keychain: StubSecretStore()).setTodoPinned(id: 4, pinned: true)
         #expect(capturedPath == "/todos/4/pin")
         #expect(capturedMethod == "PATCH")
         #expect(capturedBody?["pinned"] as? Bool == true)

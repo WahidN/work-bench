@@ -4,12 +4,6 @@ import Foundation
 
 @Suite(.serialized)
 struct APIClientTicketsTests {
-    let testKeychain = KeychainClient(service: "workbench-tests")
-
-    init() throws {
-        try testKeychain.writeSecret("test-token", account: "api-token")
-    }
-
     @Test func ticketDetailDecodesMessages() async throws {
         let session = mockedSession { request in
             jsonResponse(request.url!, status: 200, body: """
@@ -18,7 +12,7 @@ struct APIClientTicketsTests {
              "messages":[{"id":1,"ticketId":1,"role":"user","content":"go ahead","createdAt":"2026-08-12T00:00:00.000Z"}]}
             """)
         }
-        let ticket = try await APIClient(session: session, keychain: testKeychain).ticket(id: 1)
+        let ticket = try await APIClient(session: session, keychain: StubSecretStore()).ticket(id: 1)
         #expect(ticket.messages?.count == 1)
     }
 
@@ -30,7 +24,7 @@ struct APIClientTicketsTests {
             capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
             return jsonResponse(request.url!, status: 200, body: #"{"reply":"Sounds good."}"#)
         }
-        let reply = try await APIClient(session: session, keychain: testKeychain).sendTicketMessage(id: 1, text: "go ahead")
+        let reply = try await APIClient(session: session, keychain: StubSecretStore()).sendTicketMessage(id: 1, text: "go ahead")
         #expect(capturedPath == "/tickets/1/messages")
         #expect(capturedBody?["text"] as? String == "go ahead")
         #expect(reply.reply == "Sounds good.")
@@ -50,7 +44,7 @@ struct APIClientTicketsTests {
              "createdAt":"2026-08-12T00:00:00.000Z"}
             """)
         }
-        let ticket = try await APIClient(session: session, keychain: testKeychain).setTicketPinned(id: 7, pinned: true)
+        let ticket = try await APIClient(session: session, keychain: StubSecretStore()).setTicketPinned(id: 7, pinned: true)
         #expect(capturedPath == "/tickets/7/pin")
         #expect(capturedMethod == "PATCH")
         #expect(capturedBody?["pinned"] as? Bool == true)
@@ -61,7 +55,7 @@ struct APIClientTicketsTests {
         let session = mockedSession { request in
             jsonResponse(request.url!, status: 200, body: #"{"ticketStatus":"in_review","prId":5}"#)
         }
-        let result = try await APIClient(session: session, keychain: testKeychain).createPr(ticketId: 1)
+        let result = try await APIClient(session: session, keychain: StubSecretStore()).createPr(ticketId: 1)
         #expect(result.ticketStatus == .inReview)
         #expect(result.prId == 5)
     }
@@ -69,7 +63,7 @@ struct APIClientTicketsTests {
     @Test func createPrWhenTicketAlreadyHasAPrSurfacesConflict() async throws {
         let session = mockedSession { request in jsonResponse(request.url!, status: 409, body: #"{"error":"ticket already has a PR"}"#) }
         await #expect(throws: APIError.conflict("ticket already has a PR")) {
-            _ = try await APIClient(session: session, keychain: testKeychain).createPr(ticketId: 1)
+            _ = try await APIClient(session: session, keychain: StubSecretStore()).createPr(ticketId: 1)
         }
     }
 }

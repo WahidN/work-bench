@@ -15,6 +15,16 @@ enum KeychainError: Error, LocalizedError {
     }
 }
 
+/// The single operation APIClient needs, split out so tests can supply a token without
+/// reaching the real login keychain. Reading a keychain item from a locally built binary
+/// asks macOS for authorization on every rebuild, which prompted for a password and hung
+/// the test run on this machine.
+protocol SecretStore {
+    func readSecret(account: String) throws -> String?
+}
+
+extension KeychainClient: SecretStore {}
+
 struct KeychainClient {
     let service: String
 
