@@ -88,3 +88,58 @@ describe('POST /projects/:id/messages', () => {
     expect(res.body.error).toContain('claude timed out');
   });
 });
+
+describe('project status and blurb over the API', () => {
+  it('creates a project with a status and a blurb', async () => {
+    const res = await auth(request(app).post('/projects')).send({
+      name: 'atlas', repoPath: '/repos/atlas', defaultBranch: 'main',
+      status: 'planning', blurb: 'Q3 discovery.',
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('planning');
+    expect(res.body.blurb).toBe('Q3 discovery.');
+  });
+
+  it('defaults a created project to active with an empty blurb', async () => {
+    const res = await auth(request(app).post('/projects')).send({
+      name: 'beacon', repoPath: '/repos/beacon', defaultBranch: 'main',
+    });
+
+    expect(res.body.status).toBe('active');
+    expect(res.body.blurb).toBe('');
+  });
+
+  it('patches the status and the blurb', async () => {
+    const created = await auth(request(app).post('/projects')).send({
+      name: 'relay', repoPath: '/repos/relay', defaultBranch: 'main',
+    });
+
+    const res = await auth(request(app).patch(`/projects/${created.body.id}`)).send({
+      status: 'paused', blurb: 'Webhook delivery.',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('paused');
+    expect(res.body.blurb).toBe('Webhook delivery.');
+    expect(res.body.name).toBe('relay');
+  });
+
+  it('400s on an unknown status when creating', async () => {
+    const res = await auth(request(app).post('/projects')).send({
+      name: 'drydock', repoPath: '/repos/drydock', defaultBranch: 'main', status: 'archived',
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('400s on an unknown status when patching', async () => {
+    const created = await auth(request(app).post('/projects')).send({
+      name: 'ledger', repoPath: '/repos/ledger', defaultBranch: 'main',
+    });
+
+    const res = await auth(request(app).patch(`/projects/${created.body.id}`)).send({ status: 'archived' });
+
+    expect(res.status).toBe(400);
+  });
+});

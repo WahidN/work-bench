@@ -6,6 +6,8 @@ import {
 import { sendProjectMessage } from '../../projectChat.js';
 
 export function registerProjectsRoutes(app: Express, db: Database.Database): void {
+  const PROJECT_STATUSES = ['active', 'paused', 'planning'];
+
   app.get('/projects', (_req, res) => res.json(listProjects(db)));
 
   app.get('/projects/:id', (req, res) => {
@@ -42,15 +44,27 @@ export function registerProjectsRoutes(app: Express, db: Database.Database): voi
         return;
       }
     }
+    const { status, blurb } = req.body ?? {};
+    if (status !== undefined && !PROJECT_STATUSES.includes(status)) {
+      res.status(400).json({ error: 'status must be active, paused or planning' });
+      return;
+    }
     res.status(201).json(createProject(db, {
       name, repoPath, defaultBranch,
       githubRepo: req.body.githubRepo ?? null,
       jiraProjectKey: req.body.jiraProjectKey ?? null,
       sentryProjectSlug: req.body.sentryProjectSlug ?? null,
+      status,
+      blurb,
     }));
   });
 
   app.patch('/projects/:id', (req, res) => {
+    const { status } = req.body ?? {};
+    if (status !== undefined && !PROJECT_STATUSES.includes(status)) {
+      res.status(400).json({ error: 'status must be active, paused or planning' });
+      return;
+    }
     const project = updateProject(db, Number(req.params.id), req.body);
     if (!project) { res.status(404).json({ error: 'not found' }); return; }
     res.json(project);
