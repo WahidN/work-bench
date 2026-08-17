@@ -102,6 +102,17 @@ struct ContentView: View {
                     onCancel: { projectSheet = nil }
                 )
             }
+            .alert(
+                "Error",
+                isPresented: Binding(
+                    get: { projectsViewModel.errorMessage != nil },
+                    set: { if !$0 { projectsViewModel.errorMessage = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(projectsViewModel.errorMessage ?? "")
+            }
         }
         .background(Theme.nocturneBg)
         .frame(minWidth: 900, minHeight: 560)

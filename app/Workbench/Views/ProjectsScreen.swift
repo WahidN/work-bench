@@ -62,18 +62,14 @@ private struct ProjectCardView: View {
 
                 Spacer(minLength: Theme.Space.s3)
 
-                HStack(spacing: Theme.Space.s4) {
-                    Text("\(card.openCount) open")
-                    Text("\(card.prCount) PRs")
-                    Text(card.activity)
-                }
-                .font(.system(size: Theme.FontSize.tableMeta))
-                .foregroundStyle(Theme.Neutral.n600)
-                .padding(.top, Theme.Space.s3)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .overlay(alignment: .top) {
-                    Rectangle().fill(Theme.Neutral.n900).frame(height: 1)
-                }
+                Text("\(card.openCount) open · \(card.prCount) PRs · \(card.activity)")
+                    .font(.system(size: Theme.FontSize.tableMeta))
+                    .foregroundStyle(Theme.Neutral.n600)
+                    .padding(.top, Theme.Space.s3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .overlay(alignment: .top) {
+                        Rectangle().fill(Theme.Neutral.n900).frame(height: 1)
+                    }
             }
             .frame(maxWidth: .infinity, minHeight: 140, alignment: .topLeading)
             .padding(Theme.Space.s6)

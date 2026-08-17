@@ -38,6 +38,7 @@ final class ProjectsViewModel {
     }
 
     func create(_ input: ProjectInput) async {
+        errorMessage = nil
         do {
             let project = try await api.createProject(input)
             projects.append(project)
@@ -48,6 +49,7 @@ final class ProjectsViewModel {
     }
 
     func update(_ project: Project, _ changes: ProjectUpdate) async {
+        errorMessage = nil
         do {
             let updated = try await api.updateProject(id: project.id, changes)
             if let index = projects.firstIndex(where: { $0.id == updated.id }) {
@@ -62,6 +64,7 @@ final class ProjectsViewModel {
     }
 
     func delete(_ project: Project) async {
+        errorMessage = nil
         do {
             try await api.deleteProject(id: project.id)
             projects.removeAll { $0.id == project.id }
