@@ -61,6 +61,14 @@ enum AgentChatLogic {
         }
     }
 
+    /// Merging squashes and deletes the branch, which cannot be undone, so it is
+    /// only offered on a pull request the user wrote. The inbox is full of other
+    /// people's pull requests, and the default pill even leads with them.
+    static func canMerge(_ target: AgentChatTarget?) -> Bool {
+        guard case .pullRequest(let pr) = target else { return false }
+        return pr.status != .merged && pr.authoredByMe
+    }
+
     static func authorLabel(for role: ChatRole) -> String {
         role == .user ? "YOU" : "AGENT"
     }
