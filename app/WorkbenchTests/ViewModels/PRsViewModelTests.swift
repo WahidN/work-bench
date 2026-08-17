@@ -4,7 +4,8 @@ import Testing
 private func samplePr(id: Int = 1, status: PrStatus = .open) -> PullRequest {
     PullRequest(id: id, ticketId: 1, projectId: 1, branch: "fix/gh-1", number: id,
                 url: "https://x/pull/\(id)", status: status, lastReviewScore: 4.6,
-                createdAt: "2026-08-12T00:00:00.000Z")
+                createdAt: "2026-08-12T00:00:00.000Z", title: "Sample PR", isDraft: false,
+                authoredByMe: false, assignedToMe: false, messageCount: 0)
 }
 
 @MainActor

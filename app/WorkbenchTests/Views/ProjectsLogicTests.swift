@@ -29,7 +29,9 @@ private func ticket(id: Int, projectId: Int, createdAt: String = "2026-08-17T09:
 
 private func pullRequest(id: Int, projectId: Int, status: PrStatus = .open, createdAt: String = "2026-08-17T09:00:00.000Z") -> PullRequest {
     PullRequest(id: id, ticketId: id, projectId: projectId, branch: "fix/\(id)", number: id,
-                url: nil, status: status, lastReviewScore: nil, createdAt: createdAt)
+                url: nil, status: status, lastReviewScore: nil, createdAt: createdAt,
+                title: "PR \(id)", isDraft: false, authoredByMe: false, assignedToMe: false,
+                messageCount: 0)
 }
 
 private let noon = ISO8601DateFormatter().date(from: "2026-08-17T12:00:00Z")!

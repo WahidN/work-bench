@@ -79,7 +79,8 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     let json = """
     {"id":142,"ticketId":1,"projectId":1,"branch":"fix/github-1","number":142,
      "url":"https://github.com/x/pull/142","status":"open","lastReviewScore":4.6,"pinned":false,
-     "createdAt":"2026-08-12T00:00:00.000Z"}
+     "createdAt":"2026-08-12T00:00:00.000Z","title":"Fix null check","isDraft":false,
+     "authoredByMe":false,"assignedToMe":false,"messageCount":0}
     """
     let pr = try decode(PullRequest.self, json)
     #expect(pr.status == .open)
@@ -91,7 +92,8 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     let json = """
     {"id":1,"ticketId":null,"projectId":1,"branch":"feat/header","number":23,
      "url":"https://github.com/x/pull/23","status":"open","lastReviewScore":null,"pinned":false,
-     "createdAt":"2026-08-12T17:31:06.792Z"}
+     "createdAt":"2026-08-12T17:31:06.792Z","title":"Add header","isDraft":false,
+     "authoredByMe":false,"assignedToMe":false,"messageCount":0}
     """
     let pr = try decode(PullRequest.self, json)
     #expect(pr.ticketId == nil)
@@ -102,7 +104,8 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     let json = """
     {"id":142,"ticketId":1,"projectId":1,"branch":"fix/github-1","number":142,
      "url":"https://github.com/x/pull/142","status":"needs_attention","lastReviewScore":3.2,"pinned":false,
-     "createdAt":"2026-08-12T00:00:00.000Z",
+     "createdAt":"2026-08-12T00:00:00.000Z","title":"Fix null check","isDraft":false,
+     "authoredByMe":false,"assignedToMe":false,"messageCount":1,
      "messages":[{"id":1,"prId":142,"role":"assistant","content":"Fix ready for review.","createdAt":"2026-08-12T00:00:00.000Z"}]}
     """
     let pr = try decode(PullRequest.self, json)
@@ -161,7 +164,8 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     let prJson = """
     {"id":142,"ticketId":1,"projectId":1,"branch":"fix/github-1","number":142,
      "url":"https://github.com/x/pull/142","status":"open","lastReviewScore":4.6,"pinned":true,
-     "createdAt":"2026-08-12T00:00:00.000Z"}
+     "createdAt":"2026-08-12T00:00:00.000Z","title":"Fix null check","isDraft":false,
+     "authoredByMe":false,"assignedToMe":false,"messageCount":0}
     """
     #expect(try decode(Ticket.self, ticketJson).pinned == true)
     #expect(try decode(PullRequest.self, prJson).pinned == true)
@@ -175,6 +179,21 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
      "createdAt":"2026-08-14T00:00:00.000Z"}
     """
     #expect(try decode(Todo.self, json).pinned == true)
+}
+
+@Test func decodesAPullRequestFromTheInbox() throws {
+    let json = """
+    {"id":1,"ticketId":null,"projectId":2,"branch":"","number":24,"url":"u",
+     "status":"open","lastReviewScore":null,"createdAt":"2026-08-17T10:00:00Z",
+     "pinned":false,"title":"Guard the deploy","reviewState":"changes_requested",
+     "isDraft":false,"githubUpdatedAt":"2026-08-17T09:46:24Z",
+     "authoredByMe":true,"assignedToMe":false,"messageCount":3}
+    """
+    let pr = try JSONDecoder().decode(PullRequest.self, from: Data(json.utf8))
+    #expect(pr.title == "Guard the deploy")
+    #expect(pr.reviewState == .changesRequested)
+    #expect(pr.messageCount == 3)
+    #expect(pr.authoredByMe)
 }
 
 @Test func decodesProjectStatusAndBlurb() throws {

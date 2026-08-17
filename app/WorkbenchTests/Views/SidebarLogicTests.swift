@@ -10,7 +10,9 @@ private func todo(id: Int, projectId: Int?, done: Bool) -> Todo {
 
 private func pr(id: Int) -> PullRequest {
     PullRequest(id: id, ticketId: 1, projectId: 1, branch: "fix/\(id)", number: id,
-                url: nil, status: .open, lastReviewScore: nil, createdAt: "2026-08-13T00:00:00.000Z")
+                url: nil, status: .open, lastReviewScore: nil, createdAt: "2026-08-13T00:00:00.000Z",
+                title: "PR \(id)", isDraft: false, authoredByMe: false, assignedToMe: false,
+                messageCount: 0)
 }
 
 @Test func navCountForTodayCountsOnlyIncompleteTodos() {

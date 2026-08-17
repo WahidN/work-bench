@@ -51,7 +51,9 @@ private func pullRequest(
     createdAt: String = "2026-08-13T09:00:00.000Z"
 ) -> PullRequest {
     var value = PullRequest(id: id, ticketId: ticketId, projectId: projectId, branch: "fix/atl-441",
-                            number: number, url: nil, status: status, lastReviewScore: nil, createdAt: createdAt)
+                            number: number, url: nil, status: status, lastReviewScore: nil, createdAt: createdAt,
+                            title: "Refunds double-charge", isDraft: false, authoredByMe: false,
+                            assignedToMe: false, messageCount: 0)
     value.pinned = pinned
     return value
 }

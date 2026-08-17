@@ -8,7 +8,9 @@ private func project(name: String = "Atlas Payments", githubRepo: String? = "acm
 
 private func pr(number: Int?, branch: String = "fix/gh-1", status: PrStatus = .open) -> PullRequest {
     PullRequest(id: 1, ticketId: 1, projectId: 1, branch: branch, number: number,
-                url: nil, status: status, lastReviewScore: nil, createdAt: "2026-08-13T00:00:00.000Z")
+                url: nil, status: status, lastReviewScore: nil, createdAt: "2026-08-13T00:00:00.000Z",
+                title: "PR 1", isDraft: false, authoredByMe: false, assignedToMe: false,
+                messageCount: 0)
 }
 
 private func ticket(source: TicketSource, sourceId: String, status: TicketStatus = .new) -> Ticket {
