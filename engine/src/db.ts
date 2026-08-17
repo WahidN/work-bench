@@ -13,7 +13,9 @@ CREATE TABLE IF NOT EXISTS projects (
   default_branch TEXT NOT NULL,
   github_repo TEXT,
   jira_project_key TEXT,
-  sentry_project_slug TEXT
+  sentry_project_slug TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','planning')),
+  blurb TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS todos (
@@ -115,6 +117,9 @@ const MIGRATIONS: string[] = [
    ALTER TABLE prs ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;`,
   // 2: Jira screen. Pin a Jira issue onto Today.
   `ALTER TABLE todos ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;`,
+  // 3: Projects grid. Status and a one-line blurb per project.
+  `ALTER TABLE projects ADD COLUMN status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','planning'));
+   ALTER TABLE projects ADD COLUMN blurb TEXT NOT NULL DEFAULT '';`,
 ];
 
 function isEmptyDatabase(db: Database.Database): boolean {

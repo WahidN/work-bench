@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { Project, ProjectMessage } from './types.js';
+import type { Project, ProjectMessage, ProjectStatus } from './types.js';
 
 function rowToProject(row: any): Project {
   return {
@@ -10,6 +10,8 @@ function rowToProject(row: any): Project {
     githubRepo: row.github_repo,
     jiraProjectKey: row.jira_project_key,
     sentryProjectSlug: row.sentry_project_slug,
+    status: row.status,
+    blurb: row.blurb,
   };
 }
 
@@ -29,15 +31,17 @@ export interface ProjectInput {
   githubRepo: string | null;
   jiraProjectKey: string | null;
   sentryProjectSlug: string | null;
+  status?: ProjectStatus;
+  blurb?: string;
 }
 
 export function createProject(db: Database.Database, input: ProjectInput): Project {
   const result = db
     .prepare(
-      `INSERT INTO projects (name, repo_path, default_branch, github_repo, jira_project_key, sentry_project_slug)
-       VALUES (@name, @repoPath, @defaultBranch, @githubRepo, @jiraProjectKey, @sentryProjectSlug)`
+      `INSERT INTO projects (name, repo_path, default_branch, github_repo, jira_project_key, sentry_project_slug, status, blurb)
+       VALUES (@name, @repoPath, @defaultBranch, @githubRepo, @jiraProjectKey, @sentryProjectSlug, @status, @blurb)`
     )
-    .run(input);
+    .run({ ...input, status: input.status ?? 'active', blurb: input.blurb ?? '' });
   return getProject(db, Number(result.lastInsertRowid))!;
 }
 
@@ -51,7 +55,8 @@ export function updateProject(
   const merged = { ...current, ...input };
   db.prepare(
     `UPDATE projects SET name = @name, repo_path = @repoPath, default_branch = @defaultBranch,
-     github_repo = @githubRepo, jira_project_key = @jiraProjectKey, sentry_project_slug = @sentryProjectSlug
+     github_repo = @githubRepo, jira_project_key = @jiraProjectKey, sentry_project_slug = @sentryProjectSlug,
+     status = @status, blurb = @blurb
      WHERE id = @id`
   ).run({ ...merged, repoPath: merged.repoPath, defaultBranch: merged.defaultBranch, id });
   return getProject(db, id);

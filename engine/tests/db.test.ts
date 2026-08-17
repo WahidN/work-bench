@@ -46,7 +46,7 @@ describe('openDb', () => {
   it('stamps a fresh database as already migrated', () => {
     dir = mkdtempSync(join(tmpdir(), 'workbench-db-'));
     const db = openDb(join(dir, 'test.db'));
-    expect(db.pragma('user_version', { simple: true })).toBe(2);
+    expect(db.pragma('user_version', { simple: true })).toBe(3);
     db.close();
   });
 
@@ -54,7 +54,9 @@ describe('openDb', () => {
     dir = mkdtempSync(join(tmpdir(), 'workbench-db-'));
     const path = join(dir, 'legacy.db');
 
-    // The pre-phase-4 shape, trimmed to the tables this migration touches.
+    // The pre-phase-4 shape, trimmed to the tables this migration touches. projects
+    // is included in its pre-status/blurb shape because it already existed in every
+    // real legacy database, unlike todos/tickets/prs it is not created fresh by SCHEMA.
     const legacy = new Database(path);
     legacy.exec(`
       CREATE TABLE todos (
@@ -66,6 +68,15 @@ describe('openDb', () => {
       );
       CREATE TABLE tickets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL);
       CREATE TABLE prs (id INTEGER PRIMARY KEY AUTOINCREMENT, branch TEXT NOT NULL);
+      CREATE TABLE projects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        repo_path TEXT NOT NULL,
+        default_branch TEXT NOT NULL,
+        github_repo TEXT,
+        jira_project_key TEXT,
+        sentry_project_slug TEXT
+      );
     `);
     legacy.prepare(`INSERT INTO todos (source, text, done, created_at) VALUES ('manual', 'old task', 0, '2026-08-01')`).run();
     legacy.prepare(`INSERT INTO tickets (title) VALUES ('old ticket')`).run();
@@ -82,12 +93,14 @@ describe('openDb', () => {
     expect(columns(db, 'tickets')).toContain('pinned');
     expect(columns(db, 'prs')).toContain('pinned');
     expect(columns(db, 'todos')).toContain('pinned');
+    expect(columns(db, 'projects')).toContain('status');
+    expect(columns(db, 'projects')).toContain('blurb');
     expect(db.prepare('SELECT priority, due_at, done_at FROM todos').get()).toEqual({
       priority: 'med', due_at: null, done_at: null,
     });
     expect(db.prepare('SELECT pinned FROM tickets').get()).toEqual({ pinned: 0 });
     expect(db.prepare('SELECT pinned FROM prs').get()).toEqual({ pinned: 0 });
-    expect(db.pragma('user_version', { simple: true })).toBe(2);
+    expect(db.pragma('user_version', { simple: true })).toBe(3);
     db.close();
 
     // Reopening an already-migrated file must be a no-op: no throw, version unchanged.
@@ -96,7 +109,7 @@ describe('openDb', () => {
     // at 0, so the next open replayed the ALTER TABLE and threw on the duplicate column.
     const reopened = openDb(path);
     expect(columns(reopened, 'todos')).toContain('priority');
-    expect(reopened.pragma('user_version', { simple: true })).toBe(2);
+    expect(reopened.pragma('user_version', { simple: true })).toBe(3);
     reopened.close();
   });
 
@@ -151,11 +164,20 @@ describe('openDb', () => {
         last_review_score REAL,
         created_at TEXT NOT NULL
       );
+      CREATE TABLE projects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        repo_path TEXT NOT NULL,
+        default_branch TEXT NOT NULL,
+        github_repo TEXT,
+        jira_project_key TEXT,
+        sentry_project_slug TEXT
+      );
     `);
     legacy.close();
     const migratedDb = openDb(legacyPath);
 
-    for (const table of ['todos', 'tickets', 'prs']) {
+    for (const table of ['todos', 'tickets', 'prs', 'projects']) {
       expect(columns(migratedDb, table)).toEqual(columns(freshDb, table));
     }
 

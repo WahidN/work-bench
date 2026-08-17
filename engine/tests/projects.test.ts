@@ -128,3 +128,50 @@ describe('project messages', () => {
     expect(message.createdAt).toBeTypeOf('string');
   });
 });
+
+describe('project status and blurb', () => {
+  it('defaults a new project to active with an empty blurb', () => {
+    const project = createProject(db, {
+      name: 'atlas', repoPath: '/repos/atlas', defaultBranch: 'main',
+      githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null,
+    });
+
+    expect(project.status).toBe('active');
+    expect(project.blurb).toBe('');
+  });
+
+  it('accepts a status and a blurb on create', () => {
+    const project = createProject(db, {
+      name: 'drydock', repoPath: '/repos/drydock', defaultBranch: 'main',
+      githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null,
+      status: 'paused', blurb: 'Build pipeline consolidation.',
+    });
+
+    expect(project.status).toBe('paused');
+    expect(project.blurb).toBe('Build pipeline consolidation.');
+  });
+
+  it('updates the status and blurb without disturbing the other fields', () => {
+    const project = createProject(db, {
+      name: 'ledger', repoPath: '/repos/ledger', defaultBranch: 'main',
+      githubRepo: 'acme/ledger', jiraProjectKey: 'LED', sentryProjectSlug: null,
+    });
+
+    const updated = updateProject(db, project.id, { status: 'planning', blurb: 'Q3 discovery.' })!;
+
+    expect(updated.status).toBe('planning');
+    expect(updated.blurb).toBe('Q3 discovery.');
+    expect(updated.githubRepo).toBe('acme/ledger');
+    expect(updated.jiraProjectKey).toBe('LED');
+    expect(updated.repoPath).toBe('/repos/ledger');
+  });
+
+  it('rejects a status outside the allowed set', () => {
+    const project = createProject(db, {
+      name: 'relay', repoPath: '/repos/relay', defaultBranch: 'main',
+      githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null,
+    });
+
+    expect(() => updateProject(db, project.id, { status: 'archived' as any })).toThrow(/CHECK/);
+  });
+});

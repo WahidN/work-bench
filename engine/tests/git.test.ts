@@ -24,7 +24,7 @@ describe('mergePr', () => {
 describe('openWorktree', () => {
   it('fetches and bases the worktree off the existing branch, not the default branch', async () => {
     vi.mocked(execa).mockResolvedValue({ stdout: '' } as any);
-    const project = { id: 1, name: 'demo', repoPath: '/repos/demo', defaultBranch: 'main', githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null };
+    const project = { id: 1, name: 'demo', repoPath: '/repos/demo', defaultBranch: 'main', githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null, status: 'active' as const, blurb: '' };
     const path = await openWorktree(project, 'fix/gh-demo-1');
     expect(path).toBe('/repos/demo/.worktrees/fix-gh-demo-1');
     expect(execa).toHaveBeenCalledWith('git', ['fetch', 'origin', 'fix/gh-demo-1'], { cwd: '/repos/demo' });

@@ -1,3 +1,5 @@
+export type ProjectStatus = 'active' | 'paused' | 'planning';
+
 export interface Project {
   id: number;
   name: string;
@@ -6,6 +8,8 @@ export interface Project {
   githubRepo: string | null;
   jiraProjectKey: string | null;
   sentryProjectSlug: string | null;
+  status: ProjectStatus;
+  blurb: string;
 }
 
 export type TodoSource = 'manual' | 'jira';
