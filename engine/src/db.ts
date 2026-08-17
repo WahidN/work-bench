@@ -75,6 +75,12 @@ CREATE TABLE IF NOT EXISTS prs (
   status TEXT NOT NULL CHECK (status IN ('open','needs_attention','merged')) DEFAULT 'open',
   last_review_score REAL,
   pinned INTEGER NOT NULL DEFAULT 0,
+  title TEXT NOT NULL DEFAULT '',
+  review_state TEXT,
+  is_draft INTEGER NOT NULL DEFAULT 0,
+  github_updated_at TEXT,
+  authored_by_me INTEGER NOT NULL DEFAULT 0,
+  assigned_to_me INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
 
@@ -124,6 +130,13 @@ const MIGRATIONS: string[] = [
   // 3: Projects grid. Status and a one-line blurb per project.
   `ALTER TABLE projects ADD COLUMN status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','planning'));
    ALTER TABLE projects ADD COLUMN blurb TEXT NOT NULL DEFAULT '';`,
+  // 4: PR inbox. GitHub review state and the two "is this mine" flags.
+  `ALTER TABLE prs ADD COLUMN title TEXT NOT NULL DEFAULT '';
+   ALTER TABLE prs ADD COLUMN review_state TEXT;
+   ALTER TABLE prs ADD COLUMN is_draft INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE prs ADD COLUMN github_updated_at TEXT;
+   ALTER TABLE prs ADD COLUMN authored_by_me INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE prs ADD COLUMN assigned_to_me INTEGER NOT NULL DEFAULT 0;`,
 ];
 
 function isEmptyDatabase(db: Database.Database): boolean {

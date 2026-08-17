@@ -62,6 +62,8 @@ export interface TicketMessage {
 
 export type PrStatus = 'open' | 'needs_attention' | 'merged';
 
+export type PrReviewState = 'approved' | 'changes_requested' | 'review_required';
+
 export interface Pr {
   id: number;
   ticketId: number | null;
@@ -72,6 +74,13 @@ export interface Pr {
   status: PrStatus;
   lastReviewScore: number | null;
   pinned: boolean;
+  title: string;
+  reviewState: PrReviewState | null;
+  isDraft: boolean;
+  githubUpdatedAt: string | null;
+  authoredByMe: boolean;
+  assignedToMe: boolean;
+  messageCount: number;
   createdAt: string;
 }
 

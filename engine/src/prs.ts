@@ -1,28 +1,36 @@
 import type Database from 'better-sqlite3';
-import type { Pr, PrMessage, PrStatus } from './types.js';
+import type { Pr, PrMessage, PrStatus, PrReviewState } from './types.js';
+
+// Every route that returns a PR hands it to Swift, whose decoder has no defaults,
+// so the message count has to ride along on every read rather than only the list.
+const PR_SELECT = `SELECT p.*, (SELECT COUNT(*) FROM pr_messages m WHERE m.pr_id = p.id) AS message_count FROM prs p`;
 
 function rowToPr(row: any): Pr {
   return {
     id: row.id, ticketId: row.ticket_id, projectId: row.project_id, branch: row.branch,
     number: row.number, url: row.url, status: row.status,
     lastReviewScore: row.last_review_score, pinned: !!row.pinned, createdAt: row.created_at,
+    title: row.title, reviewState: row.review_state as PrReviewState | null,
+    isDraft: !!row.is_draft, githubUpdatedAt: row.github_updated_at,
+    authoredByMe: !!row.authored_by_me, assignedToMe: !!row.assigned_to_me,
+    messageCount: Number(row.message_count ?? 0),
   };
 }
 
 export function getPr(db: Database.Database, id: number): Pr | null {
-  const row = db.prepare('SELECT * FROM prs WHERE id = ?').get(id);
+  const row = db.prepare(`${PR_SELECT} WHERE p.id = ?`).get(id);
   return row ? rowToPr(row) : null;
 }
 
 export function listPrs(db: Database.Database, filter: { status?: PrStatus } = {}): Pr[] {
   if (filter.status) {
-    return db.prepare('SELECT * FROM prs WHERE status = ? ORDER BY created_at').all(filter.status).map(rowToPr);
+    return db.prepare(`${PR_SELECT} WHERE p.status = ? ORDER BY p.created_at`).all(filter.status).map(rowToPr);
   }
-  return db.prepare('SELECT * FROM prs ORDER BY created_at').all().map(rowToPr);
+  return db.prepare(`${PR_SELECT} ORDER BY p.created_at`).all().map(rowToPr);
 }
 
 export interface RecordPrInput {
-  ticketId: number;
+  ticketId: number | null;
   projectId: number;
   branch: string;
   number: number | null;

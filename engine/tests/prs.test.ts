@@ -44,6 +44,23 @@ describe('prs', () => {
     addPrMessage(db, pr.id, 'assistant', 'done, re-reviewed 4.8/5');
     expect(listPrMessages(db, pr.id).map((m) => m.content)).toEqual(['also guard email', 'done, re-reviewed 4.8/5']);
   });
+
+  it('defaults the github columns and counts messages', () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+    const pr = recordPr(db, { ticketId: null, projectId: project.id, branch: 'fix/x', number: 7, url: 'u', status: 'open' });
+    expect(pr.title).toBe('');
+    expect(pr.reviewState).toBeNull();
+    expect(pr.isDraft).toBe(false);
+    expect(pr.githubUpdatedAt).toBeNull();
+    expect(pr.authoredByMe).toBe(false);
+    expect(pr.assignedToMe).toBe(false);
+    expect(pr.messageCount).toBe(0);
+
+    addPrMessage(db, pr.id, 'user', 'hello');
+    expect(getPr(db, pr.id)!.messageCount).toBe(1);
+    expect(listPrs(db)[0].messageCount).toBe(1);
+  });
 });
 
 describe('a PR without a ticket', () => {

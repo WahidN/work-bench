@@ -46,7 +46,7 @@ describe('openDb', () => {
   it('stamps a fresh database as already migrated', () => {
     dir = mkdtempSync(join(tmpdir(), 'workbench-db-'));
     const db = openDb(join(dir, 'test.db'));
-    expect(db.pragma('user_version', { simple: true })).toBe(3);
+    expect(db.pragma('user_version', { simple: true })).toBe(4);
     db.close();
   });
 
@@ -102,7 +102,7 @@ describe('openDb', () => {
     expect(db.prepare('SELECT pinned FROM tickets').get()).toEqual({ pinned: 0 });
     expect(db.prepare('SELECT pinned FROM prs').get()).toEqual({ pinned: 0 });
     expect(db.prepare('SELECT status, blurb FROM projects').get()).toEqual({ status: 'active', blurb: '' });
-    expect(db.pragma('user_version', { simple: true })).toBe(3);
+    expect(db.pragma('user_version', { simple: true })).toBe(4);
     db.close();
 
     // Reopening an already-migrated file must be a no-op: no throw, version unchanged.
@@ -111,7 +111,7 @@ describe('openDb', () => {
     // at 0, so the next open replayed the ALTER TABLE and threw on the duplicate column.
     const reopened = openDb(path);
     expect(columns(reopened, 'todos')).toContain('priority');
-    expect(reopened.pragma('user_version', { simple: true })).toBe(3);
+    expect(reopened.pragma('user_version', { simple: true })).toBe(4);
     reopened.close();
   });
 
