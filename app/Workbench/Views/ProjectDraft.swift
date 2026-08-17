@@ -5,6 +5,8 @@ struct ProjectDraft {
     var githubRepo = ""
     var jiraProjectKey = ""
     var sentryProjectSlug = ""
+    var status: ProjectStatus = .active
+    var blurb = ""
 
     init() {}
 
@@ -15,6 +17,8 @@ struct ProjectDraft {
         githubRepo = project.githubRepo ?? ""
         jiraProjectKey = project.jiraProjectKey ?? ""
         sentryProjectSlug = project.sentryProjectSlug ?? ""
+        status = project.status
+        blurb = project.blurb
     }
 
     func asInput() -> ProjectInput {
@@ -22,7 +26,8 @@ struct ProjectDraft {
             name: name, repoPath: repoPath, defaultBranch: defaultBranch,
             githubRepo: githubRepo.isEmpty ? nil : githubRepo,
             jiraProjectKey: jiraProjectKey.isEmpty ? nil : jiraProjectKey,
-            sentryProjectSlug: sentryProjectSlug.isEmpty ? nil : sentryProjectSlug
+            sentryProjectSlug: sentryProjectSlug.isEmpty ? nil : sentryProjectSlug,
+            status: status, blurb: blurb
         )
     }
 
@@ -31,7 +36,8 @@ struct ProjectDraft {
             name: name, repoPath: repoPath, defaultBranch: defaultBranch,
             githubRepo: githubRepo.isEmpty ? nil : githubRepo,
             jiraProjectKey: jiraProjectKey.isEmpty ? nil : jiraProjectKey,
-            sentryProjectSlug: sentryProjectSlug.isEmpty ? nil : sentryProjectSlug
+            sentryProjectSlug: sentryProjectSlug.isEmpty ? nil : sentryProjectSlug,
+            status: status, blurb: blurb
         )
     }
 }

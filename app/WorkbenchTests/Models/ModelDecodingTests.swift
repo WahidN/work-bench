@@ -9,7 +9,8 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
 @Test func decodesProject() throws {
     let json = """
     {"id":1,"name":"demo","repoPath":"/repos/demo","defaultBranch":"main",
-     "githubRepo":"linku/demo","jiraProjectKey":"DEMO","sentryProjectSlug":"demo-frontend"}
+     "githubRepo":"linku/demo","jiraProjectKey":"DEMO","sentryProjectSlug":"demo-frontend",
+     "status":"active","blurb":""}
     """
     let project = try decode(Project.self, json)
     #expect(project.id == 1)
@@ -20,7 +21,8 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
 @Test func decodesProjectWithNullOptionalFields() throws {
     let json = """
     {"id":2,"name":"solo","repoPath":"/repos/solo","defaultBranch":"main",
-     "githubRepo":null,"jiraProjectKey":null,"sentryProjectSlug":null}
+     "githubRepo":null,"jiraProjectKey":null,"sentryProjectSlug":null,
+     "status":"active","blurb":""}
     """
     let project = try decode(Project.self, json)
     #expect(project.githubRepo == nil)
@@ -162,4 +164,15 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
      "createdAt":"2026-08-14T00:00:00.000Z"}
     """
     #expect(try decode(Todo.self, json).pinned == true)
+}
+
+@Test func decodesProjectStatusAndBlurb() throws {
+    let json = """
+    {"id":3,"name":"Drydock","repoPath":"/repos/drydock","defaultBranch":"main",
+     "githubRepo":null,"jiraProjectKey":null,"sentryProjectSlug":null,
+     "status":"paused","blurb":"Build pipeline consolidation."}
+    """
+    let project = try decode(Project.self, json)
+    #expect(project.status == .paused)
+    #expect(project.blurb == "Build pipeline consolidation.")
 }

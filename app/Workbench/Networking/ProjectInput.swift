@@ -5,6 +5,8 @@ struct ProjectInput: Encodable {
     var githubRepo: String?
     var jiraProjectKey: String?
     var sentryProjectSlug: String?
+    var status: ProjectStatus?
+    var blurb: String?
 }
 
 struct ProjectUpdate: Encodable {
@@ -14,4 +16,6 @@ struct ProjectUpdate: Encodable {
     var githubRepo: String?
     var jiraProjectKey: String?
     var sentryProjectSlug: String?
+    var status: ProjectStatus?
+    var blurb: String?
 }

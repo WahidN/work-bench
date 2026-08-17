@@ -28,7 +28,7 @@ struct APIClientTodayProjectsTests {
             capturedMethod = request.httpMethod
             capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
             return jsonResponse(request.url!, status: 201, body: """
-            {"id":1,"name":"demo","repoPath":"/repos/demo","defaultBranch":"main","githubRepo":null,"jiraProjectKey":null,"sentryProjectSlug":null}
+            {"id":1,"name":"demo","repoPath":"/repos/demo","defaultBranch":"main","githubRepo":null,"jiraProjectKey":null,"sentryProjectSlug":null,"status":"active","blurb":""}
             """)
         }
         let input = ProjectInput(name: "demo", repoPath: "/repos/demo", defaultBranch: "main", githubRepo: nil, jiraProjectKey: nil, sentryProjectSlug: nil)
@@ -54,7 +54,7 @@ struct APIClientTodayProjectsTests {
         let session = mockedSession { request in
             capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
             return jsonResponse(request.url!, status: 200, body: """
-            {"id":1,"name":"demo","repoPath":"/repos/demo","defaultBranch":"develop","githubRepo":null,"jiraProjectKey":null,"sentryProjectSlug":null}
+            {"id":1,"name":"demo","repoPath":"/repos/demo","defaultBranch":"develop","githubRepo":null,"jiraProjectKey":null,"sentryProjectSlug":null,"status":"active","blurb":""}
             """)
         }
         let update = ProjectUpdate(defaultBranch: "develop")
