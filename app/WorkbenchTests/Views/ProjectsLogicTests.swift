@@ -90,11 +90,19 @@ private let noon = ISO8601DateFormatter().date(from: "2026-08-17T12:00:00Z")!
         projects: [project(id: 1)],
         todos: [],
         tickets: [],
-        prs: [pullRequest(id: 1, projectId: 1), pullRequest(id: 2, projectId: 1, status: .merged)],
+        prs: [
+            pullRequest(id: 1, projectId: 1),
+            pullRequest(id: 2, projectId: 1, status: .merged),
+            pullRequest(id: 3, projectId: 1, status: .needsAttention)
+        ],
         now: noon
     )
 
-    #expect(cards[0].prCount == 1)
+    #expect(cards[0].prCount == 2, "open and needs-attention both count, only merged is excluded")
+}
+
+@Test func emptyStateTextIsTheExactCopy() {
+    #expect(ProjectsLogic.emptyStateText == "No projects yet. Add one to get started.")
 }
 
 @Test func activityIsTheMostRecentTimestampAcrossEverythingTheProjectOwns() {
