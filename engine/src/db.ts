@@ -63,7 +63,11 @@ CREATE TABLE IF NOT EXISTS ticket_messages (
 
 CREATE TABLE IF NOT EXISTS prs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  ticket_id INTEGER NOT NULL REFERENCES tickets(id),
+  -- Nullable: a PR imported from GitHub has no ticket behind it. There is no
+  -- migration entry for dropping this NOT NULL, because SQLite would need a full
+  -- table rebuild and no existing database needs it: only recordPr inserts here
+  -- and it always has a ticket, so an older database being stricter is harmless.
+  ticket_id INTEGER REFERENCES tickets(id),
   project_id INTEGER NOT NULL REFERENCES projects(id),
   branch TEXT NOT NULL,
   number INTEGER,

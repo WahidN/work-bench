@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import { openDb } from '../src/db.js';
 import { createProject } from '../src/projects.js';
 import { createTicket } from '../src/tickets.js';
-import { recordPr, getPr, updatePrStatus, addPrMessage, listPrMessages, setPrPinned } from '../src/prs.js';
+import { recordPr, getPr, listPrs, updatePrStatus, addPrMessage, listPrMessages, setPrPinned } from '../src/prs.js';
 
 let db: Database.Database;
 let ticketId: number;
@@ -43,6 +43,17 @@ describe('prs', () => {
     addPrMessage(db, pr.id, 'user', 'also guard email');
     addPrMessage(db, pr.id, 'assistant', 'done, re-reviewed 4.8/5');
     expect(listPrMessages(db, pr.id).map((m) => m.content)).toEqual(['also guard email', 'done, re-reviewed 4.8/5']);
+  });
+});
+
+describe('a PR without a ticket', () => {
+  it('reads back with a null ticketId', () => {
+    db.prepare(
+      `INSERT INTO prs (ticket_id, project_id, branch, number, url, status, created_at)
+       VALUES (NULL, ?, 'feat/header', 23, 'https://github.com/x/pull/23', 'open', '2026-08-12T17:31:06.792Z')`
+    ).run(projectId);
+
+    expect(listPrs(db).map((p) => p.ticketId)).toEqual([null]);
   });
 });
 

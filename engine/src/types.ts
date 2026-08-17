@@ -64,7 +64,7 @@ export type PrStatus = 'open' | 'needs_attention' | 'merged';
 
 export interface Pr {
   id: number;
-  ticketId: number;
+  ticketId: number | null;
   projectId: number;
   branch: string;
   number: number | null;

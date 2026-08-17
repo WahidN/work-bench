@@ -44,7 +44,7 @@ async function mergePrChat(db: Database.Database, pr: Pr, project: Project): Pro
   }
   updatePrStatus(db, pr.id, 'merged', pr.lastReviewScore);
   setPrPinned(db, pr.id, false);
-  const ticket = getTicket(db, pr.ticketId);
+  const ticket = pr.ticketId === null ? null : getTicket(db, pr.ticketId);
   if (ticket) {
     updateTicketStatus(db, ticket.id, 'done', pr.id);
     setTicketPinned(db, ticket.id, false);
@@ -68,7 +68,7 @@ async function revisePrChat(
   project: Project,
   userMessage: string
 ): Promise<PrChatResult> {
-  const ticket = getTicket(db, pr.ticketId);
+  const ticket = pr.ticketId === null ? null : getTicket(db, pr.ticketId);
   if (!ticket) throw new Error(`Ticket for PR ${pr.id} not found`);
   const worktreePath = await openWorktree(project, pr.branch);
 
