@@ -4,9 +4,10 @@ import {
   listProjects, getProject, createProject, updateProject, deleteProject, listProjectMessages,
 } from '../../projects.js';
 import { sendProjectMessage } from '../../projectChat.js';
+import type { ProjectStatus } from '../../types.js';
 
 export function registerProjectsRoutes(app: Express, db: Database.Database): void {
-  const PROJECT_STATUSES = ['active', 'paused', 'planning'];
+  const PROJECT_STATUSES: ProjectStatus[] = ['active', 'paused', 'planning'];
 
   app.get('/projects', (_req, res) => res.json(listProjects(db)));
 

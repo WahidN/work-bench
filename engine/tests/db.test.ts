@@ -81,6 +81,7 @@ describe('openDb', () => {
     legacy.prepare(`INSERT INTO todos (source, text, done, created_at) VALUES ('manual', 'old task', 0, '2026-08-01')`).run();
     legacy.prepare(`INSERT INTO tickets (title) VALUES ('old ticket')`).run();
     legacy.prepare(`INSERT INTO prs (branch) VALUES ('old-branch')`).run();
+    legacy.prepare(`INSERT INTO projects (name, repo_path, default_branch) VALUES ('acv', '/repos/acv', 'main')`).run();
     legacy.close();
 
     const db = openDb(path);
@@ -100,6 +101,7 @@ describe('openDb', () => {
     });
     expect(db.prepare('SELECT pinned FROM tickets').get()).toEqual({ pinned: 0 });
     expect(db.prepare('SELECT pinned FROM prs').get()).toEqual({ pinned: 0 });
+    expect(db.prepare('SELECT status, blurb FROM projects').get()).toEqual({ status: 'active', blurb: '' });
     expect(db.pragma('user_version', { simple: true })).toBe(3);
     db.close();
 
