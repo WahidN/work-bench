@@ -14,7 +14,7 @@ struct PullRequestMessage: Codable, Identifiable, Equatable {
 
 struct PullRequest: Codable, Identifiable, Equatable {
     let id: Int
-    let ticketId: Int
+    let ticketId: Int?
     let projectId: Int
     let branch: String
     let number: Int?

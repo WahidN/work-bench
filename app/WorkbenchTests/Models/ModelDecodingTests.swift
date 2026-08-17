@@ -87,6 +87,17 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     #expect(pr.messages == nil)
 }
 
+@Test func decodesPullRequestWithoutATicket() throws {
+    let json = """
+    {"id":1,"ticketId":null,"projectId":1,"branch":"feat/header","number":23,
+     "url":"https://github.com/x/pull/23","status":"open","lastReviewScore":null,"pinned":false,
+     "createdAt":"2026-08-12T17:31:06.792Z"}
+    """
+    let pr = try decode(PullRequest.self, json)
+    #expect(pr.ticketId == nil)
+    #expect(pr.branch == "feat/header")
+}
+
 @Test func decodesPullRequestDetailShapeWithMessages() throws {
     let json = """
     {"id":142,"ticketId":1,"projectId":1,"branch":"fix/github-1","number":142,
