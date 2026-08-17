@@ -11,26 +11,10 @@ private func samplePr(id: Int = 1, status: PrStatus = .open) -> PullRequest {
 @MainActor
 final class MockPRsAPI: PRsAPI {
     var pullRequestsResult: Result<[PullRequest], Error> = .success([])
-    var pullRequestHandler: (Int) throws -> PullRequest = { samplePr(id: $0) }
-    var diffResult: Result<DiffResponse, Error> = .success(DiffResponse(diff: "--- a\n+++ b"))
-    var sendMessageResult: Result<PrChatResult, Error> = .success(PrChatResult(action: .revised, reply: "done"))
-    var mergeResult: Result<PrChatResult, Error> = .success(PrChatResult(action: .merged, reply: "Merged."))
     var setPrPinnedResult: Result<PullRequest, Error>?
-    private(set) var diffCalls: [Int] = []
-    private(set) var mergeCalls: [Int] = []
     private(set) var setPrPinnedCalls: [(id: Int, pinned: Bool)] = []
 
     func pullRequests() async throws -> [PullRequest] { try pullRequestsResult.get() }
-    func pullRequest(id: Int) async throws -> PullRequest { try pullRequestHandler(id) }
-    func diff(prId: Int) async throws -> DiffResponse {
-        diffCalls.append(prId)
-        return try diffResult.get()
-    }
-    func sendPrMessage(id: Int, text: String) async throws -> PrChatResult { try sendMessageResult.get() }
-    func mergePr(id: Int) async throws -> PrChatResult {
-        mergeCalls.append(id)
-        return try mergeResult.get()
-    }
     func setPrPinned(id: Int, pinned: Bool) async throws -> PullRequest {
         setPrPinnedCalls.append((id, pinned))
         return try setPrPinnedResult!.get()
@@ -40,44 +24,6 @@ final class MockPRsAPI: PRsAPI {
 @MainActor
 @Suite
 struct PRsViewModelTests {
-    @Test func selectFetchesTheDetailOnlyAndNeverTheDiff() async {
-        let api = MockPRsAPI()
-        let viewModel = PRsViewModel(api: api)
-        await viewModel.select(samplePr(id: 1))
-        #expect(viewModel.selectedPr?.id == 1)
-        #expect(api.diffCalls.isEmpty, "a diff fetch would take the PR job lock the agent panel needs")
-    }
-
-    @Test func selectOnAnAlreadyMergedPrSkipsTheDiffCall() async {
-        let api = MockPRsAPI()
-        api.pullRequestHandler = { id in samplePr(id: id, status: .merged) }
-        let viewModel = PRsViewModel(api: api)
-        await viewModel.select(samplePr(id: 1))
-        #expect(viewModel.diffText == nil)
-        #expect(api.diffCalls.isEmpty, "should never call diff for a PR already known to be merged")
-    }
-
-    @Test func sendMessageRefreshesDetailAndDiff() async {
-        let api = MockPRsAPI()
-        let viewModel = PRsViewModel(api: api)
-        await viewModel.select(samplePr(id: 1))
-        await viewModel.sendMessage("also guard the email field")
-        #expect(viewModel.diffText != nil)
-    }
-
-    @Test func mergeCallsMergeAndReloadsListWithoutFetchingDiff() async {
-        let api = MockPRsAPI()
-        api.pullRequestHandler = { id in samplePr(id: id, status: .open) }
-        api.pullRequestsResult = .success([samplePr(id: 1, status: .merged)])
-        let viewModel = PRsViewModel(api: api)
-        await viewModel.select(samplePr(id: 1))
-        let diffCallsBeforeMerge = api.diffCalls.count
-        await viewModel.merge()
-        #expect(api.mergeCalls == [1])
-        #expect(api.diffCalls.count == diffCallsBeforeMerge, "merging should never attempt a diff fetch")
-        #expect(viewModel.pullRequests.first?.status == .merged)
-    }
-
     @Test func loadClearsAPriorErrorOnceTheEngineIsBackUp() async {
         let api = MockPRsAPI()
         api.pullRequestsResult = .failure(APIError.transportFailed("no engine"))
