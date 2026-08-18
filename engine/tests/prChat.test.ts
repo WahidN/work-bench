@@ -28,12 +28,6 @@ function ingestedPr(authoredByMe = false) {
   });
 }
 
-// recordPr defaults authored_by_me to false until the poller reconciles a pipeline
-// PR with GitHub, but the merge tests below exercise the already-authored path.
-function markAuthored(id: number): void {
-  db.prepare('UPDATE prs SET authored_by_me = 1 WHERE id = ?').run(id);
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
   db = openDb(':memory:');
@@ -47,7 +41,6 @@ beforeEach(() => {
   prId = recordPr(db, {
     ticketId, projectId, branch: 'fix/github-1', number: 142, url: 'https://github.com/x/pull/142', status: 'open',
   }).id;
-  markAuthored(prId);
 
   vi.mocked(git.openDetachedWorktree).mockResolvedValue('/repos/demo/.worktrees/fix-github-1');
   vi.mocked(git.removeWorktree).mockResolvedValue(undefined);
@@ -94,7 +87,6 @@ describe('sendPrMessage: merge', () => {
       ticketId: null, projectId, branch: 'fix/no-number', number: null,
       url: 'https://github.com/x/pull/777', status: 'open',
     }).id;
-    markAuthored(noNumberPrId);
 
     await sendPrMessage(db, noNumberPrId, 'merge it');
 
@@ -108,7 +100,6 @@ describe('sendPrMessage: merge', () => {
     const barePrId = recordPr(db, {
       ticketId: null, projectId, branch: 'fix/bare', number: null, url: null, status: 'open',
     }).id;
-    markAuthored(barePrId);
 
     await expect(sendPrMessage(db, barePrId, 'merge it')).rejects.toThrow(String(barePrId));
     expect(git.openDetachedWorktree).not.toHaveBeenCalled();
@@ -230,6 +221,15 @@ describe('sendPrMessage: merge authorship gate', () => {
     expect(result.action).toBe('merged');
     expect(git.mergePr).toHaveBeenCalled();
     expect(getPr(db, pr.id)!.status).toBe('merged');
+  });
+
+  it('merges a PR the fix pipeline just recorded, with no poll cycle in between', async () => {
+    // prId comes straight from recordPr in beforeEach, with no poller run and no
+    // manual authorship fix-up: recordPr itself must already mark it authored.
+    const result = await sendPrMessage(db, prId, 'merge it');
+
+    expect(result.action).toBe('merged');
+    expect(git.mergePr).toHaveBeenCalled();
   });
 
   it('still revises normally a pull request the user did not author', async () => {
