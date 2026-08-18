@@ -113,18 +113,19 @@ describe('fetchPrDetailView', () => {
 describe('postReviewCommentReply', () => {
   it('posts the body as a threaded reply and returns the new comment', async () => {
     vi.mocked(execa).mockResolvedValue({ stdout: JSON.stringify({ id: 99 }) } as any);
-    const created = await postReviewCommentReply('https://github.com/linku/demo', 23, 7, 'Fixed in the catch.');
+    const created = await postReviewCommentReply('https://github.com/workbench-test-does-not-exist/demo', 23, 7, 'Fixed in the catch.');
     expect(created).toEqual({ id: 99 });
     expect(vi.mocked(execa).mock.calls[0][1]).toEqual([
-      'api', 'repos/linku/demo/pulls/23/comments',
+      'api', 'repos/workbench-test-does-not-exist/demo/pulls/23/comments',
       '-f', 'body=Fixed in the catch.',
       '-F', 'in_reply_to=7',
     ]);
+    expect(execa).toHaveBeenCalledTimes(1);
   });
 
   it('keeps newlines in the body intact', async () => {
     vi.mocked(execa).mockResolvedValue({ stdout: '{"id":1}' } as any);
-    await postReviewCommentReply('linku/demo', 23, 7, 'line one\nline two');
+    await postReviewCommentReply('workbench-test-does-not-exist/demo', 23, 7, 'line one\nline two');
     expect(vi.mocked(execa).mock.calls[0][1]).toContain('body=line one\nline two');
   });
 });

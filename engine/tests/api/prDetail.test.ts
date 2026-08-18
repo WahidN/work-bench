@@ -79,6 +79,7 @@ describe('POST /prs/:id/review-comments/:commentId/reply', () => {
     expect(res.body).toEqual({ id: 99 });
     expect(detail.postReviewCommentReply)
       .toHaveBeenCalledWith('https://github.com/linku/demo', 23, 7, 'Fixed in the catch.');
+    expect(detail.postReviewCommentReply).toHaveBeenCalledTimes(1);
   });
 
   it('400s empty or whitespace-only text without calling GitHub', async () => {
