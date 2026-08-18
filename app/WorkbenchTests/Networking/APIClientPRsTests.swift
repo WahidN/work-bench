@@ -9,6 +9,7 @@ struct APIClientPRsTests {
             jsonResponse(request.url!, status: 200, body: """
             {"id":142,"ticketId":1,"projectId":1,"branch":"fix/gh-1","number":142,"url":"https://x/pull/142",
              "status":"open","lastReviewScore":4.6,"pinned":false,"createdAt":"2026-08-12T00:00:00.000Z",
+             "title":"Fix null check","isDraft":false,"authoredByMe":false,"assignedToMe":false,"messageCount":1,
              "messages":[{"id":1,"prId":142,"role":"assistant","content":"Fix ready.","createdAt":"2026-08-12T00:00:00.000Z"}]}
             """)
         }
@@ -27,7 +28,8 @@ struct APIClientPRsTests {
             return jsonResponse(request.url!, status: 200, body: """
             {"id":142,"ticketId":1,"projectId":1,"branch":"fix/github-1","number":142,
              "url":"https://github.com/x/pull/142","status":"open","lastReviewScore":4.6,"pinned":true,
-             "createdAt":"2026-08-12T00:00:00.000Z"}
+             "createdAt":"2026-08-12T00:00:00.000Z","title":"Fix null check","isDraft":false,
+             "authoredByMe":false,"assignedToMe":false,"messageCount":0}
             """)
         }
         let pr = try await APIClient(session: session, keychain: StubSecretStore()).setPrPinned(id: 142, pinned: true)
