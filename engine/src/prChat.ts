@@ -48,10 +48,21 @@ function chatSubject(db: Database.Database, pr: Pr): ReviewSubject {
   return ticket ?? { title: pr.title, body: '' };
 }
 
+// gh needs an explicit selector since a detached worktree is on no branch for
+// it to infer from. A row the fix pipeline inserted before the PR exists on
+// GitHub has neither, so that has to fail before a worktree is even opened
+// rather than let gh guess from whatever branch happens to be checked out.
+function mergeSelector(pr: Pr): string {
+  if (pr.number !== null) return String(pr.number);
+  if (pr.url !== null) return pr.url;
+  throw new Error(`PR ${pr.id} has no number or url to merge`);
+}
+
 async function mergePrChat(db: Database.Database, pr: Pr, project: Project): Promise<PrChatResult> {
+  const selector = mergeSelector(pr);
   const worktreePath = await openDetachedWorktree(project, pr.branch);
   try {
-    await mergePr(worktreePath);
+    await mergePr(worktreePath, selector);
   } finally {
     await removeWorktree(project.repoPath, worktreePath);
   }

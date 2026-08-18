@@ -77,9 +77,32 @@ describe('sendPrMessage: merge', () => {
     const result = await sendPrMessage(db, prId, 'merge it');
 
     expect(result.action).toBe('merged');
-    expect(git.mergePr).toHaveBeenCalledWith('/repos/demo/.worktrees/fix-github-1');
+    expect(git.mergePr).toHaveBeenCalledWith('/repos/demo/.worktrees/fix-github-1', '142');
     expect(getPr(db, prId)!.status).toBe('merged');
     expect(getTicket(db, ticketId)!.status).toBe('done');
+  });
+
+  it('falls back to the url when the number is null', async () => {
+    const noNumberPrId = recordPr(db, {
+      ticketId: null, projectId, branch: 'fix/no-number', number: null,
+      url: 'https://github.com/x/pull/777', status: 'open',
+    }).id;
+
+    await sendPrMessage(db, noNumberPrId, 'merge it');
+
+    expect(git.mergePr).toHaveBeenCalledWith(
+      '/repos/demo/.worktrees/fix-github-1',
+      'https://github.com/x/pull/777'
+    );
+  });
+
+  it('fails fast and never opens a worktree when the PR has neither number nor url', async () => {
+    const barePrId = recordPr(db, {
+      ticketId: null, projectId, branch: 'fix/bare', number: null, url: null, status: 'open',
+    }).id;
+
+    await expect(sendPrMessage(db, barePrId, 'merge it')).rejects.toThrow(String(barePrId));
+    expect(git.openDetachedWorktree).not.toHaveBeenCalled();
   });
 
   it('clears the pin on both the PR and its ticket', async () => {

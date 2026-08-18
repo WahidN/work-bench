@@ -18,10 +18,10 @@ describe('worktreePathFor', () => {
 });
 
 describe('mergePr', () => {
-  it('runs gh pr merge with --squash in the worktree', async () => {
+  it('runs gh pr merge with the selector and --squash in the worktree', async () => {
     vi.mocked(execa).mockResolvedValue({ stdout: '' } as any);
-    await mergePr('/repos/demo/.worktrees/fix-lin-7');
-    expect(execa).toHaveBeenCalledWith('gh', ['pr', 'merge', '--squash', '--delete-branch'], {
+    await mergePr('/repos/demo/.worktrees/fix-lin-7', '24');
+    expect(execa).toHaveBeenCalledWith('gh', ['pr', 'merge', '24', '--squash', '--delete-branch'], {
       cwd: '/repos/demo/.worktrees/fix-lin-7',
     });
   });

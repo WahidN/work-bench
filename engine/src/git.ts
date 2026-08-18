@@ -87,6 +87,8 @@ export async function markPrDraft(worktreePath: string): Promise<void> {
   await execa('gh', ['pr', 'ready', '--undo'], { cwd: worktreePath });
 }
 
-export async function mergePr(worktreePath: string): Promise<void> {
-  await execa('gh', ['pr', 'merge', '--squash', '--delete-branch'], { cwd: worktreePath });
+// selector is a PR number or URL, given explicitly so gh never has to infer the
+// PR from the current branch: a detached-HEAD worktree is on no branch at all.
+export async function mergePr(worktreePath: string, selector: string): Promise<void> {
+  await execa('gh', ['pr', 'merge', selector, '--squash', '--delete-branch'], { cwd: worktreePath });
 }
