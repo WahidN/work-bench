@@ -36,3 +36,17 @@ import Foundation
     #expect(AppHeaderLogic.heading(for: .pullRequests) == "Pull requests")
     #expect(AppHeaderLogic.heading(for: .issues) == "Jira")
 }
+
+@Test func anOverrideReplacesTheSectionKickerAndHeading() {
+    #expect(AppHeaderLogic.resolvedKicker(
+        for: .pullRequests, activeProjectCount: 0, todayDateString: "", override: "GITHUB · ACV WEBSITE"
+    ) == "GITHUB · ACV WEBSITE")
+    #expect(AppHeaderLogic.resolvedHeading(for: .pullRequests, override: "acv-website#23") == "acv-website#23")
+}
+
+@Test func withoutAnOverrideTheSectionDefaultsStillApply() {
+    #expect(AppHeaderLogic.resolvedKicker(
+        for: .pullRequests, activeProjectCount: 0, todayDateString: "", override: nil
+    ) == "GitHub")
+    #expect(AppHeaderLogic.resolvedHeading(for: .pullRequests, override: nil) == "Pull requests")
+}

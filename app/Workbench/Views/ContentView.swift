@@ -28,6 +28,7 @@ struct ContentView: View {
     @State private var agentChatViewModel = AgentChatViewModel()
     @State private var jiraViewModel = JiraViewModel()
     @State private var projectSheet: ProjectSheetMode?
+    @State private var selectedPr: PullRequest?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -39,7 +40,10 @@ struct ContentView: View {
                 prs: prsViewModel.pullRequests,
                 projects: projectsViewModel.projects,
                 selectedProject: projectsViewModel.selectedProject,
-                onSelect: { selection = $0 },
+                onSelect: { section in
+                    selection = section
+                    selectedPr = nil
+                },
                 onSelectProject: { project in
                     selection = .projects
                     projectsViewModel.selectedProject = project
@@ -49,6 +53,8 @@ struct ContentView: View {
                 AppHeader(
                     section: selection,
                     activeProjectCount: ProjectsLogic.activeCount(projectsViewModel.projects),
+                    kickerOverride: prHeaderKicker,
+                    headingOverride: prHeaderHeading,
                     onOpenAgent: openProjectChat,
                     onAddProject: { projectSheet = .create }
                 )
@@ -180,7 +186,22 @@ struct ContentView: View {
                 onDidMutate: { Task { await ticketsViewModel.load() } }
             )
         case .pullRequests:
-            PRsScreen(viewModel: prsViewModel, projects: projectsViewModel.projects, onOpenAgent: openAgent)
+            if let pr = selectedPr {
+                PrDetailScreen(
+                    pr: pr,
+                    onBack: { selectedPr = nil },
+                    onOpenAgent: { openAgent(.pullRequest(pr)) },
+                    onDidMerge: { Task { await prsViewModel.load() } }
+                )
+                .id(pr.id)
+            } else {
+                PRsScreen(
+                    viewModel: prsViewModel,
+                    projects: projectsViewModel.projects,
+                    onOpenAgent: openAgent,
+                    onSelectPr: { selectedPr = $0 }
+                )
+            }
         case .projects:
             ProjectsScreen(
                 cards: ProjectsLogic.cards(
@@ -204,6 +225,20 @@ struct ContentView: View {
     private var chatProject: Project? {
         guard let target = agentChatViewModel.target else { return nil }
         return projectsViewModel.projects.first { $0.id == target.projectId }
+    }
+
+    private var prHeaderKicker: String? {
+        guard let pr = selectedPr,
+              let project = projectsViewModel.projects.first(where: { $0.id == pr.projectId })
+        else { return nil }
+        return "GitHub · \(project.name)"
+    }
+
+    private var prHeaderHeading: String? {
+        guard let pr = selectedPr else { return nil }
+        let project = projectsViewModel.projects.first { $0.id == pr.projectId }
+        let repo = project?.githubRepo.map(PRsLogic.repoName(from:)) ?? ""
+        return pr.number.map { "\(repo)#\($0)" } ?? repo
     }
 
     // A PR carries no title of its own; the ticket it was created from supplies it.

@@ -4,6 +4,7 @@ struct PRsScreen: View {
     @Bindable var viewModel: PRsViewModel
     let projects: [Project]
     let onOpenAgent: (AgentChatTarget) -> Void
+    let onSelectPr: (PullRequest) -> Void
 
     @State private var filter: PrFilter = .assignedToMe
 
@@ -65,6 +66,7 @@ struct PRsScreen: View {
                     ForEach(rows) { row in
                         PrTableRow(
                             row: row,
+                            onSelect: { onSelectPr(row.pr) },
                             onOpenAgent: { onOpenAgent(.pullRequest(row.pr)) },
                             onTogglePin: { Task { await viewModel.togglePin(row.pr) } }
                         )
@@ -99,6 +101,7 @@ struct PRsScreen: View {
 
 private struct PrTableRow: View {
     let row: PrRow
+    let onSelect: () -> Void
     let onOpenAgent: () -> Void
     let onTogglePin: () -> Void
     @State private var isHovered = false
@@ -151,7 +154,7 @@ private struct PrTableRow: View {
             Rectangle().fill(Theme.Neutral.n900).frame(height: 1)
         }
         .contentShape(Rectangle())
-        .onTapGesture(perform: onOpenAgent)
+        .onTapGesture(perform: onSelect)
         .onHover { isHovered = $0 }
     }
 
