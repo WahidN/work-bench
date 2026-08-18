@@ -241,3 +241,18 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     #expect(thread.line == nil)
     #expect(thread.isOutdated)
 }
+
+@Test func decodesPrDetailWithNoReviewStateAndAPlainComment() throws {
+    let json = """
+    {"title":"Add header","url":"https://x/pull/9","state":"OPEN","isDraft":false,
+     "reviewState":null,"author":"wahid","createdAt":"2026-08-15T10:00:00Z",
+     "baseRefName":"main","headRefName":"feat/header","commitCount":1,
+     "changedFiles":1,"additions":3,"deletions":0,
+     "files":[],"threads":[],
+     "conversation":[{"kind":"comment","author":"sana","body":"lgtm once tests pass","createdAt":"2026-08-15T11:00:00Z","state":null}]}
+    """
+    let detail = try decode(PrDetail.self, json)
+    #expect(detail.reviewState == nil)
+    #expect(detail.conversation.first?.kind == .comment)
+    #expect(detail.conversation.first?.state == nil)
+}
