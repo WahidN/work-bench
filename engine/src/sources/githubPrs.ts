@@ -17,27 +17,36 @@ export interface GithubPr {
   assignedToMe: boolean;
 }
 
-async function search(filter: '--author=@me' | '--assignee=@me'): Promise<any[]> {
+async function search(filter: '--author=@me' | '--assignee=@me'): Promise<{ rows: any[]; truncated: boolean }> {
   const { stdout } = await execa('gh', [
     'search', 'prs', filter, '--state=open', '--limit', String(SEARCH_LIMIT),
     '--json', 'number,title,url,repository,updatedAt,isDraft',
   ]);
   const rows = JSON.parse(stdout || '[]');
-  if (rows.length === SEARCH_LIMIT) {
+  const truncated = rows.length === SEARCH_LIMIT;
+  if (truncated) {
     console.warn(`github prs: ${filter} hit the ${SEARCH_LIMIT} result cap, some pull requests are missing`);
   }
-  return rows;
+  return { rows, truncated };
 }
 
-export async function fetchMyOpenPrs(repoSlugs: string[]): Promise<GithubPr[]> {
+export interface FetchMyOpenPrsResult {
+  prs: GithubPr[];
+  // True when either search hit the result cap, meaning the list below is known
+  // to be incomplete. The caller must not treat it as the full set of open pull
+  // requests, since that mistakes a partial fetch for a genuinely shrunk one.
+  truncated: boolean;
+}
+
+export async function fetchMyOpenPrs(repoSlugs: string[]): Promise<FetchMyOpenPrsResult> {
   // GitHub repo names are case-insensitive, and a project can hold any casing the
   // user pasted, so the match is lowered on both sides. Only the comparison: the
   // repo kept on the result is GitHub's own, which gh pr view is called with.
   const mapped = new Set(repoSlugs.map((slug) => toRepoSlug(slug).toLowerCase()));
-  if (mapped.size === 0) return [];
+  if (mapped.size === 0) return { prs: [], truncated: false };
 
-  let authored: any[];
-  let assigned: any[];
+  let authored: { rows: any[]; truncated: boolean };
+  let assigned: { rows: any[]; truncated: boolean };
   try {
     authored = await search('--author=@me');
     assigned = await search('--assignee=@me');
@@ -62,9 +71,9 @@ export async function fetchMyOpenPrs(repoSlugs: string[]): Promise<GithubPr[]> {
       });
     }
   };
-  take(authored, 'authoredByMe');
-  take(assigned, 'assignedToMe');
-  return [...byUrl.values()];
+  take(authored.rows, 'authoredByMe');
+  take(assigned.rows, 'assignedToMe');
+  return { prs: [...byUrl.values()], truncated: authored.truncated || assigned.truncated };
 }
 
 export interface GithubPrDetail {

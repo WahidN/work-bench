@@ -16,16 +16,17 @@ function hit(overrides: Partial<Record<string, unknown>> = {}) {
 describe('fetchMyOpenPrs', () => {
   it('unions the author and assignee searches and flags both', async () => {
     vi.mocked(execa).mockResolvedValue({ stdout: JSON.stringify([hit()]) } as any);
-    const prs = await fetchMyOpenPrs(['linku/demo']);
+    const { prs, truncated } = await fetchMyOpenPrs(['linku/demo']);
     expect(prs).toHaveLength(1);
     expect(prs[0]).toMatchObject({ repo: 'linku/demo', number: 24, authoredByMe: true, assignedToMe: true });
+    expect(truncated).toBe(false);
   });
 
   it('flags a PR that only the assignee search returned', async () => {
     vi.mocked(execa)
       .mockResolvedValueOnce({ stdout: '[]' } as any)
       .mockResolvedValueOnce({ stdout: JSON.stringify([hit()]) } as any);
-    const prs = await fetchMyOpenPrs(['linku/demo']);
+    const { prs } = await fetchMyOpenPrs(['linku/demo']);
     expect(prs[0]).toMatchObject({ authoredByMe: false, assignedToMe: true });
   });
 
@@ -33,12 +34,12 @@ describe('fetchMyOpenPrs', () => {
     vi.mocked(execa).mockResolvedValue({
       stdout: JSON.stringify([hit({ repository: { nameWithOwner: 'linku/other' } })]),
     } as any);
-    expect(await fetchMyOpenPrs(['linku/demo'])).toEqual([]);
+    expect((await fetchMyOpenPrs(['linku/demo'])).prs).toEqual([]);
   });
 
   it('accepts a project that stored the full repository URL', async () => {
     vi.mocked(execa).mockResolvedValue({ stdout: JSON.stringify([hit()]) } as any);
-    const prs = await fetchMyOpenPrs(['https://github.com/linku/demo']);
+    const { prs } = await fetchMyOpenPrs(['https://github.com/linku/demo']);
     expect(prs).toHaveLength(1);
   });
 
@@ -46,15 +47,30 @@ describe('fetchMyOpenPrs', () => {
     vi.mocked(execa).mockResolvedValue({
       stdout: JSON.stringify([hit({ repository: { nameWithOwner: 'Linku/ACV-Website' } })]),
     } as any);
-    const prs = await fetchMyOpenPrs(['linku/acv-website']);
+    const { prs } = await fetchMyOpenPrs(['linku/acv-website']);
     expect(prs).toHaveLength(1);
     // GitHub's own casing is kept, because gh pr view is called with it later.
     expect(prs[0].repo).toBe('Linku/ACV-Website');
   });
 
   it('returns nothing when there are no mapped repos, without shelling out', async () => {
-    expect(await fetchMyOpenPrs([])).toEqual([]);
+    expect((await fetchMyOpenPrs([])).prs).toEqual([]);
     expect(execa).not.toHaveBeenCalled();
+  });
+
+  it('flags truncated when a search hits the result cap', async () => {
+    const capped = Array.from({ length: 100 }, (_, i) => hit({ number: i + 1, url: `https://github.com/linku/demo/pull/${i + 1}` }));
+    vi.mocked(execa)
+      .mockResolvedValueOnce({ stdout: JSON.stringify(capped) } as any)
+      .mockResolvedValueOnce({ stdout: '[]' } as any);
+    const { truncated } = await fetchMyOpenPrs(['linku/demo']);
+    expect(truncated).toBe(true);
+  });
+
+  it('does not flag truncated when neither search hits the cap', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: JSON.stringify([hit()]) } as any);
+    const { truncated } = await fetchMyOpenPrs(['linku/demo']);
+    expect(truncated).toBe(false);
   });
 });
 
