@@ -2,11 +2,11 @@ import type Database from 'better-sqlite3';
 import { getProject } from './projects.js';
 import { getPr, addPrMessage, updatePrStatus, setPrPinned } from './prs.js';
 import { getTicket, updateTicketStatus, setTicketPinned } from './tickets.js';
-import { openWorktree, removeWorktree, commitAll, pushBranch, getDiff, mergePr } from './git.js';
+import { openDetachedWorktree, removeWorktree, commitAll, pushDetachedHead, getDiff, mergePr } from './git.js';
 import { runClaude } from './claude.js';
-import { reviewDiff, reviewPasses, averageScore } from './review.js';
+import { reviewDiff, reviewPasses, averageScore, type ReviewSubject } from './review.js';
 import { passComment, failComment } from './fixPipeline.js';
-import type { Pr, Project, Ticket } from './types.js';
+import type { Pr, Project } from './types.js';
 
 const MERGE_PHRASES = ['merge it', 'merge this', 'go ahead and merge'];
 
@@ -30,21 +30,45 @@ export async function sendPrMessage(db: Database.Database, prId: number, userMes
   const project = getProject(db, pr.projectId);
   if (!project) throw new Error(`Project ${pr.projectId} not found`);
 
+  // Resolved before the message is stored, so a turn that cannot start leaves no
+  // user message behind in a thread that will never answer it.
+  const subject = isMergeRequest(userMessage) ? null : chatSubject(db, pr);
   addPrMessage(db, prId, 'user', userMessage);
 
-  return isMergeRequest(userMessage) ? mergePrChat(db, pr, project) : revisePrChat(db, pr, project, userMessage);
+  return subject === null
+    ? mergePrChat(db, pr, project)
+    : revisePrChat(db, pr, project, subject, userMessage);
+}
+
+/// A pull request ingested from GitHub has no ticket, so its own title is the
+/// only statement of intent there is. A pipeline PR keeps using its ticket,
+/// whose body carries the fuller context the prompts were written against.
+function chatSubject(db: Database.Database, pr: Pr): ReviewSubject {
+  const ticket = pr.ticketId === null ? null : getTicket(db, pr.ticketId);
+  return ticket ?? { title: pr.title, body: '' };
+}
+
+// gh needs an explicit selector since a detached worktree is on no branch for
+// it to infer from. A row the fix pipeline inserted before the PR exists on
+// GitHub has neither, so that has to fail before a worktree is even opened
+// rather than let gh guess from whatever branch happens to be checked out.
+function mergeSelector(pr: Pr): string {
+  if (pr.number !== null) return String(pr.number);
+  if (pr.url !== null) return pr.url;
+  throw new Error(`PR ${pr.id} has no number or url to merge`);
 }
 
 async function mergePrChat(db: Database.Database, pr: Pr, project: Project): Promise<PrChatResult> {
-  const worktreePath = await openWorktree(project, pr.branch);
+  const selector = mergeSelector(pr);
+  const worktreePath = await openDetachedWorktree(project, pr.branch);
   try {
-    await mergePr(worktreePath);
+    await mergePr(worktreePath, selector);
   } finally {
     await removeWorktree(project.repoPath, worktreePath);
   }
   updatePrStatus(db, pr.id, 'merged', pr.lastReviewScore);
   setPrPinned(db, pr.id, false);
-  const ticket = getTicket(db, pr.ticketId);
+  const ticket = pr.ticketId === null ? null : getTicket(db, pr.ticketId);
   if (ticket) {
     updateTicketStatus(db, ticket.id, 'done', pr.id);
     setTicketPinned(db, ticket.id, false);
@@ -54,8 +78,8 @@ async function mergePrChat(db: Database.Database, pr: Pr, project: Project): Pro
   return { action: 'merged', reply };
 }
 
-function buildRevisePrompt(ticket: Ticket, instruction: string): string {
-  return `Revise the fix already implemented on this branch for "${ticket.title}".
+function buildRevisePrompt(subject: ReviewSubject, instruction: string): string {
+  return `Revise the fix already implemented on this branch for "${subject.title}".
 
 Requested change: ${instruction}
 
@@ -66,16 +90,15 @@ async function revisePrChat(
   db: Database.Database,
   pr: Pr,
   project: Project,
+  subject: ReviewSubject,
   userMessage: string
 ): Promise<PrChatResult> {
-  const ticket = getTicket(db, pr.ticketId);
-  if (!ticket) throw new Error(`Ticket for PR ${pr.id} not found`);
-  const worktreePath = await openWorktree(project, pr.branch);
+  const worktreePath = await openDetachedWorktree(project, pr.branch);
 
   try {
     await runClaude({
       cwd: worktreePath,
-      prompt: buildRevisePrompt(ticket, userMessage),
+      prompt: buildRevisePrompt(subject, userMessage),
       allowedTools: ['Read', 'Write', 'Edit', 'Grep', 'Glob', 'Bash'],
       timeoutMs: 30 * 60 * 1000,
     });
@@ -87,9 +110,9 @@ async function revisePrChat(
       return { action: 'revised', reply };
     }
 
-    await pushBranch(worktreePath, pr.branch);
+    await pushDetachedHead(worktreePath, pr.branch);
     const diff = await getDiff(worktreePath, project.defaultBranch);
-    const score = await reviewDiff(worktreePath, ticket, diff);
+    const score = await reviewDiff(worktreePath, subject, diff);
     const passed = reviewPasses(score);
     updatePrStatus(db, pr.id, passed ? 'open' : 'needs_attention', averageScore(score));
 

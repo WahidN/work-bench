@@ -180,7 +180,7 @@ struct ContentView: View {
                 onDidMutate: { Task { await ticketsViewModel.load() } }
             )
         case .pullRequests:
-            PRsScreen(viewModel: prsViewModel, onOpenAgent: openAgent)
+            PRsScreen(viewModel: prsViewModel, projects: projectsViewModel.projects, onOpenAgent: openAgent)
         case .projects:
             ProjectsScreen(
                 cards: ProjectsLogic.cards(

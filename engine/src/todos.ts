@@ -157,7 +157,7 @@ export function getTodayView(db: Database.Database): TodayView {
   const needsInput: TodayItem[] = [
     ...tickets.map((t) => ({ kind: 'ticket' as const, id: t.id, title: t.title, status: t.status, reviewScore: null })),
     ...prs.map((p) => {
-      const ticket = getTicket(db, p.ticketId);
+      const ticket = p.ticketId === null ? null : getTicket(db, p.ticketId);
       return {
         kind: 'pr' as const, id: p.id, title: ticket?.title ?? `PR #${p.number ?? p.id}`,
         status: p.status, reviewScore: p.lastReviewScore,

@@ -38,7 +38,7 @@ beforeEach(() => {
 
 describe('GET /prs/:id/diff', () => {
   it('opens the worktree, returns the diff, and cleans up', async () => {
-    vi.mocked(git.openWorktree).mockResolvedValue('/repos/demo/.worktrees/fix-gh-1');
+    vi.mocked(git.openDetachedWorktree).mockResolvedValue('/repos/demo/.worktrees/fix-gh-1');
     vi.mocked(git.getDiff).mockResolvedValue('--- a/x.ts\n+++ b/x.ts');
     vi.mocked(git.removeWorktree).mockResolvedValue(undefined);
 
@@ -49,7 +49,7 @@ describe('GET /prs/:id/diff', () => {
   });
 
   it('returns 500 and still cleans up when getDiff throws', async () => {
-    vi.mocked(git.openWorktree).mockResolvedValue('/repos/demo/.worktrees/fix-gh-1');
+    vi.mocked(git.openDetachedWorktree).mockResolvedValue('/repos/demo/.worktrees/fix-gh-1');
     vi.mocked(git.getDiff).mockRejectedValue(new Error('git diff failed'));
     vi.mocked(git.removeWorktree).mockResolvedValue(undefined);
 
@@ -66,12 +66,12 @@ describe('GET /prs/:id/diff', () => {
     const res = await auth(request(app).get(`/prs/${prId}/diff`));
 
     expect(res.status).toBe(409);
-    expect(git.openWorktree).not.toHaveBeenCalled();
+    expect(git.openDetachedWorktree).not.toHaveBeenCalled();
     expect(git.removeWorktree).not.toHaveBeenCalled();
   });
 
   it('releases the lock after a successful diff so the next request works', async () => {
-    vi.mocked(git.openWorktree).mockResolvedValue('/repos/demo/.worktrees/fix-gh-1');
+    vi.mocked(git.openDetachedWorktree).mockResolvedValue('/repos/demo/.worktrees/fix-gh-1');
     vi.mocked(git.getDiff).mockResolvedValue('d');
     vi.mocked(git.removeWorktree).mockResolvedValue(undefined);
 
@@ -88,7 +88,7 @@ describe('GET /prs/:id/diff', () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error).toContain('already merged');
-    expect(git.openWorktree).not.toHaveBeenCalled();
+    expect(git.openDetachedWorktree).not.toHaveBeenCalled();
   });
 });
 
@@ -141,5 +141,19 @@ describe('PATCH /prs/:id/pin', () => {
   it('404s for a PR that does not exist', async () => {
     const res = await auth(request(app).patch('/prs/999/pin')).send({ pinned: true });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('GET /prs and /prs/:id', () => {
+  it('returns every field the app decodes, on both the list and the detail', async () => {
+    const listed = await auth(request(app).get('/prs'));
+    expect(listed.status).toBe(200);
+    for (const key of ['title', 'reviewState', 'isDraft', 'githubUpdatedAt', 'authoredByMe', 'assignedToMe', 'messageCount', 'pinned']) {
+      expect(listed.body[0]).toHaveProperty(key);
+    }
+    const detail = await auth(request(app).get(`/prs/${listed.body[0].id}`));
+    for (const key of ['title', 'reviewState', 'isDraft', 'githubUpdatedAt', 'authoredByMe', 'assignedToMe', 'messageCount']) {
+      expect(detail.body).toHaveProperty(key);
+    }
   });
 });

@@ -46,7 +46,7 @@ describe('openDb', () => {
   it('stamps a fresh database as already migrated', () => {
     dir = mkdtempSync(join(tmpdir(), 'workbench-db-'));
     const db = openDb(join(dir, 'test.db'));
-    expect(db.pragma('user_version', { simple: true })).toBe(3);
+    expect(db.pragma('user_version', { simple: true })).toBe(5);
     db.close();
   });
 
@@ -66,7 +66,19 @@ describe('openDb', () => {
         done INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL
       );
-      CREATE TABLE tickets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL);
+      CREATE TABLE tickets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        project_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        url TEXT NOT NULL,
+        analysis_json TEXT,
+        status TEXT NOT NULL DEFAULT 'new',
+        pr_id INTEGER,
+        created_at TEXT NOT NULL
+      );
       CREATE TABLE prs (id INTEGER PRIMARY KEY AUTOINCREMENT, branch TEXT NOT NULL);
       CREATE TABLE projects (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,7 +91,10 @@ describe('openDb', () => {
       );
     `);
     legacy.prepare(`INSERT INTO todos (source, text, done, created_at) VALUES ('manual', 'old task', 0, '2026-08-01')`).run();
-    legacy.prepare(`INSERT INTO tickets (title) VALUES ('old ticket')`).run();
+    legacy.prepare(
+      `INSERT INTO tickets (source, source_id, project_id, title, body, url, created_at)
+       VALUES ('jira', 'OLD-1', 1, 'old ticket', 'old body', 'https://example.com/old', '2026-01-01')`
+    ).run();
     legacy.prepare(`INSERT INTO prs (branch) VALUES ('old-branch')`).run();
     legacy.prepare(`INSERT INTO projects (name, repo_path, default_branch) VALUES ('acv', '/repos/acv', 'main')`).run();
     legacy.close();
@@ -102,7 +117,7 @@ describe('openDb', () => {
     expect(db.prepare('SELECT pinned FROM tickets').get()).toEqual({ pinned: 0 });
     expect(db.prepare('SELECT pinned FROM prs').get()).toEqual({ pinned: 0 });
     expect(db.prepare('SELECT status, blurb FROM projects').get()).toEqual({ status: 'active', blurb: '' });
-    expect(db.pragma('user_version', { simple: true })).toBe(3);
+    expect(db.pragma('user_version', { simple: true })).toBe(5);
     db.close();
 
     // Reopening an already-migrated file must be a no-op: no throw, version unchanged.
@@ -111,7 +126,7 @@ describe('openDb', () => {
     // at 0, so the next open replayed the ALTER TABLE and threw on the duplicate column.
     const reopened = openDb(path);
     expect(columns(reopened, 'todos')).toContain('priority');
-    expect(reopened.pragma('user_version', { simple: true })).toBe(3);
+    expect(reopened.pragma('user_version', { simple: true })).toBe(5);
     reopened.close();
   });
 
@@ -185,5 +200,151 @@ describe('openDb', () => {
 
     freshDb.close();
     migratedDb.close();
+  });
+
+  it('runs the tickets rebuild on a database where children still reference tickets', () => {
+    dir = mkdtempSync(join(tmpdir(), 'workbench-db-'));
+    const file = join(dir, 'test.db');
+
+    // The normal shape of any install that ran the fix pipeline: prs.ticket_id and
+    // todos.promoted_ticket_id are filled in, and tickets.pr_id points back. Dropping
+    // tickets under foreign key enforcement fails on exactly those rows.
+    const raw = new Database(file);
+    raw.pragma('foreign_keys = OFF');
+    raw.exec(`
+      CREATE TABLE projects (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL);
+      CREATE TABLE tickets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        project_id INTEGER NOT NULL REFERENCES projects(id),
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        url TEXT NOT NULL,
+        analysis_json TEXT,
+        status TEXT NOT NULL DEFAULT 'new',
+        pr_id INTEGER REFERENCES "prs_old"(id),
+        pinned INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        UNIQUE(source, source_id)
+      );
+      CREATE TABLE prs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticket_id INTEGER REFERENCES tickets(id),
+        project_id INTEGER NOT NULL REFERENCES projects(id),
+        branch TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE pr_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pr_id INTEGER NOT NULL REFERENCES "prs_old"(id),
+        role TEXT NOT NULL CHECK (role IN ('user','assistant')),
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE todos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        text TEXT NOT NULL,
+        done INTEGER NOT NULL DEFAULT 0,
+        promoted_ticket_id INTEGER REFERENCES tickets(id),
+        created_at TEXT NOT NULL
+      );
+    `);
+    raw.exec(`INSERT INTO projects (name) VALUES ('P');`);
+    raw.exec(
+      `INSERT INTO tickets (source, source_id, project_id, title, body, url, pr_id, created_at)
+       VALUES ('jira', 'KEEP-1', 1, 'keep me', 'body', 'https://example.com/keep', 1, 'now')`
+    );
+    raw.exec(`INSERT INTO prs (ticket_id, project_id, branch, created_at) VALUES (1, 1, 'fix/keep-1', 'now');`);
+    raw.exec(`INSERT INTO pr_messages (pr_id, role, content, created_at) VALUES (1, 'user', 'keep me', 'now');`);
+    raw.exec(`INSERT INTO todos (source, text, promoted_ticket_id, created_at) VALUES ('manual', 'promoted', 1, 'now');`);
+    raw.pragma('user_version = 4');
+    raw.close();
+
+    const db = openDb(file);
+
+    expect(db.pragma('user_version', { simple: true })).toBe(5);
+    expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
+    expect(db.pragma('foreign_key_check')).toEqual([]);
+    expect(db.prepare('SELECT ticket_id FROM prs').get()).toEqual({ ticket_id: 1 });
+    expect(db.prepare('SELECT promoted_ticket_id FROM todos').get()).toEqual({ promoted_ticket_id: 1 });
+    expect(db.prepare('SELECT title, pr_id FROM tickets').get()).toEqual({ title: 'keep me', pr_id: 1 });
+    db.close();
+  });
+
+  it('repoints the prs_old foreign keys on pr_messages and tickets, and keeps the rows', () => {
+    dir = mkdtempSync(join(tmpdir(), 'workbench-db-'));
+    const file = join(dir, 'test.db');
+
+    const raw = new Database(file);
+    // Off so the fixture can insert rows despite the dangling FKs below, matching
+    // how such rows would have gotten in before the corruption was ever caught.
+    raw.pragma('foreign_keys = OFF');
+    raw.exec(`
+      CREATE TABLE projects (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL);
+      CREATE TABLE prs (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES projects(id));
+      CREATE TABLE pr_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pr_id INTEGER NOT NULL REFERENCES "prs_old"(id),
+        role TEXT NOT NULL CHECK (role IN ('user','assistant')),
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE tickets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        project_id INTEGER NOT NULL REFERENCES projects(id),
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        url TEXT NOT NULL,
+        analysis_json TEXT,
+        status TEXT NOT NULL DEFAULT 'new',
+        pr_id INTEGER REFERENCES "prs_old"(id),
+        pinned INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        UNIQUE(source, source_id)
+      );
+    `);
+    raw.exec(`INSERT INTO projects (name) VALUES ('P');`);
+    raw.exec(`INSERT INTO prs (project_id) VALUES (1);`);
+    raw.exec(`INSERT INTO pr_messages (pr_id, role, content, created_at) VALUES (1, 'user', 'keep me', 'now');`);
+    // pr_id is left NULL here; the test above covers a ticket that points at a real PR.
+    raw.exec(
+      `INSERT INTO tickets (source, source_id, project_id, title, body, url, created_at)
+       VALUES ('jira', 'KEEP-1', 1, 'keep me too', 'ticket body', 'https://example.com/keep', 'now')`
+    );
+    raw.pragma('user_version = 4');
+    raw.close();
+
+    const db = openDb(file);
+    const schemaOf = (table: string) =>
+      (db.prepare(`SELECT sql FROM sqlite_master WHERE name = ?`).get(table) as { sql: string }).sql;
+
+    const prMessagesSql = schemaOf('pr_messages');
+    expect(prMessagesSql).not.toContain('prs_old');
+    expect(prMessagesSql).toContain('REFERENCES prs(id)');
+    expect(db.prepare('SELECT content FROM pr_messages').all()).toEqual([{ content: 'keep me' }]);
+
+    const ticketsSql = schemaOf('tickets');
+    expect(ticketsSql).not.toContain('prs_old');
+    expect(ticketsSql).toContain('REFERENCES prs(id)');
+    expect(
+      db.prepare('SELECT source, source_id, project_id, title, body, url, pr_id, created_at FROM tickets').all()
+    ).toEqual([
+      {
+        source: 'jira',
+        source_id: 'KEEP-1',
+        project_id: 1,
+        title: 'keep me too',
+        body: 'ticket body',
+        url: 'https://example.com/keep',
+        pr_id: null,
+        created_at: 'now',
+      },
+    ]);
+
+    db.close();
   });
 });

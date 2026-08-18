@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 enum ProjectSheetMode: Identifiable {
@@ -54,7 +55,7 @@ struct ProjectFormSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Space.s4) {
                     field("Name", text: $draft.name)
-                    field("Local repo path", text: $draft.repoPath)
+                    repoPathField
                     field("Default branch", text: $draft.defaultBranch)
                     field("Blurb", text: $draft.blurb)
 
@@ -115,18 +116,61 @@ struct ProjectFormSheet: View {
     private func field(_ title: String, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: Theme.Space.s2) {
             label(title)
-            TextField(title, text: text)
-                .textFieldStyle(.plain)
-                .font(.system(size: Theme.FontSize.body))
-                .foregroundStyle(Theme.nocturneText)
-                .padding(.vertical, Theme.Space.s2)
-                .padding(.horizontal, Theme.Space.s3)
-                .background(Theme.nocturneSurface)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.md)
-                        .strokeBorder(Theme.Neutral.n800, lineWidth: 1)
-                )
+            textInput(title, text: text)
         }
+    }
+
+    private var repoPathField: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.s2) {
+            label("Local repo path")
+            HStack(spacing: Theme.Space.s2) {
+                textInput("Local repo path", text: $draft.repoPath)
+                Button(action: browseForRepoPath) {
+                    Text("Browse…")
+                        .font(.system(size: Theme.FontSize.secondary))
+                        .foregroundStyle(Theme.nocturneText)
+                        .padding(.vertical, Theme.Space.s2)
+                        .padding(.horizontal, Theme.Space.s3)
+                        .background(Theme.nocturneSurface)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                                .strokeBorder(Theme.Neutral.n800, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    /// The app is not sandboxed, so the picked path can be handed to the engine
+    /// as a plain string, no security scoped bookmark needed.
+    private func browseForRepoPath() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose"
+        let trimmed = draft.repoPath.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: (trimmed as NSString).expandingTildeInPath)
+        }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        draft.repoPath = url.path
+    }
+
+    private func textInput(_ title: String, text: Binding<String>) -> some View {
+        TextField(title, text: text)
+            .textFieldStyle(.plain)
+            .font(.system(size: Theme.FontSize.body))
+            .foregroundStyle(Theme.nocturneText)
+            .padding(.vertical, Theme.Space.s2)
+            .padding(.horizontal, Theme.Space.s3)
+            .background(Theme.nocturneSurface)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.md)
+                    .strokeBorder(Theme.Neutral.n800, lineWidth: 1)
+            )
     }
 }

@@ -237,6 +237,21 @@ describe('getTodayView', () => {
     expect(view.needsInput.some((i) => i.id === doneTicket.id && i.kind === 'ticket')).toBe(false);
     expect(view.todos.map((t) => t.text)).toEqual(['unrelated task']);
   });
+
+  it('falls back to the PR number for a PR that has no ticket', () => {
+    const project = createProject(db, {
+      name: 'demo', repoPath: '/repos/demo', defaultBranch: 'main',
+      githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null,
+    });
+    db.prepare(
+      `INSERT INTO prs (ticket_id, project_id, branch, number, url, status, created_at)
+       VALUES (NULL, ?, 'feat/header', 23, 'u', 'open', '2026-08-12T17:31:06.792Z')`
+    ).run(project.id);
+
+    const view = getTodayView(db);
+
+    expect(view.needsInput.map((i) => i.title)).toEqual(['PR #23']);
+  });
 });
 
 describe('pinning a todo', () => {

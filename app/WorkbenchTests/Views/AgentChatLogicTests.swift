@@ -4,9 +4,11 @@ import Testing
 private let atlas = Project(id: 3, name: "Atlas Payments", repoPath: "/repos/atlas", defaultBranch: "main",
                             githubRepo: "acme/atlas", jiraProjectKey: "ATL", sentryProjectSlug: nil)
 
-private func pr(status: PrStatus = .open) -> PullRequest {
+private func pr(status: PrStatus = .open, authoredByMe: Bool = false) -> PullRequest {
     PullRequest(id: 9, ticketId: 4, projectId: 3, branch: "fix/atl-441", number: 1284,
-                url: nil, status: status, lastReviewScore: nil, createdAt: "2026-08-13T00:00:00.000Z")
+                url: nil, status: status, lastReviewScore: nil, createdAt: "2026-08-13T00:00:00.000Z",
+                title: "Refunds double-charge", isDraft: false, authoredByMe: authoredByMe,
+                assignedToMe: false, messageCount: 0)
 }
 
 private func ticket(status: TicketStatus = .sparring) -> Ticket {
@@ -70,6 +72,24 @@ private func ticket(status: TicketStatus = .sparring) -> Ticket {
 @Test func mergedPullRequestShowsTheMergedStatus() {
     let subject = AgentChatLogic.subject(for: .pullRequest(pr(status: .merged)), project: atlas, linkedTicket: nil)
     #expect(subject.kicker == "atlas#1284 · Merged")
+}
+
+@Test func mergeIsOfferedOnAnOpenPullRequestYouAuthored() {
+    #expect(AgentChatLogic.canMerge(.pullRequest(pr(authoredByMe: true))) == true)
+}
+
+@Test func mergeIsHiddenOnSomeoneElsesPullRequest() {
+    #expect(AgentChatLogic.canMerge(.pullRequest(pr(authoredByMe: false))) == false)
+}
+
+@Test func mergeIsHiddenOnAnAlreadyMergedPullRequest() {
+    #expect(AgentChatLogic.canMerge(.pullRequest(pr(status: .merged, authoredByMe: true))) == false)
+}
+
+@Test func mergeIsHiddenForTargetsThatAreNotPullRequests() {
+    #expect(AgentChatLogic.canMerge(.ticket(ticket())) == false)
+    #expect(AgentChatLogic.canMerge(.project(atlas)) == false)
+    #expect(AgentChatLogic.canMerge(nil) == false)
 }
 
 @Test func authorLabelsAreUppercase() {

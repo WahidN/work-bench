@@ -100,7 +100,7 @@ struct AgentChatPanel: View {
 
     private func composer(_ subject: AgentChatSubject) -> some View {
         VStack(alignment: .leading, spacing: Theme.Space.s3) {
-            if case .pullRequest(let pr) = viewModel.target, pr.status != .merged {
+            if AgentChatLogic.canMerge(viewModel.target) {
                 MergeButton(isBusy: viewModel.isSending, action: merge)
             }
             FlowRow(spacing: Theme.Space.s2) {

@@ -13,7 +13,8 @@ private func sampleTicket(messages: [TicketMessage]? = nil, status: TicketStatus
 private func samplePr(messages: [PullRequestMessage]? = nil, status: PrStatus = .open) -> PullRequest {
     PullRequest(id: 9, ticketId: 4, projectId: 3, branch: "fix/atl-441", number: 1284, url: nil,
                 status: status, lastReviewScore: nil, createdAt: "2026-08-13T00:00:00.000Z",
-                messages: messages)
+                messages: messages, title: "Refunds double-charge", isDraft: false,
+                authoredByMe: false, assignedToMe: false, messageCount: 0)
 }
 
 private func ticketMessage(_ id: Int, _ role: ChatRole, _ content: String) -> TicketMessage {

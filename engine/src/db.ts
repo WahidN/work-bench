@@ -63,7 +63,11 @@ CREATE TABLE IF NOT EXISTS ticket_messages (
 
 CREATE TABLE IF NOT EXISTS prs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  ticket_id INTEGER NOT NULL REFERENCES tickets(id),
+  -- Nullable: a PR imported from GitHub has no ticket behind it. There is no
+  -- migration entry for dropping this NOT NULL, because SQLite would need a full
+  -- table rebuild and no existing database needs it: only recordPr inserts here
+  -- and it always has a ticket, so an older database being stricter is harmless.
+  ticket_id INTEGER REFERENCES tickets(id),
   project_id INTEGER NOT NULL REFERENCES projects(id),
   branch TEXT NOT NULL,
   number INTEGER,
@@ -71,6 +75,12 @@ CREATE TABLE IF NOT EXISTS prs (
   status TEXT NOT NULL CHECK (status IN ('open','needs_attention','merged')) DEFAULT 'open',
   last_review_score REAL,
   pinned INTEGER NOT NULL DEFAULT 0,
+  title TEXT NOT NULL DEFAULT '',
+  review_state TEXT,
+  is_draft INTEGER NOT NULL DEFAULT 0,
+  github_updated_at TEXT,
+  authored_by_me INTEGER NOT NULL DEFAULT 0,
+  assigned_to_me INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
 
@@ -120,6 +130,49 @@ const MIGRATIONS: string[] = [
   // 3: Projects grid. Status and a one-line blurb per project.
   `ALTER TABLE projects ADD COLUMN status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','planning'));
    ALTER TABLE projects ADD COLUMN blurb TEXT NOT NULL DEFAULT '';`,
+  // 4: PR inbox. GitHub review state and the two "is this mine" flags.
+  `ALTER TABLE prs ADD COLUMN title TEXT NOT NULL DEFAULT '';
+   ALTER TABLE prs ADD COLUMN review_state TEXT;
+   ALTER TABLE prs ADD COLUMN is_draft INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE prs ADD COLUMN github_updated_at TEXT;
+   ALTER TABLE prs ADD COLUMN authored_by_me INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE prs ADD COLUMN assigned_to_me INTEGER NOT NULL DEFAULT 0;`,
+  // 5: Repair. A past rebuild renamed prs to prs_old, and SQLite repointed every
+  // child's foreign key to follow the rename before prs_old was dropped, leaving
+  // both children referencing a table that no longer exists. Rebuilding each one
+  // is the only way to change a foreign key clause in SQLite. Rows are copied, so
+  // this is lossless. Relies on migrate() running it with foreign keys off, since
+  // dropping tickets would otherwise fail on every row that points at it.
+  `CREATE TABLE pr_messages_rebuilt (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     pr_id INTEGER NOT NULL REFERENCES prs(id),
+     role TEXT NOT NULL CHECK (role IN ('user','assistant')),
+     content TEXT NOT NULL,
+     created_at TEXT NOT NULL
+   );
+   INSERT INTO pr_messages_rebuilt (id, pr_id, role, content, created_at)
+     SELECT id, pr_id, role, content, created_at FROM pr_messages;
+   DROP TABLE pr_messages;
+   ALTER TABLE pr_messages_rebuilt RENAME TO pr_messages;
+   CREATE TABLE tickets_rebuilt (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     source TEXT NOT NULL CHECK (source IN ('sentry','github','jira')),
+     source_id TEXT NOT NULL,
+     project_id INTEGER NOT NULL REFERENCES projects(id),
+     title TEXT NOT NULL,
+     body TEXT NOT NULL,
+     url TEXT NOT NULL,
+     analysis_json TEXT,
+     status TEXT NOT NULL CHECK (status IN ('new','sparring','in_review','done','needs_attention')) DEFAULT 'new',
+     pr_id INTEGER REFERENCES prs(id),
+     pinned INTEGER NOT NULL DEFAULT 0,
+     created_at TEXT NOT NULL,
+     UNIQUE(source, source_id)
+   );
+   INSERT INTO tickets_rebuilt (id, source, source_id, project_id, title, body, url, analysis_json, status, pr_id, pinned, created_at)
+     SELECT id, source, source_id, project_id, title, body, url, analysis_json, status, pr_id, pinned, created_at FROM tickets;
+   DROP TABLE tickets;
+   ALTER TABLE tickets_rebuilt RENAME TO tickets;`,
 ];
 
 function isEmptyDatabase(db: Database.Database): boolean {
@@ -127,13 +180,32 @@ function isEmptyDatabase(db: Database.Database): boolean {
   return row.n === 0;
 }
 
+// Foreign keys are off for the whole run. A rebuild like migration 5 drops and
+// recreates a table, and the implicit delete a DROP TABLE performs fails under
+// enforcement whenever any child row points at it, which is the normal state of
+// an install that ran the fix pipeline. PRAGMA foreign_keys is a no-op inside a
+// transaction, so it has to be toggled out here rather than in the migration.
+// foreign_key_check afterwards is what keeps that safe: a migration that leaves
+// a dangling reference behind fails loudly instead of corrupting the file.
 function migrate(db: Database.Database): void {
   const applied = db.pragma('user_version', { simple: true }) as number;
-  for (let version = applied; version < MIGRATIONS.length; version++) {
-    db.transaction(() => {
-      db.exec(MIGRATIONS[version]);
-      db.exec(`PRAGMA user_version = ${version + 1};`);
-    })();
+  if (applied >= MIGRATIONS.length) return;
+
+  db.pragma('foreign_keys = OFF');
+  try {
+    for (let version = applied; version < MIGRATIONS.length; version++) {
+      db.transaction(() => {
+        db.exec(MIGRATIONS[version]);
+        db.exec(`PRAGMA user_version = ${version + 1};`);
+      })();
+    }
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
+
+  const violations = db.pragma('foreign_key_check') as unknown[];
+  if (violations.length > 0) {
+    throw new Error(`migration left ${violations.length} broken foreign key reference(s)`);
   }
 }
 
