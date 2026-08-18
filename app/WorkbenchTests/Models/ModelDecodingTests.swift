@@ -206,3 +206,38 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     #expect(project.status == .paused)
     #expect(project.blurb == "Build pipeline consolidation.")
 }
+
+@Test func decodesPrDetail() throws {
+    let json = """
+    {"title":"Retry card capture on 5xx","url":"https://x/pull/23","state":"OPEN","isDraft":false,
+     "reviewState":"changes_requested","author":"wahid","createdAt":"2026-08-12T15:11:00Z",
+     "baseRefName":"main","headRefName":"atlas/retry-card-capture","commitCount":4,
+     "changedFiles":3,"additions":64,"deletions":7,
+     "files":[{"path":"src/capture.ts","status":"modified","additions":24,"deletions":5,"patch":"@@ -1 +1 @@\\n+x"}],
+     "threads":[{"path":"src/capture.ts","line":8,"isResolved":false,"isOutdated":false,
+       "comments":[{"id":1,"author":"sana","body":"q","createdAt":"2026-08-14T09:00:00Z"}]}],
+     "conversation":[{"kind":"review","author":"sana","body":"ok","createdAt":"2026-08-14T09:00:00Z","state":"COMMENTED"}]}
+    """
+    let detail = try decode(PrDetail.self, json)
+    #expect(detail.commitCount == 4)
+    #expect(detail.reviewState == .changesRequested)
+    #expect(detail.files.first?.patch == "@@ -1 +1 @@\n+x")
+    #expect(detail.threads.first?.comments.first?.id == 1)
+    #expect(detail.conversation.first?.kind == .review)
+}
+
+@Test func decodesPrDetailFileWithoutAPatch() throws {
+    let json = """
+    {"path":"assets/huge.bin","status":"modified","additions":900,"deletions":900,"patch":null}
+    """
+    #expect(try decode(PrDetailFile.self, json).patch == nil)
+}
+
+@Test func decodesAnOutdatedThreadWithoutALine() throws {
+    let json = """
+    {"path":"src/gone.ts","line":null,"isResolved":true,"isOutdated":true,"comments":[]}
+    """
+    let thread = try decode(PrReviewThread.self, json)
+    #expect(thread.line == nil)
+    #expect(thread.isOutdated)
+}
