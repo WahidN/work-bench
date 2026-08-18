@@ -42,6 +42,7 @@ struct PRsScreen: View {
                         .padding(.horizontal, Theme.Space.s4)
                         .background(option == filter ? Theme.nocturneSurface : Color.clear)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
                 }
                 .buttonStyle(.plain)
             }
@@ -182,6 +183,7 @@ private struct PrTableRow: View {
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
                         .strokeBorder(row.messageCount > 0 ? Color.clear : Theme.Neutral.n800, lineWidth: 1)
                 )
+                .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
             }
             .buttonStyle(.plain)
         }
