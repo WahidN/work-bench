@@ -27,7 +27,7 @@ function findProjectByKey(projects: Project[], field: 'jiraProjectKey' | 'github
 /// quietly downgrade an approved PR to "Needs review".
 async function syncGithubPrs(db: Database.Database, projects: Project[]): Promise<number> {
   const mapped = projects.filter((p) => p.githubRepo);
-  const found = await fetchMyOpenPrs(mapped.map((p) => p.githubRepo!));
+  const { prs: found, truncated } = await fetchMyOpenPrs(mapped.map((p) => p.githubRepo!));
   const seen: Array<{ projectId: number; number: number }> = [];
 
   for (const pr of found) {
@@ -55,7 +55,14 @@ async function syncGithubPrs(db: Database.Database, projects: Project[]): Promis
     seen.push({ projectId: project.id, number: pr.number });
   }
 
-  reconcileGithubPrs(db, mapped.map((p) => p.id), seen);
+  // A truncated search means the list above is known to be incomplete, so a pull
+  // request missing from it may just have fallen off the cap rather than closed.
+  // Upserting what was found is still safe; deleting the rest is not.
+  if (truncated) {
+    console.warn('github prs: search results were truncated, skipping reconciliation this cycle to avoid deleting pull requests that fell off the end');
+  } else {
+    reconcileGithubPrs(db, mapped.map((p) => p.id), seen);
+  }
   return seen.length;
 }
 

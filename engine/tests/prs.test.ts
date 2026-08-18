@@ -53,7 +53,9 @@ describe('prs', () => {
     expect(pr.reviewState).toBeNull();
     expect(pr.isDraft).toBe(false);
     expect(pr.githubUpdatedAt).toBeNull();
-    expect(pr.authoredByMe).toBe(false);
+    // Not a column default: recordPr sets this explicitly, because every PR it
+    // creates comes from the user's own authenticated gh.
+    expect(pr.authoredByMe).toBe(true);
     expect(pr.assignedToMe).toBe(false);
     expect(pr.messageCount).toBe(0);
 

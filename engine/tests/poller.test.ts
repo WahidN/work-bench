@@ -39,7 +39,7 @@ beforeEach(() => {
   vi.mocked(jiraSource.fetchAssignedJiraIssues).mockResolvedValue([]);
   vi.mocked(sentrySource.fetchSentryIssues).mockResolvedValue([]);
   vi.mocked(githubSource.fetchGithubIssues).mockResolvedValue([]);
-  vi.mocked(fetchMyOpenPrs).mockResolvedValue([]);
+  vi.mocked(fetchMyOpenPrs).mockResolvedValue({ prs: [], truncated: false });
   vi.mocked(getSecret).mockResolvedValue('linku-bv');
   vi.mocked(todos.countJiraTodos).mockReturnValue(0);
 });
@@ -152,10 +152,13 @@ describe('runPollCycle', () => {
     const db = openDb(':memory:');
     createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
 
-    vi.mocked(fetchMyOpenPrs).mockResolvedValue([{
-      repo: 'linku/demo', number: 24, title: 'Guard the deploy', url: 'u',
-      updatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
-    }]);
+    vi.mocked(fetchMyOpenPrs).mockResolvedValue({
+      prs: [{
+        repo: 'linku/demo', number: 24, title: 'Guard the deploy', url: 'u',
+        updatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+      }],
+      truncated: false,
+    });
     vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/deploy-guard' });
 
     const summary = await runPollCycle(db);
@@ -169,10 +172,13 @@ describe('runPollCycle', () => {
     const db = openDb(':memory:');
     createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'Linku/ACV-Website', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
 
-    vi.mocked(fetchMyOpenPrs).mockResolvedValue([{
-      repo: 'linku/acv-website', number: 24, title: 'Guard the deploy', url: 'u',
-      updatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
-    }]);
+    vi.mocked(fetchMyOpenPrs).mockResolvedValue({
+      prs: [{
+        repo: 'linku/acv-website', number: 24, title: 'Guard the deploy', url: 'u',
+        updatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+      }],
+      truncated: false,
+    });
     vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/deploy-guard' });
 
     const summary = await runPollCycle(db);
@@ -192,14 +198,59 @@ describe('runPollCycle', () => {
     const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
     upsertGithubPr(db, { projectId: project.id, number: 24, title: 't', url: 'u', githubUpdatedAt: 'x', isDraft: false, authoredByMe: true, assignedToMe: false, reviewState: 'approved', branch: 'feat/keep-me' });
 
-    vi.mocked(fetchMyOpenPrs).mockResolvedValue([{
-      repo: 'linku/demo', number: 24, title: 't', url: 'u',
-      updatedAt: '2026-08-17T11:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
-    }]);
+    vi.mocked(fetchMyOpenPrs).mockResolvedValue({
+      prs: [{
+        repo: 'linku/demo', number: 24, title: 't', url: 'u',
+        updatedAt: '2026-08-17T11:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+      }],
+      truncated: false,
+    });
     vi.mocked(fetchPrDetail).mockRejectedValue(new Error('rate limited'));
 
     await runPollCycle(db);
     expect(listPrs(db)[0]).toMatchObject({ reviewState: 'approved', branch: 'feat/keep-me' });
+  });
+
+  it('upserts what it found but skips reconciliation when the search was truncated', async () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+    // Already stored, but the truncated search below does not return it. If this
+    // cycle reconciled anyway, it would delete a pull request that is still open.
+    upsertGithubPr(db, { projectId: project.id, number: 1, title: 'Fell off the cap', url: 'u1', githubUpdatedAt: 'x', isDraft: false, authoredByMe: true, assignedToMe: false, reviewState: null, branch: 'b' });
+
+    vi.mocked(fetchMyOpenPrs).mockResolvedValue({
+      prs: [{
+        repo: 'linku/demo', number: 24, title: 'Guard the deploy', url: 'u',
+        updatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+      }],
+      truncated: true,
+    });
+    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/deploy-guard' });
+
+    const summary = await runPollCycle(db);
+
+    expect(summary.prsSynced).toBe(1);
+    expect(listPrs(db).map((p) => p.number).sort()).toEqual([1, 24]);
+  });
+
+  it('reconciles exactly as before when the search was not truncated', async () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+    upsertGithubPr(db, { projectId: project.id, number: 1, title: 'Actually closed', url: 'u1', githubUpdatedAt: 'x', isDraft: false, authoredByMe: true, assignedToMe: false, reviewState: null, branch: 'b' });
+
+    vi.mocked(fetchMyOpenPrs).mockResolvedValue({
+      prs: [{
+        repo: 'linku/demo', number: 24, title: 'Guard the deploy', url: 'u',
+        updatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+      }],
+      truncated: false,
+    });
+    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/deploy-guard' });
+
+    const summary = await runPollCycle(db);
+
+    expect(summary.prsSynced).toBe(1);
+    expect(listPrs(db).map((p) => p.number)).toEqual([24]);
   });
 });
 

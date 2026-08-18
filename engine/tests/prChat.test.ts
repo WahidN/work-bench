@@ -20,10 +20,10 @@ let ticketId: number;
 let projectId: number;
 
 // An ingested pull request: no ticket, and its own title is all the context there is.
-function ingestedPr() {
+function ingestedPr(authoredByMe = false) {
   return upsertGithubPr(db, {
     projectId, number: 88, title: 'Bump the deploy timeout', url: 'https://github.com/x/pull/88',
-    githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: false,
+    githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe,
     assignedToMe: true, reviewState: 'review_required', branch: 'feat/deploy-timeout',
   });
 }
@@ -185,7 +185,7 @@ describe('sendPrMessage: a PR with no ticket', () => {
   });
 
   it('merges without touching a ticket', async () => {
-    const pr = ingestedPr();
+    const pr = ingestedPr(true);
     const result = await sendPrMessage(db, pr.id, 'merge it');
 
     expect(result.action).toBe('merged');
@@ -195,5 +195,55 @@ describe('sendPrMessage: a PR with no ticket', () => {
   it('stores nothing for a pull request that does not exist', async () => {
     await expect(sendPrMessage(db, 999, 'hello')).rejects.toThrow('PR 999 not found');
     expect(listPrMessages(db, 999)).toEqual([]);
+  });
+});
+
+describe('sendPrMessage: merge authorship gate', () => {
+  it('refuses to merge a pull request the user did not author, and never touches git', async () => {
+    const pr = ingestedPr(false);
+
+    const result = await sendPrMessage(db, pr.id, 'merge it');
+
+    expect(result.action).toBe('refused');
+    expect(result.reply).toContain(pr.url);
+    expect(git.openDetachedWorktree).not.toHaveBeenCalled();
+    expect(git.mergePr).not.toHaveBeenCalled();
+    expect(getPr(db, pr.id)!.status).not.toBe('merged');
+    const messages = listPrMessages(db, pr.id);
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant']);
+  });
+
+  it('still merges exactly as before when the pull request is authored by the user', async () => {
+    const pr = ingestedPr(true);
+
+    const result = await sendPrMessage(db, pr.id, 'merge it');
+
+    expect(result.action).toBe('merged');
+    expect(git.mergePr).toHaveBeenCalled();
+    expect(getPr(db, pr.id)!.status).toBe('merged');
+  });
+
+  it('merges a PR the fix pipeline just recorded, with no poll cycle in between', async () => {
+    // prId comes straight from recordPr in beforeEach, with no poller run and no
+    // manual authorship fix-up: recordPr itself must already mark it authored.
+    const result = await sendPrMessage(db, prId, 'merge it');
+
+    expect(result.action).toBe('merged');
+    expect(git.mergePr).toHaveBeenCalled();
+  });
+
+  it('still revises normally a pull request the user did not author', async () => {
+    const pr = ingestedPr(false);
+    vi.mocked(git.openDetachedWorktree).mockResolvedValue('/repos/demo/.worktrees/feat-deploy-timeout');
+    vi.mocked(review.reviewDiff).mockResolvedValue({
+      correctness: 5, completeness: 5, quality: 5, tests: 5, regressionRisk: 5, findings: [],
+    });
+    vi.mocked(review.reviewPasses).mockReturnValue(true);
+    vi.mocked(review.averageScore).mockReturnValue(5);
+
+    const result = await sendPrMessage(db, pr.id, 'also guard the email field');
+
+    expect(result.action).toBe('revised');
+    expect(git.mergePr).not.toHaveBeenCalled();
   });
 });

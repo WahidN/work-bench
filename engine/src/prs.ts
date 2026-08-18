@@ -38,11 +38,14 @@ export interface RecordPrInput {
   status: PrStatus;
 }
 
+// authored_by_me is set here, not left to the column default: recordPr is only
+// ever called by the fix pipeline right after createPr runs `gh pr create` with
+// the user's own authenticated gh, so the user is always the author.
 export function recordPr(db: Database.Database, input: RecordPrInput): Pr {
   const result = db
     .prepare(
-      `INSERT INTO prs (ticket_id, project_id, branch, number, url, status, created_at)
-       VALUES (@ticketId, @projectId, @branch, @number, @url, @status, @createdAt)`
+      `INSERT INTO prs (ticket_id, project_id, branch, number, url, status, created_at, authored_by_me)
+       VALUES (@ticketId, @projectId, @branch, @number, @url, @status, @createdAt, 1)`
     )
     .run({ ...input, createdAt: new Date().toISOString() });
   return getPr(db, Number(result.lastInsertRowid))!;
