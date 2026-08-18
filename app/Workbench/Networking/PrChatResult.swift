@@ -1,5 +1,5 @@
 enum PrChatAction: String, Decodable {
-    case revised, merged
+    case revised, merged, refused
 }
 
 struct PrChatResult: Decodable {

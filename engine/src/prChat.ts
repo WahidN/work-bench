@@ -20,7 +20,7 @@ export function isMergeRequest(message: string): boolean {
 }
 
 export interface PrChatResult {
-  action: 'revised' | 'merged';
+  action: 'revised' | 'merged' | 'refused';
   reply: string;
 }
 
@@ -32,9 +32,11 @@ export async function sendPrMessage(db: Database.Database, prId: number, userMes
 
   // Resolved before the message is stored, so a turn that cannot start leaves no
   // user message behind in a thread that will never answer it.
-  const subject = isMergeRequest(userMessage) ? null : chatSubject(db, pr);
+  const merge = isMergeRequest(userMessage);
+  const subject = merge ? null : chatSubject(db, pr);
   addPrMessage(db, prId, 'user', userMessage);
 
+  if (merge && !pr.authoredByMe) return refusePrChat(db, pr);
   return subject === null
     ? mergePrChat(db, pr, project)
     : revisePrChat(db, pr, project, subject, userMessage);
@@ -56,6 +58,15 @@ function mergeSelector(pr: Pr): string {
   if (pr.number !== null) return String(pr.number);
   if (pr.url !== null) return pr.url;
   throw new Error(`PR ${pr.id} has no number or url to merge`);
+}
+
+// Squash-merging deletes the branch and cannot be undone, so it is only ever
+// done on a pull request the user wrote themselves. The inbox also holds pull
+// requests just assigned to them, which they can still merge by hand on GitHub.
+async function refusePrChat(db: Database.Database, pr: Pr): Promise<PrChatResult> {
+  const reply = `Workbench only merges pull requests you authored. Merge ${pr.url} yourself on GitHub if that's what you want.`;
+  addPrMessage(db, pr.id, 'assistant', reply);
+  return { action: 'refused', reply };
 }
 
 async function mergePrChat(db: Database.Database, pr: Pr, project: Project): Promise<PrChatResult> {

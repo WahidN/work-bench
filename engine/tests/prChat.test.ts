@@ -20,12 +20,18 @@ let ticketId: number;
 let projectId: number;
 
 // An ingested pull request: no ticket, and its own title is all the context there is.
-function ingestedPr() {
+function ingestedPr(authoredByMe = false) {
   return upsertGithubPr(db, {
     projectId, number: 88, title: 'Bump the deploy timeout', url: 'https://github.com/x/pull/88',
-    githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: false,
+    githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe,
     assignedToMe: true, reviewState: 'review_required', branch: 'feat/deploy-timeout',
   });
+}
+
+// recordPr defaults authored_by_me to false until the poller reconciles a pipeline
+// PR with GitHub, but the merge tests below exercise the already-authored path.
+function markAuthored(id: number): void {
+  db.prepare('UPDATE prs SET authored_by_me = 1 WHERE id = ?').run(id);
 }
 
 beforeEach(() => {
@@ -41,6 +47,7 @@ beforeEach(() => {
   prId = recordPr(db, {
     ticketId, projectId, branch: 'fix/github-1', number: 142, url: 'https://github.com/x/pull/142', status: 'open',
   }).id;
+  markAuthored(prId);
 
   vi.mocked(git.openDetachedWorktree).mockResolvedValue('/repos/demo/.worktrees/fix-github-1');
   vi.mocked(git.removeWorktree).mockResolvedValue(undefined);
@@ -87,6 +94,7 @@ describe('sendPrMessage: merge', () => {
       ticketId: null, projectId, branch: 'fix/no-number', number: null,
       url: 'https://github.com/x/pull/777', status: 'open',
     }).id;
+    markAuthored(noNumberPrId);
 
     await sendPrMessage(db, noNumberPrId, 'merge it');
 
@@ -100,6 +108,7 @@ describe('sendPrMessage: merge', () => {
     const barePrId = recordPr(db, {
       ticketId: null, projectId, branch: 'fix/bare', number: null, url: null, status: 'open',
     }).id;
+    markAuthored(barePrId);
 
     await expect(sendPrMessage(db, barePrId, 'merge it')).rejects.toThrow(String(barePrId));
     expect(git.openDetachedWorktree).not.toHaveBeenCalled();
@@ -185,7 +194,7 @@ describe('sendPrMessage: a PR with no ticket', () => {
   });
 
   it('merges without touching a ticket', async () => {
-    const pr = ingestedPr();
+    const pr = ingestedPr(true);
     const result = await sendPrMessage(db, pr.id, 'merge it');
 
     expect(result.action).toBe('merged');
@@ -195,5 +204,46 @@ describe('sendPrMessage: a PR with no ticket', () => {
   it('stores nothing for a pull request that does not exist', async () => {
     await expect(sendPrMessage(db, 999, 'hello')).rejects.toThrow('PR 999 not found');
     expect(listPrMessages(db, 999)).toEqual([]);
+  });
+});
+
+describe('sendPrMessage: merge authorship gate', () => {
+  it('refuses to merge a pull request the user did not author, and never touches git', async () => {
+    const pr = ingestedPr(false);
+
+    const result = await sendPrMessage(db, pr.id, 'merge it');
+
+    expect(result.action).toBe('refused');
+    expect(result.reply).toContain(pr.url);
+    expect(git.openDetachedWorktree).not.toHaveBeenCalled();
+    expect(git.mergePr).not.toHaveBeenCalled();
+    expect(getPr(db, pr.id)!.status).not.toBe('merged');
+    const messages = listPrMessages(db, pr.id);
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant']);
+  });
+
+  it('still merges exactly as before when the pull request is authored by the user', async () => {
+    const pr = ingestedPr(true);
+
+    const result = await sendPrMessage(db, pr.id, 'merge it');
+
+    expect(result.action).toBe('merged');
+    expect(git.mergePr).toHaveBeenCalled();
+    expect(getPr(db, pr.id)!.status).toBe('merged');
+  });
+
+  it('still revises normally a pull request the user did not author', async () => {
+    const pr = ingestedPr(false);
+    vi.mocked(git.openDetachedWorktree).mockResolvedValue('/repos/demo/.worktrees/feat-deploy-timeout');
+    vi.mocked(review.reviewDiff).mockResolvedValue({
+      correctness: 5, completeness: 5, quality: 5, tests: 5, regressionRisk: 5, findings: [],
+    });
+    vi.mocked(review.reviewPasses).mockReturnValue(true);
+    vi.mocked(review.averageScore).mockReturnValue(5);
+
+    const result = await sendPrMessage(db, pr.id, 'also guard the email field');
+
+    expect(result.action).toBe('revised');
+    expect(git.mergePr).not.toHaveBeenCalled();
   });
 });
