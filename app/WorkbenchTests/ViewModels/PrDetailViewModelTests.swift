@@ -5,16 +5,30 @@ private final class StubPrDetailAPI: PrDetailAPI {
     var detail: PrDetail?
     var detailError: Error?
     var draft = "suggested reply"
+    var draftError: Error?
     var postedText: String?
+    var postError: Error?
     var mergeResult = PrChatResult(action: .merged, reply: "Merged.")
+    var mergeError: Error?
+    var prDetailCallCount = 0
 
     func prDetail(id: Int) async throws -> PrDetail {
+        prDetailCallCount += 1
         if let detailError { throw detailError }
         return detail!
     }
-    func draftReviewReply(prId: Int, commentId: Int) async throws -> String { draft }
-    func postReviewReply(prId: Int, commentId: Int, text: String) async throws { postedText = text }
-    func mergePr(id: Int) async throws -> PrChatResult { mergeResult }
+    func draftReviewReply(prId: Int, commentId: Int) async throws -> String {
+        if let draftError { throw draftError }
+        return draft
+    }
+    func postReviewReply(prId: Int, commentId: Int, text: String) async throws {
+        if let postError { throw postError }
+        postedText = text
+    }
+    func mergePr(id: Int) async throws -> PrChatResult {
+        if let mergeError { throw mergeError }
+        return mergeResult
+    }
 }
 
 private func makeDetail() -> PrDetail {
@@ -71,5 +85,50 @@ struct PrDetailViewModelTests {
         let model = PrDetailViewModel(api: api)
         await model.merge(prId: 1)
         #expect(model.errorMessage?.contains("only merges") == true)
+    }
+
+    @Test func postingKeepsTheDraftWhenPostingFails() async {
+        let api = StubPrDetailAPI()
+        api.postError = APIError.transportFailed("gh down")
+        let model = PrDetailViewModel(api: api)
+        model.drafts[7] = "edited by hand"
+        await model.postReply(prId: 1, commentId: 7, text: "edited by hand")
+        #expect(model.drafts[7] == "edited by hand")
+        #expect(model.errorMessage != nil)
+    }
+
+    @Test func draftReplyClearsBusyCommentIdWhenDraftingFails() async {
+        let api = StubPrDetailAPI()
+        api.draftError = APIError.transportFailed("gh down")
+        let model = PrDetailViewModel(api: api)
+        await model.draftReply(prId: 1, commentId: 7)
+        #expect(model.busyCommentId == nil)
+    }
+
+    @Test func postReplyClearsBusyCommentIdWhenPostingFails() async {
+        let api = StubPrDetailAPI()
+        api.postError = APIError.transportFailed("gh down")
+        let model = PrDetailViewModel(api: api)
+        model.drafts[7] = "edited by hand"
+        await model.postReply(prId: 1, commentId: 7, text: "edited by hand")
+        #expect(model.busyCommentId == nil)
+    }
+
+    @Test func mergeClearsIsMergingWhenMergingFails() async {
+        let api = StubPrDetailAPI()
+        api.mergeError = APIError.transportFailed("gh down")
+        let model = PrDetailViewModel(api: api)
+        await model.merge(prId: 1)
+        #expect(model.isMerging == false)
+    }
+
+    @Test func mergeReloadsTheDetailOnSuccess() async {
+        let api = StubPrDetailAPI()
+        api.detail = makeDetail()
+        api.mergeResult = PrChatResult(action: .merged, reply: "Merged.")
+        let model = PrDetailViewModel(api: api)
+        await model.merge(prId: 1)
+        #expect(api.prDetailCallCount == 1)
+        #expect(model.isMerging == false)
     }
 }
