@@ -6,6 +6,7 @@ import { sendPrMessage } from '../../prChat.js';
 import { acquireJob, finishJob } from '../../jobs.js';
 import { openDetachedWorktree, getDiff, removeWorktree } from '../../git.js';
 import { fetchPrDetailView } from '../../sources/githubPrDetail.js';
+import { draftReviewReply } from '../../prReplyDraft.js';
 
 export function registerPrsRoutes(app: Express, db: Database.Database): void {
   app.get('/prs', (_req, res) => res.json(listPrs(db)));
@@ -36,6 +37,17 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
       res.json(await fetchPrDetailView(project.githubRepo, pr.number));
     } catch (err) {
       res.status(502).json({ error: String(err) });
+    }
+  });
+
+  app.post('/prs/:id/review-comments/:commentId/draft', async (req, res) => {
+    try {
+      const draft = await draftReviewReply(db, Number(req.params.id), Number(req.params.commentId));
+      res.json({ draft });
+    } catch (err) {
+      const message = String(err);
+      if (message.includes('not found')) res.status(404).json({ error: message });
+      else res.status(500).json({ error: message });
     }
   });
 
