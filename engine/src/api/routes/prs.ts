@@ -4,7 +4,7 @@ import { listPrs, getPr, listPrMessages, setPrPinned } from '../../prs.js';
 import { getProject } from '../../projects.js';
 import { sendPrMessage } from '../../prChat.js';
 import { acquireJob, finishJob } from '../../jobs.js';
-import { openWorktree, getDiff, removeWorktree } from '../../git.js';
+import { openDetachedWorktree, getDiff, removeWorktree } from '../../git.js';
 
 export function registerPrsRoutes(app: Express, db: Database.Database): void {
   app.get('/prs', (_req, res) => res.json(listPrs(db)));
@@ -34,7 +34,7 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
     let worktreePath: string | null = null;
     let failure: string | null = null;
     try {
-      worktreePath = await openWorktree(project, pr.branch);
+      worktreePath = await openDetachedWorktree(project, pr.branch);
       res.json({ diff: await getDiff(worktreePath, project.defaultBranch) });
     } catch (err) {
       failure = String(err);

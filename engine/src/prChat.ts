@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3';
 import { getProject } from './projects.js';
 import { getPr, addPrMessage, updatePrStatus, setPrPinned } from './prs.js';
 import { getTicket, updateTicketStatus, setTicketPinned } from './tickets.js';
-import { openWorktree, removeWorktree, commitAll, pushBranch, getDiff, mergePr } from './git.js';
+import { openDetachedWorktree, removeWorktree, commitAll, pushDetachedHead, getDiff, mergePr } from './git.js';
 import { runClaude } from './claude.js';
 import { reviewDiff, reviewPasses, averageScore, type ReviewSubject } from './review.js';
 import { passComment, failComment } from './fixPipeline.js';
@@ -49,7 +49,7 @@ function chatSubject(db: Database.Database, pr: Pr): ReviewSubject {
 }
 
 async function mergePrChat(db: Database.Database, pr: Pr, project: Project): Promise<PrChatResult> {
-  const worktreePath = await openWorktree(project, pr.branch);
+  const worktreePath = await openDetachedWorktree(project, pr.branch);
   try {
     await mergePr(worktreePath);
   } finally {
@@ -82,7 +82,7 @@ async function revisePrChat(
   subject: ReviewSubject,
   userMessage: string
 ): Promise<PrChatResult> {
-  const worktreePath = await openWorktree(project, pr.branch);
+  const worktreePath = await openDetachedWorktree(project, pr.branch);
 
   try {
     await runClaude({
@@ -99,7 +99,7 @@ async function revisePrChat(
       return { action: 'revised', reply };
     }
 
-    await pushBranch(worktreePath, pr.branch);
+    await pushDetachedHead(worktreePath, pr.branch);
     const diff = await getDiff(worktreePath, project.defaultBranch);
     const score = await reviewDiff(worktreePath, subject, diff);
     const passed = reviewPasses(score);

@@ -117,7 +117,7 @@ describe('upserting a github PR', () => {
       githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: true,
       authoredByMe: false, assignedToMe: true, reviewState: null, branch: 'feat/from-github',
     });
-    // The branch is what makes this row workable: openWorktree builds from
+    // The branch is what makes this row workable: openDetachedWorktree builds from
     // origin/<branch>, so the agent panel needs nothing to exist locally.
     expect(pr.branch).toBe('feat/from-github');
     expect(pr.ticketId).toBeNull();

@@ -42,10 +42,10 @@ beforeEach(() => {
     ticketId, projectId, branch: 'fix/github-1', number: 142, url: 'https://github.com/x/pull/142', status: 'open',
   }).id;
 
-  vi.mocked(git.openWorktree).mockResolvedValue('/repos/demo/.worktrees/fix-github-1');
+  vi.mocked(git.openDetachedWorktree).mockResolvedValue('/repos/demo/.worktrees/fix-github-1');
   vi.mocked(git.removeWorktree).mockResolvedValue(undefined);
   vi.mocked(git.commitAll).mockResolvedValue(true);
-  vi.mocked(git.pushBranch).mockResolvedValue(undefined);
+  vi.mocked(git.pushDetachedHead).mockResolvedValue(undefined);
   vi.mocked(git.getDiff).mockResolvedValue('diff');
   vi.mocked(claude.runClaude).mockResolvedValue('done');
 });
@@ -107,7 +107,7 @@ describe('sendPrMessage: revise', () => {
 
     expect(result.action).toBe('revised');
     expect(claude.runClaude).toHaveBeenCalled();
-    expect(git.pushBranch).toHaveBeenCalledWith('/repos/demo/.worktrees/fix-github-1', 'fix/github-1');
+    expect(git.pushDetachedHead).toHaveBeenCalledWith('/repos/demo/.worktrees/fix-github-1', 'fix/github-1');
     expect(getPr(db, prId)!.status).toBe('open');
     expect(git.removeWorktree).toHaveBeenCalledWith('/repos/demo', '/repos/demo/.worktrees/fix-github-1');
     const messages = listPrMessages(db, prId);
@@ -118,7 +118,7 @@ describe('sendPrMessage: revise', () => {
     vi.mocked(git.commitAll).mockResolvedValue(false);
     const result = await sendPrMessage(db, prId, 'do something vague');
     expect(result.reply).toContain("didn't find a change");
-    expect(git.pushBranch).not.toHaveBeenCalled();
+    expect(git.pushDetachedHead).not.toHaveBeenCalled();
   });
 
   it('reviews against the ticket when the PR has one', async () => {
@@ -142,7 +142,7 @@ describe('sendPrMessage: revise', () => {
 describe('sendPrMessage: a PR with no ticket', () => {
   it('revises using the pull request title instead of a ticket', async () => {
     const pr = ingestedPr();
-    vi.mocked(git.openWorktree).mockResolvedValue('/repos/demo/.worktrees/feat-deploy-timeout');
+    vi.mocked(git.openDetachedWorktree).mockResolvedValue('/repos/demo/.worktrees/feat-deploy-timeout');
     vi.mocked(review.reviewDiff).mockResolvedValue({
       correctness: 5, completeness: 5, quality: 5, tests: 5, regressionRisk: 5, findings: [],
     });

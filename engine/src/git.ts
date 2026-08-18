@@ -19,13 +19,16 @@ export async function createFixWorktree(project: Project, branch: string): Promi
   return path;
 }
 
-export async function openWorktree(project: Project, branch: string): Promise<string> {
+// Detached: checks out origin/<branch> without creating or moving a local branch.
+// The prs table can now hold the user's own real branches, so opening one must
+// never force a local branch pointer to wherever origin happens to be.
+export async function openDetachedWorktree(project: Project, branch: string): Promise<string> {
   const path = worktreePathFor(project.repoPath, branch);
   await git(project.repoPath, ['fetch', 'origin', branch]);
   // getDiff compares against origin/<defaultBranch>, so that ref must be fresh.
   await git(project.repoPath, ['fetch', 'origin', project.defaultBranch]);
   await git(project.repoPath, ['worktree', 'remove', '--force', path]).catch(() => {});
-  await git(project.repoPath, ['worktree', 'add', '-B', branch, path, `origin/${branch}`]);
+  await git(project.repoPath, ['worktree', 'add', '--detach', path, `origin/${branch}`]);
   return path;
 }
 
@@ -43,6 +46,13 @@ export async function commitAll(worktreePath: string, message: string): Promise<
 
 export async function pushBranch(worktreePath: string, branch: string): Promise<void> {
   await git(worktreePath, ['push', '-u', 'origin', branch, '--force-with-lease']);
+}
+
+// For a detached-HEAD worktree: pushes the current commit to the remote branch
+// by explicit refspec, so the remote branch moves without ever creating or
+// moving a local branch to publish it.
+export async function pushDetachedHead(worktreePath: string, branch: string): Promise<void> {
+  await git(worktreePath, ['push', 'origin', `HEAD:${branch}`, '--force-with-lease']);
 }
 
 export async function getDiff(worktreePath: string, defaultBranch: string): Promise<string> {
