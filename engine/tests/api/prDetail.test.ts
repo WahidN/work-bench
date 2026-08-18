@@ -69,3 +69,25 @@ describe('GET /prs/:id/detail', () => {
     expect(res.body.error).toMatch(/not authenticated/);
   });
 });
+
+describe('POST /prs/:id/review-comments/:commentId/reply', () => {
+  it('posts the reply and returns the created comment', async () => {
+    vi.mocked(detail.postReviewCommentReply).mockResolvedValue({ id: 99 });
+    const res = await auth(request(app).post(`/prs/${prId}/review-comments/7/reply`))
+      .send({ text: 'Fixed in the catch.' })
+      .expect(200);
+    expect(res.body).toEqual({ id: 99 });
+    expect(detail.postReviewCommentReply)
+      .toHaveBeenCalledWith('https://github.com/linku/demo', 23, 7, 'Fixed in the catch.');
+  });
+
+  it('400s empty or whitespace-only text without calling GitHub', async () => {
+    await auth(request(app).post(`/prs/${prId}/review-comments/7/reply`)).send({ text: '   ' }).expect(400);
+    expect(detail.postReviewCommentReply).not.toHaveBeenCalled();
+  });
+
+  it('502s when gh fails', async () => {
+    vi.mocked(detail.postReviewCommentReply).mockRejectedValue(new Error('gh: 403'));
+    await auth(request(app).post(`/prs/${prId}/review-comments/7/reply`)).send({ text: 'hi' }).expect(502);
+  });
+});

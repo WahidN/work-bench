@@ -5,7 +5,7 @@ import { getProject } from '../../projects.js';
 import { sendPrMessage } from '../../prChat.js';
 import { acquireJob, finishJob } from '../../jobs.js';
 import { openDetachedWorktree, getDiff, removeWorktree } from '../../git.js';
-import { fetchPrDetailView } from '../../sources/githubPrDetail.js';
+import { fetchPrDetailView, postReviewCommentReply } from '../../sources/githubPrDetail.js';
 import { draftReviewReply } from '../../prReplyDraft.js';
 
 export function registerPrsRoutes(app: Express, db: Database.Database): void {
@@ -48,6 +48,32 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
       const message = String(err);
       if (message.includes('not found')) res.status(404).json({ error: message });
       else res.status(500).json({ error: message });
+    }
+  });
+
+  app.post('/prs/:id/review-comments/:commentId/reply', async (req, res) => {
+    const text = req.body?.text;
+    if (typeof text !== 'string' || !text.trim()) {
+      res.status(400).json({ error: 'text is required' });
+      return;
+    }
+    const pr = getPr(db, Number(req.params.id));
+    if (!pr) { res.status(404).json({ error: 'not found' }); return; }
+    if (pr.number === null) {
+      res.status(400).json({ error: 'this PR has no GitHub number yet' });
+      return;
+    }
+    const project = getProject(db, pr.projectId);
+    if (!project?.githubRepo) {
+      res.status(400).json({ error: 'project has no GitHub repo configured' });
+      return;
+    }
+    try {
+      res.json(await postReviewCommentReply(
+        project.githubRepo, pr.number, Number(req.params.commentId), text
+      ));
+    } catch (err) {
+      res.status(502).json({ error: String(err) });
     }
   });
 

@@ -145,3 +145,20 @@ export async function fetchReviewComment(repo: string, commentId: number): Promi
     diffHunk: row.diff_hunk ?? '',
   };
 }
+
+/// The only write in this file. in_reply_to is what makes GitHub thread the
+/// reply under the original comment instead of starting a new one.
+export async function postReviewCommentReply(
+  repo: string,
+  number: number,
+  commentId: number,
+  body: string
+): Promise<{ id: number }> {
+  const slug = toRepoSlug(repo);
+  const { stdout } = await execa('gh', [
+    'api', `repos/${slug}/pulls/${number}/comments`,
+    '-f', `body=${body}`,
+    '-F', `in_reply_to=${commentId}`,
+  ]);
+  return JSON.parse(stdout || '{}');
+}

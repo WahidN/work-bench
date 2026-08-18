@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { execa } from 'execa';
-import { fetchPrDetailView, reviewStateFrom } from '../../src/sources/githubPrDetail.js';
+import { fetchPrDetailView, reviewStateFrom, postReviewCommentReply } from '../../src/sources/githubPrDetail.js';
 
 vi.mock('execa');
 afterEach(() => vi.clearAllMocks());
@@ -107,5 +107,24 @@ describe('fetchPrDetailView', () => {
     expect(detail.conversation.filter((c) => c.kind === 'review')).toEqual([
       { kind: 'review', author: 'sana', body: '', createdAt: '2026-08-14T09:30:00Z', state: 'APPROVED' },
     ]);
+  });
+});
+
+describe('postReviewCommentReply', () => {
+  it('posts the body as a threaded reply and returns the new comment', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: JSON.stringify({ id: 99 }) } as any);
+    const created = await postReviewCommentReply('https://github.com/linku/demo', 23, 7, 'Fixed in the catch.');
+    expect(created).toEqual({ id: 99 });
+    expect(vi.mocked(execa).mock.calls[0][1]).toEqual([
+      'api', 'repos/linku/demo/pulls/23/comments',
+      '-f', 'body=Fixed in the catch.',
+      '-F', 'in_reply_to=7',
+    ]);
+  });
+
+  it('keeps newlines in the body intact', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: '{"id":1}' } as any);
+    await postReviewCommentReply('linku/demo', 23, 7, 'line one\nline two');
+    expect(vi.mocked(execa).mock.calls[0][1]).toContain('body=line one\nline two');
   });
 });
