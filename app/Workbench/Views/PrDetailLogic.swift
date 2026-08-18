@@ -122,7 +122,12 @@ enum PrDetailLogic {
             var byLineId: [Int: [PrReviewThread]] = [:]
             var trailing: [PrReviewThread] = []
             for thread in fileThreads {
-                if let line = thread.line,
+                // A LEFT thread's line counts against the base file, so matching it
+                // against a new-file number would attach a reviewer's comment to
+                // unrelated code. Showing it at the end of the file is wrong-ish;
+                // showing it against the wrong line is just wrong.
+                if thread.diffSide == "RIGHT",
+                   let line = thread.line,
                    let match = lines.first(where: { $0.newNumber == line }) {
                     byLineId[match.id, default: []].append(thread)
                 } else {

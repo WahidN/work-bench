@@ -30,7 +30,7 @@ const FILES = [
 
 const THREADS = {
   data: { repository: { pullRequest: { reviewThreads: { nodes: [
-    { isResolved: false, isOutdated: false, path: 'src/payments/capture.ts', line: 8,
+    { isResolved: false, isOutdated: false, path: 'src/payments/capture.ts', line: 8, diffSide: 'RIGHT',
       comments: { nodes: [{ databaseId: 1, author: { login: 'sana' }, body: 'What about the ledger row?', createdAt: '2026-08-14T09:00:00Z' }] } },
   ] } } } },
 };
@@ -67,7 +67,7 @@ describe('fetchPrDetailView', () => {
       reviewState: 'changes_requested',
     });
     expect(detail.files).toHaveLength(2);
-    expect(detail.threads[0]).toMatchObject({ path: 'src/payments/capture.ts', line: 8, isResolved: false });
+    expect(detail.threads[0]).toMatchObject({ path: 'src/payments/capture.ts', line: 8, isResolved: false, diffSide: 'RIGHT' });
     expect(detail.threads[0].comments[0]).toMatchObject({ id: 1, author: 'sana' });
   });
 
@@ -107,6 +107,37 @@ describe('fetchPrDetailView', () => {
     expect(detail.conversation.filter((c) => c.kind === 'review')).toEqual([
       { kind: 'review', author: 'sana', body: '', createdAt: '2026-08-14T09:30:00Z', state: 'APPROVED' },
     ]);
+  });
+
+  it('asks GitHub for the diff side and carries a LEFT thread through', async () => {
+    vi.mocked(execa)
+      .mockResolvedValueOnce({ stdout: JSON.stringify(VIEW) } as any)
+      .mockResolvedValueOnce({ stdout: JSON.stringify(FILES) } as any)
+      .mockResolvedValueOnce({ stdout: JSON.stringify({
+        data: { repository: { pullRequest: { reviewThreads: { nodes: [
+          { isResolved: false, isOutdated: false, path: 'src/payments/capture.ts', line: 40, diffSide: 'LEFT',
+            comments: { nodes: [{ databaseId: 9, author: { login: 'sana' }, body: 'why remove this?', createdAt: '2026-08-14T09:00:00Z' }] } },
+        ] } } } },
+      }) } as any);
+
+    const detail = await fetchPrDetailView('linku/demo', 23);
+
+    expect(vi.mocked(execa).mock.calls[2][1]?.join(' ')).toContain('diffSide');
+    expect(detail.threads[0]).toMatchObject({ diffSide: 'LEFT', line: 40 });
+  });
+
+  it('defaults a thread with no diff side to RIGHT', async () => {
+    vi.mocked(execa)
+      .mockResolvedValueOnce({ stdout: JSON.stringify(VIEW) } as any)
+      .mockResolvedValueOnce({ stdout: JSON.stringify(FILES) } as any)
+      .mockResolvedValueOnce({ stdout: JSON.stringify({
+        data: { repository: { pullRequest: { reviewThreads: { nodes: [
+          { isResolved: false, isOutdated: false, path: 'a.ts', line: 1,
+            comments: { nodes: [] } },
+        ] } } } },
+      }) } as any);
+
+    expect((await fetchPrDetailView('linku/demo', 23)).threads[0].diffSide).toBe('RIGHT');
   });
 });
 

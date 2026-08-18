@@ -16,7 +16,7 @@ const THREADS_QUERY = `query($owner:String!,$name:String!,$number:Int!){
     pullRequest(number:$number){
       reviewThreads(first:100){
         nodes{
-          isResolved isOutdated path line
+          isResolved isOutdated path line diffSide
           comments(first:50){ nodes{ databaseId author{login} body createdAt } }
         }
       }
@@ -48,6 +48,7 @@ function toThread(node: any): PrReviewThread {
   return {
     path: node.path,
     line: node.line ?? null,
+    diffSide: node.diffSide ?? 'RIGHT',
     isResolved: !!node.isResolved,
     isOutdated: !!node.isOutdated,
     comments: (node.comments?.nodes ?? []).map((c: any) => ({

@@ -158,6 +158,7 @@ export interface PrReviewComment {
 export interface PrReviewThread {
   path: string;
   line: number | null;
+  diffSide: string;
   isResolved: boolean;
   isOutdated: boolean;
   comments: PrReviewComment[];

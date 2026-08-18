@@ -214,7 +214,7 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
      "baseRefName":"main","headRefName":"atlas/retry-card-capture","commitCount":4,
      "changedFiles":3,"additions":64,"deletions":7,
      "files":[{"path":"src/capture.ts","status":"modified","additions":24,"deletions":5,"patch":"@@ -1 +1 @@\\n+x"}],
-     "threads":[{"path":"src/capture.ts","line":8,"isResolved":false,"isOutdated":false,
+     "threads":[{"path":"src/capture.ts","line":8,"diffSide":"RIGHT","isResolved":false,"isOutdated":false,
        "comments":[{"id":1,"author":"sana","body":"q","createdAt":"2026-08-14T09:00:00Z"}]}],
      "conversation":[{"kind":"review","author":"sana","body":"ok","createdAt":"2026-08-14T09:00:00Z","state":"COMMENTED"}]}
     """
@@ -235,7 +235,7 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
 
 @Test func decodesAnOutdatedThreadWithoutALine() throws {
     let json = """
-    {"path":"src/gone.ts","line":null,"isResolved":true,"isOutdated":true,"comments":[]}
+    {"path":"src/gone.ts","line":null,"diffSide":"LEFT","isResolved":true,"isOutdated":true,"comments":[]}
     """
     let thread = try decode(PrReviewThread.self, json)
     #expect(thread.line == nil)
@@ -255,4 +255,12 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     #expect(detail.reviewState == nil)
     #expect(detail.conversation.first?.kind == .comment)
     #expect(detail.conversation.first?.state == nil)
+}
+
+@Test func decodesAThreadOnTheLeftSideOfTheDiff() throws {
+    let json = """
+    {"path":"src/capture.ts","line":40,"diffSide":"LEFT","isResolved":false,"isOutdated":false,
+     "comments":[{"id":9,"author":"sana","body":"why remove this?","createdAt":"2026-08-14T09:00:00Z"}]}
+    """
+    #expect(try decode(PrReviewThread.self, json).diffSide == "LEFT")
 }

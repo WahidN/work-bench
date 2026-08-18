@@ -6,9 +6,9 @@ private func file(_ path: String, patch: String?) -> PrDetailFile {
     PrDetailFile(path: path, status: "modified", additions: 2, deletions: 1, patch: patch)
 }
 
-private func thread(_ path: String, line: Int?, outdated: Bool = false) -> PrReviewThread {
+private func thread(_ path: String, line: Int?, outdated: Bool = false, side: String = "RIGHT") -> PrReviewThread {
     PrReviewThread(
-        path: path, line: line, isResolved: false, isOutdated: outdated,
+        path: path, line: line, diffSide: side, isResolved: false, isOutdated: outdated,
         comments: [PrReviewComment(id: 1, author: "sana", body: "q", createdAt: "2026-08-14T09:00:00Z")]
     )
 }
@@ -135,10 +135,17 @@ private let noNewlineMarkerPatch = """
     #expect(section.trailingThreads.isEmpty)
 }
 
+@Test func aLeftSideThreadFallsToTheEndEvenWhenItsLineExistsInTheDiff() {
+    let detail = makeDetail(files: [file("a.ts", patch: patch)], threads: [thread("a.ts", line: 15, side: "LEFT")])
+    let section = PrDetailLogic.sections(detail: detail)[0]
+    #expect(section.trailingThreads.count == 1)
+    #expect(section.rows.allSatisfy { $0.threads.isEmpty })
+}
+
 @Test func twoThreadsOnTheSameLineBothSurvive() {
     let first = thread("a.ts", line: 15)
     let second = PrReviewThread(
-        path: "a.ts", line: 15, isResolved: false, isOutdated: false,
+        path: "a.ts", line: 15, diffSide: "RIGHT", isResolved: false, isOutdated: false,
         comments: [PrReviewComment(id: 2, author: "wahid", body: "same line, different thread", createdAt: "2026-08-14T10:00:00Z")]
     )
     let detail = makeDetail(files: [file("a.ts", patch: patch)], threads: [first, second])

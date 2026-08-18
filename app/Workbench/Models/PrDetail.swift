@@ -25,6 +25,9 @@ struct PrReviewThread: Codable, Equatable, Identifiable {
     let path: String
     /// Null when the thread is outdated and no longer maps to a line in the diff.
     let line: Int?
+    /// LEFT or RIGHT. A LEFT thread's line is a base-file number, so it must never
+    /// be matched against the new-file numbers the diff rows carry.
+    let diffSide: String
     let isResolved: Bool
     let isOutdated: Bool
     let comments: [PrReviewComment]
