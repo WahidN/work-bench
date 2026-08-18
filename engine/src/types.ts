@@ -139,3 +139,53 @@ export interface SourceIssue {
   body: string;
   projectKey: string;
 }
+
+export interface PrDetailFile {
+  path: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  patch: string | null;
+}
+
+export interface PrReviewComment {
+  id: number;
+  author: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface PrReviewThread {
+  path: string;
+  line: number | null;
+  isResolved: boolean;
+  isOutdated: boolean;
+  comments: PrReviewComment[];
+}
+
+export interface PrConversationItem {
+  kind: 'review' | 'comment';
+  author: string;
+  body: string;
+  createdAt: string;
+  state: string | null;
+}
+
+export interface PrDetailView {
+  title: string;
+  url: string;
+  state: string;
+  isDraft: boolean;
+  reviewState: PrReviewState | null;
+  author: string;
+  createdAt: string;
+  baseRefName: string;
+  headRefName: string;
+  commitCount: number;
+  changedFiles: number;
+  additions: number;
+  deletions: number;
+  files: PrDetailFile[];
+  threads: PrReviewThread[];
+  conversation: PrConversationItem[];
+}
