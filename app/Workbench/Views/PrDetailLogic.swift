@@ -84,6 +84,10 @@ enum PrDetailLogic {
             } else if raw.hasPrefix("-") {
                 result.append(DiffLine(id: id, kind: .deletion, oldNumber: oldNumber, newNumber: nil, text: String(raw.dropFirst())))
                 oldNumber += 1
+            } else if raw.hasPrefix("\\") {
+                // Git's "no newline at end of file" marker. Not a real diff line:
+                // emit nothing and leave both counters untouched.
+                continue
             } else {
                 let text = raw.hasPrefix(" ") ? String(raw.dropFirst()) : raw
                 result.append(DiffLine(id: id, kind: .context, oldNumber: oldNumber, newNumber: newNumber, text: text))

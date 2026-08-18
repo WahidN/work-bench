@@ -21,6 +21,47 @@ private let patch = """
 +const BASE_DELAY_MS = 200;
 """
 
+/// Two spaces of real source indentation on each line, on top of the one
+/// diff-marker character, so a bug that strips all leading whitespace
+/// instead of just the marker would show up.
+private let indentedPatch = """
+@@ -1,2 +1,2 @@
+   indented context
+-  indented deletion
++  indented addition
+"""
+
+private let twoHunkPatch = """
+@@ -1,2 +1,2 @@
+ alpha
++beta
+@@ -20,1 +21,2 @@
+-gamma
++delta
+"""
+
+private let shortHeaderPatch = """
+@@ -14 +14 @@
+ unchanged
+"""
+
+private let trailingContextPatch = """
+@@ -5,2 +5,3 @@ func add(a, b int) int { return a+1 }
+ unchanged
++added
+"""
+
+/// Git emits this marker whenever the old file lacked a trailing newline.
+/// It must be skipped entirely, not treated as a context line.
+private let noNewlineMarkerPatch = """
+@@ -1,2 +1,3 @@
+ alpha
+-beta
+\\ No newline at end of file
++beta
++gamma
+"""
+
 @Test func diffLinesNumberBothSidesFromTheHunkHeader() {
     let lines = PrDetailLogic.diffLines(from: patch)
     #expect(lines.count == 5)
@@ -41,11 +82,69 @@ private let patch = """
     #expect(PrDetailLogic.diffLines(from: "").isEmpty)
 }
 
+@Test func diffLineTextStripsOnlyThePrefixCharacter() {
+    let lines = PrDetailLogic.diffLines(from: indentedPatch)
+    #expect(lines[1].kind == .context)
+    #expect(lines[1].text == "  indented context")
+    #expect(lines[2].kind == .deletion)
+    #expect(lines[2].text == "  indented deletion")
+    #expect(lines[3].kind == .addition)
+    #expect(lines[3].text == "  indented addition")
+}
+
+@Test func aSecondHunkHeaderResetsBothCountersRatherThanContinuing() {
+    let lines = PrDetailLogic.diffLines(from: twoHunkPatch)
+    #expect(lines.count == 6)
+    #expect(lines[3].kind == .hunkHeader)
+    #expect(lines[4].kind == .deletion)
+    #expect(lines[4].oldNumber == 20)
+    #expect(lines[5].kind == .addition)
+    #expect(lines[5].newNumber == 21)
+}
+
+@Test func hunkHeaderWithoutCommaOrCountStillParses() {
+    let lines = PrDetailLogic.diffLines(from: shortHeaderPatch)
+    #expect(lines[1].oldNumber == 14)
+    #expect(lines[1].newNumber == 14)
+}
+
+@Test func trailingContextWithDigitsAndAPlusDoesNotLeakIntoLineNumbers() {
+    let lines = PrDetailLogic.diffLines(from: trailingContextPatch)
+    #expect(lines[1].oldNumber == 5)
+    #expect(lines[1].newNumber == 5)
+    #expect(lines[2].kind == .addition)
+    #expect(lines[2].newNumber == 6)
+}
+
+@Test func theNoNewlineMarkerProducesNoRowAndDoesNotShiftNumbering() {
+    let lines = PrDetailLogic.diffLines(from: noNewlineMarkerPatch)
+    #expect(lines.count == 5)
+    #expect(lines.contains { $0.text.hasPrefix("\\") } == false)
+    #expect(lines[3].kind == .addition)
+    #expect(lines[3].text == "beta")
+    #expect(lines[3].newNumber == 2)
+    #expect(lines[4].kind == .addition)
+    #expect(lines[4].text == "gamma")
+    #expect(lines[4].newNumber == 3)
+}
+
 @Test func aThreadAnchorsAfterTheLineItCommentsOn() {
     let detail = makeDetail(files: [file("a.ts", patch: patch)], threads: [thread("a.ts", line: 15)])
     let section = PrDetailLogic.sections(detail: detail)[0]
     #expect(section.rows[3].threads.map(\.path) == ["a.ts"])
     #expect(section.trailingThreads.isEmpty)
+}
+
+@Test func twoThreadsOnTheSameLineBothSurvive() {
+    let first = thread("a.ts", line: 15)
+    let second = PrReviewThread(
+        path: "a.ts", line: 15, isResolved: false, isOutdated: false,
+        comments: [PrReviewComment(id: 2, author: "wahid", body: "same line, different thread", createdAt: "2026-08-14T10:00:00Z")]
+    )
+    let detail = makeDetail(files: [file("a.ts", patch: patch)], threads: [first, second])
+    let section = PrDetailLogic.sections(detail: detail)[0]
+    #expect(section.rows[3].threads.count == 2)
+    #expect(Set(section.rows[3].threads.compactMap { $0.comments.first?.id }) == Set([1, 2]))
 }
 
 @Test func anOutdatedThreadFallsToTheEndOfItsFileInsteadOfDisappearing() {
@@ -63,6 +162,14 @@ private let patch = """
     let section = PrDetailLogic.sections(detail: makeDetail(files: [file("huge.bin", patch: nil)], threads: []))[0]
     #expect(section.rows.isEmpty)
     #expect(section.isTooLarge)
+}
+
+@Test func aFileWithNoPatchStillKeepsItsThreadsInTrailingThreads() {
+    let detail = makeDetail(files: [file("huge.bin", patch: nil)], threads: [thread("huge.bin", line: 3)])
+    let section = PrDetailLogic.sections(detail: detail)[0]
+    #expect(section.rows.isEmpty)
+    #expect(section.isTooLarge)
+    #expect(section.trailingThreads.count == 1)
 }
 
 @Test func factsPartsReadLikeTheMockup() {
