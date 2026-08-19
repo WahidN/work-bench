@@ -276,6 +276,17 @@ private struct ReviewThreadView: View {
     // An empty string is a real edit and must be respected, not treated as absent.
     @State private var edited: String?
 
+    private static let timestampFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private static func age(for createdAt: String) -> String? {
+        guard let date = timestampFormatter.date(from: createdAt) else { return nil }
+        return ProjectsLogic.relativeTime(from: date, to: Date())
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s2) {
             ForEach(thread.comments) { comment in
@@ -284,6 +295,11 @@ private struct ReviewThreadView: View {
                         Text(comment.author)
                             .font(Theme.heading(Theme.FontSize.tableMeta))
                             .foregroundStyle(Theme.nocturneText)
+                        if let age = Self.age(for: comment.createdAt) {
+                            Text(age)
+                                .font(.system(size: Theme.FontSize.label))
+                                .foregroundStyle(Theme.Neutral.n600)
+                        }
                         Spacer()
                         if !thread.isResolved {
                             Text("Unresolved")

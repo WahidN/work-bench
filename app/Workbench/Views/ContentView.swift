@@ -47,6 +47,7 @@ struct ContentView: View {
                 onSelectProject: { project in
                     selection = .projects
                     projectsViewModel.selectedProject = project
+                    selectedPr = nil
                 }
             )
             VStack(spacing: 0) {
