@@ -15,6 +15,7 @@ struct PrDetailScreen: View {
 
     @State private var viewModel = PrDetailViewModel()
     @State private var tab: PrDetailTab = .files
+    @State private var collapsedFiles: Set<String> = []
 
     var body: some View {
         ScrollView {
@@ -206,11 +207,76 @@ struct PrDetailScreen: View {
 
     @ViewBuilder
     private var filesTab: some View {
-        EmptyView()
+        if let detail = viewModel.detail {
+            let sections = PrDetailLogic.sections(detail: detail)
+            if sections.isEmpty {
+                Text("This pull request changes no files.")
+                    .font(.system(size: Theme.FontSize.secondary))
+                    .foregroundStyle(Theme.Neutral.n600)
+            } else {
+                VStack(alignment: .leading, spacing: Theme.Space.s4) {
+                    ForEach(sections) { section in
+                        PrFileSectionView(
+                            section: section,
+                            isExpanded: !collapsedFiles.contains(section.id),
+                            onToggle: {
+                                if collapsedFiles.contains(section.id) {
+                                    collapsedFiles.remove(section.id)
+                                } else {
+                                    collapsedFiles.insert(section.id)
+                                }
+                            },
+                            threadContent: { thread in ReviewThreadView(thread: thread) }
+                        )
+                    }
+                }
+            }
+        }
     }
 
     @ViewBuilder
     private var conversationTab: some View {
         EmptyView()
+    }
+}
+
+private struct ReviewThreadView: View {
+    let thread: PrReviewThread
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.s2) {
+            ForEach(thread.comments) { comment in
+                VStack(alignment: .leading, spacing: Theme.Space.s1) {
+                    HStack(spacing: Theme.Space.s2) {
+                        Text(comment.author)
+                            .font(Theme.heading(Theme.FontSize.tableMeta))
+                            .foregroundStyle(Theme.nocturneText)
+                        Spacer()
+                        if !thread.isResolved {
+                            Text("Unresolved")
+                                .font(.system(size: Theme.FontSize.tag))
+                                .foregroundStyle(Theme.Neutral.n400)
+                                .padding(.vertical, 1)
+                                .padding(.horizontal, 7)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                        .strokeBorder(Theme.Neutral.n800, lineWidth: 1)
+                                )
+                        }
+                    }
+                    Text(comment.body)
+                        .font(.system(size: Theme.FontSize.secondary))
+                        .foregroundStyle(Theme.Neutral.n300)
+                        .textSelection(.enabled)
+                }
+            }
+        }
+        .padding(Theme.Space.s4)
+        .background(Theme.nocturneSurface)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .strokeBorder(Theme.Neutral.n800, lineWidth: 1)
+        )
     }
 }
