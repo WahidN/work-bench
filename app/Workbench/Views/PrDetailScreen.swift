@@ -191,9 +191,15 @@ struct PrDetailScreen: View {
     @ViewBuilder
     private var content: some View {
         if viewModel.isLoading && viewModel.detail == nil {
-            Text("Loading from GitHub…")
-                .font(.system(size: Theme.FontSize.secondary))
-                .foregroundStyle(Theme.Neutral.n600)
+            HStack(spacing: Theme.Space.s3) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Loading from GitHub…")
+                    .font(.system(size: Theme.FontSize.secondary))
+                    .foregroundStyle(Theme.Neutral.n600)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, Theme.Space.s8)
         } else if viewModel.detail == nil {
             Text("Could not reach GitHub. The pull request's own details are shown above.")
                 .font(.system(size: Theme.FontSize.secondary))
