@@ -102,7 +102,7 @@ struct PrDetailViewModelTests {
         api.draftError = APIError.transportFailed("gh down")
         let model = PrDetailViewModel(api: api)
         await model.draftReply(prId: 1, commentId: 7)
-        #expect(model.busyCommentId == nil)
+        #expect(!model.busyCommentIds.contains(7))
     }
 
     @Test func postReplyClearsBusyCommentIdWhenPostingFails() async {
@@ -111,7 +111,18 @@ struct PrDetailViewModelTests {
         let model = PrDetailViewModel(api: api)
         model.drafts[7] = "edited by hand"
         await model.postReply(prId: 1, commentId: 7, text: "edited by hand")
-        #expect(model.busyCommentId == nil)
+        #expect(!model.busyCommentIds.contains(7))
+    }
+
+    @Test func busyCommentIdsTracksEachThreadIndependently() async {
+        let api = StubPrDetailAPI()
+        api.postError = APIError.transportFailed("gh down")
+        let model = PrDetailViewModel(api: api)
+        model.drafts[7] = "edited by hand"
+        await model.postReply(prId: 1, commentId: 7, text: "edited by hand")
+        await model.draftReply(prId: 1, commentId: 8)
+        #expect(!model.busyCommentIds.contains(7))
+        #expect(model.busyCommentIds.isEmpty)
     }
 
     @Test func mergeClearsIsMergingWhenMergingFails() async {

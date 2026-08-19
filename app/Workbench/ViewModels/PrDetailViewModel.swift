@@ -15,7 +15,7 @@ final class PrDetailViewModel {
     private(set) var detail: PrDetail?
     private(set) var isLoading = false
     private(set) var isMerging = false
-    private(set) var busyCommentId: Int?
+    private(set) var busyCommentIds: Set<Int> = []
     /// Suggested text per review comment id, editable before it is posted.
     var drafts: [Int: String] = [:]
     var errorMessage: String?
@@ -42,8 +42,9 @@ final class PrDetailViewModel {
     }
 
     func draftReply(prId: Int, commentId: Int) async {
-        busyCommentId = commentId
-        defer { busyCommentId = nil }
+        guard !busyCommentIds.contains(commentId) else { return }
+        busyCommentIds.insert(commentId)
+        defer { busyCommentIds.remove(commentId) }
         do {
             drafts[commentId] = try await api.draftReviewReply(prId: prId, commentId: commentId)
         } catch {
@@ -52,8 +53,9 @@ final class PrDetailViewModel {
     }
 
     func postReply(prId: Int, commentId: Int, text: String) async {
-        busyCommentId = commentId
-        defer { busyCommentId = nil }
+        guard !busyCommentIds.contains(commentId) else { return }
+        busyCommentIds.insert(commentId)
+        defer { busyCommentIds.remove(commentId) }
         do {
             try await api.postReviewReply(prId: prId, commentId: commentId, text: text)
             drafts[commentId] = nil

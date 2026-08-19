@@ -231,7 +231,7 @@ struct PrDetailScreen: View {
                                 ReviewThreadView(
                                     thread: thread,
                                     draft: viewModel.drafts[commentId],
-                                    isBusy: viewModel.busyCommentId == commentId,
+                                    isBusy: viewModel.busyCommentIds.contains(commentId),
                                     onDraft: { Task { await viewModel.draftReply(prId: pr.id, commentId: commentId) } },
                                     onPost: { text in
                                         Task { await viewModel.postReply(prId: pr.id, commentId: commentId, text: text) }

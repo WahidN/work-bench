@@ -34,8 +34,8 @@ export function reviewStateFrom(decision: string | null | undefined): PrReviewSt
 
 function toFile(row: any): PrDetailFile {
   return {
-    path: row.filename,
-    status: row.status,
+    path: row.filename ?? '',
+    status: row.status ?? '',
     additions: row.additions ?? 0,
     deletions: row.deletions ?? 0,
     // GitHub omits the patch entirely for very large files. Null is the signal
@@ -46,16 +46,16 @@ function toFile(row: any): PrDetailFile {
 
 function toThread(node: any): PrReviewThread {
   return {
-    path: node.path,
+    path: node.path ?? '',
     line: node.line ?? null,
-    diffSide: node.diffSide ?? 'RIGHT',
+    diffSide: typeof node.diffSide === 'string' ? node.diffSide : '',
     isResolved: !!node.isResolved,
     isOutdated: !!node.isOutdated,
     comments: (node.comments?.nodes ?? []).map((c: any) => ({
-      id: c.databaseId,
+      id: c.databaseId ?? 0,
       author: c.author?.login ?? '',
       body: c.body ?? '',
-      createdAt: c.createdAt,
+      createdAt: c.createdAt ?? '',
     })),
   };
 }
@@ -73,7 +73,7 @@ function toConversation(view: any): PrConversationItem[] {
     kind: 'review' as const,
     author: r.author?.login ?? '',
     body: r.body ?? '',
-    createdAt: r.submittedAt,
+    createdAt: r.submittedAt ?? '',
     state: r.state ?? null,
   }));
   const comments: PrConversationItem[] = (view.comments ?? []).map((c: any) => ({
@@ -83,7 +83,7 @@ function toConversation(view: any): PrConversationItem[] {
     createdAt: c.createdAt,
     state: null,
   }));
-  return [...reviews, ...comments].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  return [...reviews, ...comments].sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
 }
 
 export async function fetchPrDetailView(repo: string, number: number): Promise<PrDetailView> {

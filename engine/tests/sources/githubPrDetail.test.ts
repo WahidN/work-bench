@@ -126,7 +126,7 @@ describe('fetchPrDetailView', () => {
     expect(detail.threads[0]).toMatchObject({ diffSide: 'LEFT', line: 40 });
   });
 
-  it('defaults a thread with no diff side to RIGHT', async () => {
+  it('leaves an unlabelled thread\'s diff side empty so the app will not anchor it', async () => {
     vi.mocked(execa)
       .mockResolvedValueOnce({ stdout: JSON.stringify(VIEW) } as any)
       .mockResolvedValueOnce({ stdout: JSON.stringify(FILES) } as any)
@@ -137,7 +137,7 @@ describe('fetchPrDetailView', () => {
         ] } } } },
       }) } as any);
 
-    expect((await fetchPrDetailView('linku/demo', 23)).threads[0].diffSide).toBe('RIGHT');
+    expect((await fetchPrDetailView('linku/demo', 23)).threads[0].diffSide).toBe('');
   });
 });
 
