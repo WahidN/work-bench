@@ -26,11 +26,11 @@ struct PrFileSectionView<ThreadContent: View>: View {
                                 .padding(.leading, Theme.Space.s8)
                         }
                     }
-                    ForEach(section.trailingThreads) { thread in
-                        threadContent(thread)
-                            .padding(.vertical, Theme.Space.s2)
-                            .padding(.leading, Theme.Space.s8)
-                    }
+                }
+                ForEach(section.trailingThreads) { thread in
+                    threadContent(thread)
+                        .padding(.vertical, Theme.Space.s2)
+                        .padding(.leading, Theme.Space.s8)
                 }
             }
         }
