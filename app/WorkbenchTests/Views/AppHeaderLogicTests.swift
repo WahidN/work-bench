@@ -50,3 +50,11 @@ import Foundation
     ) == "GitHub")
     #expect(AppHeaderLogic.resolvedHeading(for: .pullRequests, override: nil) == "Pull requests")
 }
+
+// An empty string is not nil, so resolvedHeading does not fall back for it.
+// The guard against a blank heading has to live at the call site, in
+// ContentView's prHeaderHeading, which turns an empty ref into nil before
+// it ever reaches this resolver.
+@Test func anEmptyStringOverrideDoesNotFallBack() {
+    #expect(AppHeaderLogic.resolvedHeading(for: .pullRequests, override: "") == "")
+}

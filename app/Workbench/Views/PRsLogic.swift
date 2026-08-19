@@ -54,16 +54,22 @@ enum PRsLogic {
         return trimmed.split(separator: "/").last.map(String.init) ?? trimmed
     }
 
+    /// Combines the bare repo name and the PR number into "acv-website#24".
+    /// Either half can be missing: no number drops the "#24", no repo drops
+    /// the repo name, and both missing gives back an empty string.
+    static func ref(for pr: PullRequest, githubRepo: String?) -> String {
+        let repo = githubRepo.map(repoName(from:)) ?? ""
+        return pr.number.map { "\(repo)#\($0)" } ?? repo
+    }
+
     static func rows(prs: [PullRequest], projects: [Project], filter: PrFilter, now: Date) -> [PrRow] {
         prs.filter { keep($0, filter) }.map { pr in
             let project = projects.first { $0.id == pr.projectId }
-            let repo = project?.githubRepo.map(repoName(from:)) ?? ""
-            let ref = pr.number.map { "\(repo)#\($0)" } ?? repo
             return PrRow(
                 id: pr.id,
                 pr: pr,
                 title: pr.title,
-                ref: ref,
+                ref: ref(for: pr, githubRepo: project?.githubRepo),
                 projectName: project?.name ?? "",
                 statusLabel: statusLabel(pr),
                 updatedText: updatedText(pr, now: now),

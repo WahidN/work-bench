@@ -237,8 +237,8 @@ struct ContentView: View {
     private var prHeaderHeading: String? {
         guard let pr = selectedPr else { return nil }
         let project = projectsViewModel.projects.first { $0.id == pr.projectId }
-        let repo = project?.githubRepo.map(PRsLogic.repoName(from:)) ?? ""
-        return pr.number.map { "\(repo)#\($0)" } ?? repo
+        let ref = PRsLogic.ref(for: pr, githubRepo: project?.githubRepo)
+        return ref.isEmpty ? nil : ref
     }
 
     // A PR carries no title of its own; the ticket it was created from supplies it.

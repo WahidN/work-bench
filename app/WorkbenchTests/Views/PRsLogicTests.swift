@@ -38,6 +38,26 @@ private let project = Project(
         #expect(PRsLogic.repoName(from: "linku/demo") == "demo")
     }
 
+    @Test func refCombinesRepoAndNumberWhenBothArePresent() {
+        let pr = makePr(id: 1, number: 24)
+        #expect(PRsLogic.ref(for: pr, githubRepo: "https://github.com/LinkuNijmegen/acv-website") == "acv-website#24")
+    }
+
+    @Test func refDropsTheHashWhenTheNumberIsMissing() {
+        let pr = makePr(id: 1, number: nil)
+        #expect(PRsLogic.ref(for: pr, githubRepo: "https://github.com/LinkuNijmegen/acv-website") == "acv-website")
+    }
+
+    @Test func refDropsTheRepoWhenItIsMissing() {
+        let pr = makePr(id: 1, number: 24)
+        #expect(PRsLogic.ref(for: pr, githubRepo: nil) == "#24")
+    }
+
+    @Test func refIsEmptyWhenBothAreMissing() {
+        let pr = makePr(id: 1, number: nil)
+        #expect(PRsLogic.ref(for: pr, githubRepo: nil) == "")
+    }
+
     @Test func assignedFilterKeepsOnlyAssignedRows() {
         let prs = [makePr(id: 1, assigned: true), makePr(id: 2, number: 25, authored: true)]
         let rows = PRsLogic.rows(prs: prs, projects: [project], filter: .assignedToMe, now: Date())
