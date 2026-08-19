@@ -315,6 +315,9 @@ private struct ReviewThreadView: View {
             RoundedRectangle(cornerRadius: Theme.Radius.md)
                 .strokeBorder(Theme.Neutral.n800, lineWidth: 1)
         )
+        // The draft going away means discard or a successful post, and either
+        // way any local edit is stale and must not resurface on the next draft.
+        .onChange(of: draft) { _, new in if new == nil { edited = nil } }
     }
 
     /// The draft is editable and nothing leaves the machine until Post is
@@ -348,6 +351,7 @@ private struct ReviewThreadView: View {
                 .buttonStyle(.plain)
                 .font(.system(size: Theme.FontSize.tableMeta))
                 .foregroundStyle(Theme.Neutral.n500)
+                .disabled(isBusy)
                 Button(action: { onPost(text) }) {
                     Text(isBusy ? "Posting…" : "Post")
                         .padding(.vertical, Theme.Space.s1)
@@ -355,7 +359,7 @@ private struct ReviewThreadView: View {
                 }
                 .buttonStyle(.plain)
                 .font(Theme.heading(Theme.FontSize.tableMeta))
-                .foregroundStyle(Theme.nocturneAccent)
+                .foregroundStyle(isBusy || isBlank ? Theme.Neutral.n700 : Theme.nocturneAccent)
                 .disabled(isBusy || isBlank)
             }
         }
