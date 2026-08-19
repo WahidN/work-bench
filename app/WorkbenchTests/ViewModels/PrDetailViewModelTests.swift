@@ -11,6 +11,8 @@ private final class StubPrDetailAPI: PrDetailAPI {
     var mergeResult = PrChatResult(action: .merged, reply: "Merged.")
     var mergeError: Error?
     var prDetailCallCount = 0
+    /// Lets a test suspend inside postReviewReply to observe state while the call is still in flight.
+    var onPost: (() async -> Void)?
 
     func prDetail(id: Int) async throws -> PrDetail {
         prDetailCallCount += 1
@@ -22,6 +24,7 @@ private final class StubPrDetailAPI: PrDetailAPI {
         return draft
     }
     func postReviewReply(prId: Int, commentId: Int, text: String) async throws {
+        await onPost?()
         if let postError { throw postError }
         postedText = text
     }
@@ -119,9 +122,13 @@ struct PrDetailViewModelTests {
         api.postError = APIError.transportFailed("gh down")
         let model = PrDetailViewModel(api: api)
         model.drafts[7] = "edited by hand"
+        var thread7StillBusyWhileThread8Posted = false
+        api.onPost = {
+            await model.draftReply(prId: 1, commentId: 8)
+            thread7StillBusyWhileThread8Posted = model.busyCommentIds.contains(7)
+        }
         await model.postReply(prId: 1, commentId: 7, text: "edited by hand")
-        await model.draftReply(prId: 1, commentId: 8)
-        #expect(!model.busyCommentIds.contains(7))
+        #expect(thread7StillBusyWhileThread8Posted)
         #expect(model.busyCommentIds.isEmpty)
     }
 

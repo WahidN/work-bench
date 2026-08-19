@@ -80,7 +80,7 @@ function toConversation(view: any): PrConversationItem[] {
     kind: 'comment' as const,
     author: c.author?.login ?? '',
     body: c.body ?? '',
-    createdAt: c.createdAt,
+    createdAt: c.createdAt ?? '',
     state: null,
   }));
   return [...reviews, ...comments].sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
