@@ -248,7 +248,19 @@ struct PrDetailScreen: View {
 
     @ViewBuilder
     private var conversationTab: some View {
-        EmptyView()
+        if let detail = viewModel.detail {
+            if detail.conversation.isEmpty {
+                Text("No reviews or comments yet.")
+                    .font(.system(size: Theme.FontSize.secondary))
+                    .foregroundStyle(Theme.Neutral.n600)
+            } else {
+                VStack(alignment: .leading, spacing: Theme.Space.s4) {
+                    ForEach(detail.conversation) { item in
+                        ConversationItemView(item: item)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -363,5 +375,59 @@ private struct ReviewThreadView: View {
                 .disabled(isBusy || isBlank)
             }
         }
+    }
+}
+
+/// Read-only. Replying at the conversation level, approving and resolving
+/// threads are all GitHub writes the mockup does not show, so they are out.
+private struct ConversationItemView: View {
+    let item: PrConversationItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.s2) {
+            HStack(spacing: Theme.Space.s3) {
+                Text(item.author)
+                    .font(Theme.heading(Theme.FontSize.secondary))
+                    .foregroundStyle(Theme.nocturneText)
+                if let label = stateLabel {
+                    Text(label)
+                        .font(.system(size: Theme.FontSize.tag))
+                        .foregroundStyle(stateColor)
+                        .padding(.vertical, 1)
+                        .padding(.horizontal, 7)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                                .strokeBorder(stateColor, lineWidth: 1)
+                        )
+                }
+                Spacer()
+            }
+            if !item.body.isEmpty {
+                Text(item.body)
+                    .font(.system(size: Theme.FontSize.secondary))
+                    .foregroundStyle(Theme.Neutral.n300)
+                    .textSelection(.enabled)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Theme.Space.s4)
+        .background(Theme.nocturneSurface)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .strokeBorder(Theme.Neutral.n900, lineWidth: 1)
+        )
+    }
+
+    private var stateLabel: String? {
+        switch item.state {
+        case "APPROVED": "Approved"
+        case "CHANGES_REQUESTED": "Changes requested"
+        default: nil
+        }
+    }
+
+    private var stateColor: Color {
+        item.state == "APPROVED" ? Theme.Status.approved : Theme.Status.changesRequested
     }
 }
