@@ -13,9 +13,6 @@ extension APIClient: PrDetailAPI {}
 @MainActor
 final class PrDetailViewModel {
     private(set) var detail: PrDetail?
-    /// Starts true because `.task` only runs after the first body evaluation.
-    /// Starting false paints one frame of the "could not reach GitHub" state
-    /// before the first load has even been attempted.
     private(set) var isLoading = true
     private(set) var isMerging = false
     private(set) var busyCommentIds: Set<Int> = []
