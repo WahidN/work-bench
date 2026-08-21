@@ -31,7 +31,18 @@ struct PrFileSection: Identifiable, Equatable {
     let trailingThreads: [PrReviewThread]
 
     var id: String { file.path }
-    var isTooLarge: Bool { file.patch == nil }
+    /// GitHub omits the patch for three different reasons and they need three
+    /// different words. A rename with no churn and a binary file both look like
+    /// "no diff" in the payload, so blaming size for either is simply wrong.
+    /// Nil means there is a diff to render.
+    var missingPatchNote: String? {
+        guard file.patch == nil else { return nil }
+        let hasChurn = file.additions > 0 || file.deletions > 0
+        if file.status == "renamed" && !hasChurn { return "Renamed, with no content changes." }
+        // An empty file reaches here too: the payload cannot tell it from binary.
+        if !hasChurn { return "Binary or empty file, so there is no text diff." }
+        return "GitHub did not return a diff for this file, it is too large."
+    }
     var churn: String { "+\(file.additions) -\(file.deletions)" }
 }
 

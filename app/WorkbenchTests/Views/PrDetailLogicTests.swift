@@ -2,8 +2,14 @@ import Testing
 import Foundation
 @testable import Workbench
 
-private func file(_ path: String, patch: String?) -> PrDetailFile {
-    PrDetailFile(path: path, status: "modified", additions: 2, deletions: 1, patch: patch)
+private func file(
+    _ path: String,
+    patch: String?,
+    status: String = "modified",
+    additions: Int = 2,
+    deletions: Int = 1
+) -> PrDetailFile {
+    PrDetailFile(path: path, status: status, additions: additions, deletions: deletions, patch: patch)
 }
 
 private func thread(_ path: String, line: Int?, outdated: Bool = false, side: String = "RIGHT") -> PrReviewThread {
@@ -168,15 +174,38 @@ private let noNewlineMarkerPatch = """
 @Test func aFileWithNoPatchReportsItRatherThanRenderingEmpty() {
     let section = PrDetailLogic.sections(detail: makeDetail(files: [file("huge.bin", patch: nil)], threads: []))[0]
     #expect(section.rows.isEmpty)
-    #expect(section.isTooLarge)
+    #expect(section.missingPatchNote != nil)
 }
 
 @Test func aFileWithNoPatchStillKeepsItsThreadsInTrailingThreads() {
     let detail = makeDetail(files: [file("huge.bin", patch: nil)], threads: [thread("huge.bin", line: 3)])
     let section = PrDetailLogic.sections(detail: detail)[0]
     #expect(section.rows.isEmpty)
-    #expect(section.isTooLarge)
+    #expect(section.missingPatchNote != nil)
     #expect(section.trailingThreads.count == 1)
+}
+
+@Test func aPureRenameSaysSoInsteadOfBlamingTheFileSize() {
+    let renamed = file("src/payments/capture.ts", patch: nil, status: "renamed", additions: 0, deletions: 0)
+    let section = PrDetailLogic.sections(detail: makeDetail(files: [renamed], threads: []))[0]
+    #expect(section.missingPatchNote == "Renamed, with no content changes.")
+}
+
+@Test func aBinaryFileSaysThereIsNoTextDiffInsteadOfBlamingTheFileSize() {
+    let binary = file("assets/logo.png", patch: nil, additions: 0, deletions: 0)
+    let section = PrDetailLogic.sections(detail: makeDetail(files: [binary], threads: []))[0]
+    #expect(section.missingPatchNote == "Binary or empty file, so there is no text diff.")
+}
+
+@Test func aFileWithRealChurnAndNoPatchIsTheOnlyOneBlamedOnSize() {
+    let huge = file("assets/huge.json", patch: nil, additions: 900, deletions: 900)
+    let section = PrDetailLogic.sections(detail: makeDetail(files: [huge], threads: []))[0]
+    #expect(section.missingPatchNote == "GitHub did not return a diff for this file, it is too large.")
+}
+
+@Test func aFileThatHasADiffCarriesNoNoteAtAll() {
+    let section = PrDetailLogic.sections(detail: makeDetail(files: [file("src/a.ts", patch: patch)], threads: []))[0]
+    #expect(section.missingPatchNote == nil)
 }
 
 @Test func factsPartsReadLikeTheMockup() {

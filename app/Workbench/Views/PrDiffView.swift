@@ -12,8 +12,8 @@ struct PrFileSectionView<ThreadContent: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             if isExpanded {
-                if section.isTooLarge {
-                    Text("GitHub did not return a diff for this file, it is too large.")
+                if let note = section.missingPatchNote {
+                    Text(note)
                         .font(.system(size: Theme.FontSize.tableMeta))
                         .foregroundStyle(Theme.Neutral.n600)
                         .padding(Theme.Space.s4)
