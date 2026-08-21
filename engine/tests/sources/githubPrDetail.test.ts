@@ -38,7 +38,7 @@ const THREADS = {
 function mockGh() {
   vi.mocked(execa)
     .mockResolvedValueOnce({ stdout: JSON.stringify(VIEW) } as any)
-    .mockResolvedValueOnce({ stdout: JSON.stringify(FILES) } as any)
+    .mockResolvedValueOnce({ stdout: JSON.stringify([FILES]) } as any)
     .mockResolvedValueOnce({ stdout: JSON.stringify(THREADS) } as any);
 }
 
@@ -52,6 +52,25 @@ describe('reviewStateFrom', () => {
 });
 
 describe('fetchPrDetailView', () => {
+  it('keeps every file when the file list spans more than one page', async () => {
+    vi.mocked(execa)
+      .mockResolvedValueOnce({ stdout: JSON.stringify(VIEW) } as any)
+      .mockResolvedValueOnce({ stdout: JSON.stringify([[FILES[0]], [FILES[1]]]) } as any)
+      .mockResolvedValueOnce({ stdout: JSON.stringify(THREADS) } as any);
+
+    const detail = await fetchPrDetailView('linku/demo', 23);
+
+    expect(detail.files.map((f) => f.path)).toEqual(['src/payments/capture.ts', 'assets/huge.bin']);
+  });
+
+  it('asks gh to page through the file list', async () => {
+    mockGh();
+    await fetchPrDetailView('linku/demo', 23);
+    const filesCall = vi.mocked(execa).mock.calls[1][1] as string[];
+    expect(filesCall).toContain('--paginate');
+    expect(filesCall).toContain('--slurp');
+  });
+
   it('merges the three gh calls into one payload', async () => {
     mockGh();
     const detail = await fetchPrDetailView('linku/demo', 23);
@@ -101,7 +120,7 @@ describe('fetchPrDetailView', () => {
         { author: { login: 'bot' }, body: '', submittedAt: '2026-08-14T08:00:00Z', state: 'COMMENTED' },
         { author: { login: 'sana' }, body: '', submittedAt: '2026-08-14T09:30:00Z', state: 'APPROVED' },
       ] }) } as any)
-      .mockResolvedValueOnce({ stdout: JSON.stringify(FILES) } as any)
+      .mockResolvedValueOnce({ stdout: JSON.stringify([FILES]) } as any)
       .mockResolvedValueOnce({ stdout: JSON.stringify(THREADS) } as any);
     const detail = await fetchPrDetailView('linku/demo', 23);
     expect(detail.conversation.filter((c) => c.kind === 'review')).toEqual([
@@ -112,7 +131,7 @@ describe('fetchPrDetailView', () => {
   it('asks GitHub for the diff side and carries a LEFT thread through', async () => {
     vi.mocked(execa)
       .mockResolvedValueOnce({ stdout: JSON.stringify(VIEW) } as any)
-      .mockResolvedValueOnce({ stdout: JSON.stringify(FILES) } as any)
+      .mockResolvedValueOnce({ stdout: JSON.stringify([FILES]) } as any)
       .mockResolvedValueOnce({ stdout: JSON.stringify({
         data: { repository: { pullRequest: { reviewThreads: { nodes: [
           { isResolved: false, isOutdated: false, path: 'src/payments/capture.ts', line: 40, diffSide: 'LEFT',
@@ -122,14 +141,14 @@ describe('fetchPrDetailView', () => {
 
     const detail = await fetchPrDetailView('linku/demo', 23);
 
-    expect(vi.mocked(execa).mock.calls[2][1]?.join(' ')).toContain('diffSide');
+    expect((vi.mocked(execa).mock.calls[2][1] as string[]).join(' ')).toContain('diffSide');
     expect(detail.threads[0]).toMatchObject({ diffSide: 'LEFT', line: 40 });
   });
 
   it('leaves an unlabelled thread\'s diff side empty so the app will not anchor it', async () => {
     vi.mocked(execa)
       .mockResolvedValueOnce({ stdout: JSON.stringify(VIEW) } as any)
-      .mockResolvedValueOnce({ stdout: JSON.stringify(FILES) } as any)
+      .mockResolvedValueOnce({ stdout: JSON.stringify([FILES]) } as any)
       .mockResolvedValueOnce({ stdout: JSON.stringify({
         data: { repository: { pullRequest: { reviewThreads: { nodes: [
           { isResolved: false, isOutdated: false, path: 'a.ts', line: 1,

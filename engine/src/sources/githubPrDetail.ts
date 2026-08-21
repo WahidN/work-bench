@@ -38,8 +38,9 @@ function toFile(row: any): PrDetailFile {
     status: row.status ?? '',
     additions: row.additions ?? 0,
     deletions: row.deletions ?? 0,
-    // GitHub omits the patch entirely for very large files. Null is the signal
-    // to render "diff too large" rather than an empty file.
+    // GitHub omits the patch for an oversized file, a binary file and a pure
+    // rename alike. Null carries that to the app, which tells the three apart
+    // from status and churn, so do not collapse them here.
     patch: typeof row.patch === 'string' ? row.patch : null,
   };
 }
@@ -92,7 +93,7 @@ export async function fetchPrDetailView(repo: string, number: number): Promise<P
 
   const [viewRaw, filesRaw, threadsRaw] = await Promise.all([
     execa('gh', ['pr', 'view', String(number), '--repo', slug, '--json', VIEW_FIELDS]),
-    execa('gh', ['api', `repos/${slug}/pulls/${number}/files?per_page=100`]),
+    execa('gh', ['api', `repos/${slug}/pulls/${number}/files?per_page=100`, '--paginate', '--slurp']),
     execa('gh', [
       'api', 'graphql', '-f', `query=${THREADS_QUERY}`,
       '-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`,
@@ -100,7 +101,9 @@ export async function fetchPrDetailView(repo: string, number: number): Promise<P
   ]);
 
   const view = JSON.parse(viewRaw.stdout || '{}');
-  const files = JSON.parse(filesRaw.stdout || '[]').map(toFile);
+  // --slurp keeps each page as its own array, which is what makes --paginate
+  // parseable at all: without it gh prints one bare JSON array per page.
+  const files = JSON.parse(filesRaw.stdout || '[]').flat().map(toFile);
   const threadNodes = JSON.parse(threadsRaw.stdout || '{}')
     ?.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
 
