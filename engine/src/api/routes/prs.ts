@@ -5,6 +5,8 @@ import { getProject } from '../../projects.js';
 import { sendPrMessage } from '../../prChat.js';
 import { acquireJob, finishJob } from '../../jobs.js';
 import { openDetachedWorktree, getDiff, removeWorktree } from '../../git.js';
+import { fetchPrDetailView, postReviewCommentReply } from '../../sources/githubPrDetail.js';
+import { draftReviewReply } from '../../prReplyDraft.js';
 
 export function registerPrsRoutes(app: Express, db: Database.Database): void {
   app.get('/prs', (_req, res) => res.json(listPrs(db)));
@@ -13,6 +15,66 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
     const pr = getPr(db, Number(req.params.id));
     if (!pr) { res.status(404).json({ error: 'not found' }); return; }
     res.json({ ...pr, messages: listPrMessages(db, pr.id) });
+  });
+
+  // Reads straight from gh. Unlike GET /prs/:id/diff this opens no worktree and
+  // takes no job lock, because opening a screen must not contend with the agent
+  // panel or pay for a clone.
+  app.get('/prs/:id/detail', async (req, res) => {
+    const pr = getPr(db, Number(req.params.id));
+    if (!pr) { res.status(404).json({ error: 'not found' }); return; }
+    if (pr.number === null) {
+      res.status(400).json({ error: 'this PR has no GitHub number yet' });
+      return;
+    }
+    const project = getProject(db, pr.projectId);
+    if (!project) { res.status(404).json({ error: 'project not found' }); return; }
+    if (!project.githubRepo) {
+      res.status(400).json({ error: 'project has no GitHub repo configured' });
+      return;
+    }
+    try {
+      res.json(await fetchPrDetailView(project.githubRepo, pr.number));
+    } catch (err) {
+      res.status(502).json({ error: String(err) });
+    }
+  });
+
+  app.post('/prs/:id/review-comments/:commentId/draft', async (req, res) => {
+    try {
+      const draft = await draftReviewReply(db, Number(req.params.id), Number(req.params.commentId));
+      res.json({ draft });
+    } catch (err) {
+      const message = String(err);
+      if (message.includes('not found')) res.status(404).json({ error: message });
+      else res.status(500).json({ error: message });
+    }
+  });
+
+  app.post('/prs/:id/review-comments/:commentId/reply', async (req, res) => {
+    const text = req.body?.text;
+    if (typeof text !== 'string' || !text.trim()) {
+      res.status(400).json({ error: 'text is required' });
+      return;
+    }
+    const pr = getPr(db, Number(req.params.id));
+    if (!pr) { res.status(404).json({ error: 'not found' }); return; }
+    if (pr.number === null) {
+      res.status(400).json({ error: 'this PR has no GitHub number yet' });
+      return;
+    }
+    const project = getProject(db, pr.projectId);
+    if (!project?.githubRepo) {
+      res.status(400).json({ error: 'project has no GitHub repo configured' });
+      return;
+    }
+    try {
+      res.json(await postReviewCommentReply(
+        project.githubRepo, pr.number, Number(req.params.commentId), text
+      ));
+    } catch (err) {
+      res.status(502).json({ error: String(err) });
+    }
   });
 
   app.get('/prs/:id/diff', async (req, res) => {

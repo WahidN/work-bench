@@ -1,0 +1,257 @@
+import Testing
+import Foundation
+@testable import Workbench
+
+private func file(
+    _ path: String,
+    patch: String?,
+    status: String = "modified",
+    additions: Int = 2,
+    deletions: Int = 1
+) -> PrDetailFile {
+    PrDetailFile(path: path, status: status, additions: additions, deletions: deletions, patch: patch)
+}
+
+private func thread(_ path: String, line: Int?, outdated: Bool = false, side: String = "RIGHT") -> PrReviewThread {
+    PrReviewThread(
+        path: path, line: line, diffSide: side, isResolved: false, isOutdated: outdated,
+        comments: [PrReviewComment(id: 1, author: "sana", body: "q", createdAt: "2026-08-14T09:00:00Z")]
+    )
+}
+
+private let patch = """
+@@ -14,3 +14,4 @@ import { ledger }
+ const RETRYABLE = new Set([500]);
+-const MAX_ATTEMPTS = 1;
++const MAX_ATTEMPTS = 3;
++const BASE_DELAY_MS = 200;
+"""
+
+/// Two spaces of real source indentation on each line, on top of the one
+/// diff-marker character, so a bug that strips all leading whitespace
+/// instead of just the marker would show up.
+private let indentedPatch = """
+@@ -1,2 +1,2 @@
+   indented context
+-  indented deletion
++  indented addition
+"""
+
+private let twoHunkPatch = """
+@@ -1,2 +1,2 @@
+ alpha
++beta
+@@ -20,1 +21,2 @@
+-gamma
++delta
+"""
+
+private let shortHeaderPatch = """
+@@ -14 +14 @@
+ unchanged
+"""
+
+private let trailingContextPatch = """
+@@ -5,2 +5,3 @@ func add(a, b int) int { return a+1 }
+ unchanged
++added
+"""
+
+/// Git emits this marker whenever the old file lacked a trailing newline.
+/// It must be skipped entirely, not treated as a context line.
+private let noNewlineMarkerPatch = """
+@@ -1,2 +1,3 @@
+ alpha
+-beta
+\\ No newline at end of file
++beta
++gamma
+"""
+
+@Test func diffLinesNumberBothSidesFromTheHunkHeader() {
+    let lines = PrDetailLogic.diffLines(from: patch)
+    #expect(lines.count == 5)
+    #expect(lines[0].kind == .hunkHeader)
+    #expect(lines[1].kind == .context)
+    #expect(lines[1].oldNumber == 14)
+    #expect(lines[1].newNumber == 14)
+    #expect(lines[2].kind == .deletion)
+    #expect(lines[2].oldNumber == 15)
+    #expect(lines[2].newNumber == nil)
+    #expect(lines[3].kind == .addition)
+    #expect(lines[3].oldNumber == nil)
+    #expect(lines[3].newNumber == 15)
+    #expect(lines[4].newNumber == 16)
+}
+
+@Test func diffLinesOfAnEmptyPatchIsEmpty() {
+    #expect(PrDetailLogic.diffLines(from: "").isEmpty)
+}
+
+@Test func diffLineTextStripsOnlyThePrefixCharacter() {
+    let lines = PrDetailLogic.diffLines(from: indentedPatch)
+    #expect(lines[1].kind == .context)
+    #expect(lines[1].text == "  indented context")
+    #expect(lines[2].kind == .deletion)
+    #expect(lines[2].text == "  indented deletion")
+    #expect(lines[3].kind == .addition)
+    #expect(lines[3].text == "  indented addition")
+}
+
+@Test func aSecondHunkHeaderResetsBothCountersRatherThanContinuing() {
+    let lines = PrDetailLogic.diffLines(from: twoHunkPatch)
+    #expect(lines.count == 6)
+    #expect(lines[3].kind == .hunkHeader)
+    #expect(lines[4].kind == .deletion)
+    #expect(lines[4].oldNumber == 20)
+    #expect(lines[5].kind == .addition)
+    #expect(lines[5].newNumber == 21)
+}
+
+@Test func hunkHeaderWithoutCommaOrCountStillParses() {
+    let lines = PrDetailLogic.diffLines(from: shortHeaderPatch)
+    #expect(lines[1].oldNumber == 14)
+    #expect(lines[1].newNumber == 14)
+}
+
+@Test func trailingContextWithDigitsAndAPlusDoesNotLeakIntoLineNumbers() {
+    let lines = PrDetailLogic.diffLines(from: trailingContextPatch)
+    #expect(lines[1].oldNumber == 5)
+    #expect(lines[1].newNumber == 5)
+    #expect(lines[2].kind == .addition)
+    #expect(lines[2].newNumber == 6)
+}
+
+@Test func theNoNewlineMarkerProducesNoRowAndDoesNotShiftNumbering() {
+    let lines = PrDetailLogic.diffLines(from: noNewlineMarkerPatch)
+    #expect(lines.count == 5)
+    #expect(lines.contains { $0.text.hasPrefix("\\") } == false)
+    #expect(lines[3].kind == .addition)
+    #expect(lines[3].text == "beta")
+    #expect(lines[3].newNumber == 2)
+    #expect(lines[4].kind == .addition)
+    #expect(lines[4].text == "gamma")
+    #expect(lines[4].newNumber == 3)
+}
+
+@Test func aThreadAnchorsAfterTheLineItCommentsOn() {
+    let detail = makeDetail(files: [file("a.ts", patch: patch)], threads: [thread("a.ts", line: 15)])
+    let section = PrDetailLogic.sections(detail: detail)[0]
+    #expect(section.rows[3].threads.map(\.path) == ["a.ts"])
+    #expect(section.trailingThreads.isEmpty)
+}
+
+@Test func aLeftSideThreadFallsToTheEndEvenWhenItsLineExistsInTheDiff() {
+    let detail = makeDetail(files: [file("a.ts", patch: patch)], threads: [thread("a.ts", line: 15, side: "LEFT")])
+    let section = PrDetailLogic.sections(detail: detail)[0]
+    #expect(section.trailingThreads.count == 1)
+    #expect(section.rows.allSatisfy { $0.threads.isEmpty })
+}
+
+@Test func twoThreadsOnTheSameLineBothSurvive() {
+    let first = thread("a.ts", line: 15)
+    let second = PrReviewThread(
+        path: "a.ts", line: 15, diffSide: "RIGHT", isResolved: false, isOutdated: false,
+        comments: [PrReviewComment(id: 2, author: "wahid", body: "same line, different thread", createdAt: "2026-08-14T10:00:00Z")]
+    )
+    let detail = makeDetail(files: [file("a.ts", patch: patch)], threads: [first, second])
+    let section = PrDetailLogic.sections(detail: detail)[0]
+    #expect(section.rows[3].threads.count == 2)
+    #expect(Set(section.rows[3].threads.compactMap { $0.comments.first?.id }) == Set([1, 2]))
+}
+
+@Test func anOutdatedThreadFallsToTheEndOfItsFileInsteadOfDisappearing() {
+    let detail = makeDetail(files: [file("a.ts", patch: patch)], threads: [thread("a.ts", line: nil, outdated: true)])
+    let section = PrDetailLogic.sections(detail: detail)[0]
+    #expect(section.trailingThreads.count == 1)
+}
+
+@Test func aThreadWhoseLineIsNotInTheDiffFallsToTheEnd() {
+    let detail = makeDetail(files: [file("a.ts", patch: patch)], threads: [thread("a.ts", line: 999)])
+    #expect(PrDetailLogic.sections(detail: detail)[0].trailingThreads.count == 1)
+}
+
+@Test func aFileWithNoPatchReportsItRatherThanRenderingEmpty() {
+    let section = PrDetailLogic.sections(detail: makeDetail(files: [file("huge.bin", patch: nil)], threads: []))[0]
+    #expect(section.rows.isEmpty)
+    #expect(section.missingPatchNote != nil)
+}
+
+@Test func aFileWithNoPatchStillKeepsItsThreadsInTrailingThreads() {
+    let detail = makeDetail(files: [file("huge.bin", patch: nil)], threads: [thread("huge.bin", line: 3)])
+    let section = PrDetailLogic.sections(detail: detail)[0]
+    #expect(section.rows.isEmpty)
+    #expect(section.missingPatchNote != nil)
+    #expect(section.trailingThreads.count == 1)
+}
+
+@Test func aPureRenameSaysSoInsteadOfBlamingTheFileSize() {
+    let renamed = file("src/payments/capture.ts", patch: nil, status: "renamed", additions: 0, deletions: 0)
+    let section = PrDetailLogic.sections(detail: makeDetail(files: [renamed], threads: []))[0]
+    #expect(section.missingPatchNote == "Renamed, with no content changes.")
+}
+
+@Test func aBinaryFileSaysThereIsNoTextDiffInsteadOfBlamingTheFileSize() {
+    let binary = file("assets/logo.png", patch: nil, additions: 0, deletions: 0)
+    let section = PrDetailLogic.sections(detail: makeDetail(files: [binary], threads: []))[0]
+    #expect(section.missingPatchNote == "Binary or empty file, so there is no text diff.")
+}
+
+@Test func aFileWithRealChurnAndNoPatchIsTheOnlyOneBlamedOnSize() {
+    let huge = file("assets/huge.json", patch: nil, additions: 900, deletions: 900)
+    let section = PrDetailLogic.sections(detail: makeDetail(files: [huge], threads: []))[0]
+    #expect(section.missingPatchNote == "GitHub did not return a diff for this file, it is too large.")
+}
+
+@Test func aFileThatHasADiffCarriesNoNoteAtAll() {
+    let section = PrDetailLogic.sections(detail: makeDetail(files: [file("src/a.ts", patch: patch)], threads: []))[0]
+    #expect(section.missingPatchNote == nil)
+}
+
+@Test func factsPartsReadLikeTheMockup() {
+    let parts = PrDetailLogic.factsParts(detail: makeDetail(files: [], threads: []))
+    #expect(parts.branches == "atlas/retry-card-capture → main")
+    #expect(parts.commits == "4 commits")
+    #expect(parts.files == "3 files changed")
+    #expect(parts.churn == "+64 -7")
+}
+
+@Test func oneCommitAndOneFileAreNotPluralised() {
+    let parts = PrDetailLogic.factsParts(
+        detail: makeDetail(files: [], threads: [], commitCount: 1, changedFiles: 1)
+    )
+    #expect(parts.commits == "1 commit")
+    #expect(parts.files == "1 file changed")
+}
+
+@Test func openedLineSaysByYouForYourOwnPullRequest() {
+    let detail = makeDetail(files: [], threads: [])
+    #expect(PrDetailLogic.openedLine(detail: detail, authoredByMe: true).hasSuffix("by you"))
+    #expect(PrDetailLogic.openedLine(detail: detail, authoredByMe: false).hasSuffix("by wahid"))
+}
+
+@Test func tabCountsCountFilesAndConversationEntries() {
+    let detail = makeDetail(files: [file("a.ts", patch: patch)], threads: [])
+    let counts = PrDetailLogic.tabCounts(detail: detail)
+    #expect(counts.files == 1)
+    #expect(counts.conversation == 1)
+}
+
+private func makeDetail(
+    files: [PrDetailFile],
+    threads: [PrReviewThread],
+    commitCount: Int = 4,
+    changedFiles: Int = 3
+) -> PrDetail {
+    PrDetail(
+        title: "Retry card capture on 5xx", url: "https://x/pull/23", state: "OPEN", isDraft: false,
+        reviewState: .reviewRequired, author: "wahid", createdAt: "2026-08-12T15:11:00Z",
+        baseRefName: "main", headRefName: "atlas/retry-card-capture",
+        commitCount: commitCount, changedFiles: changedFiles, additions: 64, deletions: 7,
+        files: files, threads: threads,
+        conversation: [PrConversationItem(
+            kind: .review, author: "sana", body: "ok",
+            createdAt: "2026-08-14T09:00:00Z", state: "COMMENTED"
+        )]
+    )
+}

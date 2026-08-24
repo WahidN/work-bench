@@ -219,6 +219,7 @@ private struct TaskRow: View {
                             .foregroundStyle(Theme.Accent.a100)
                     }
                 }
+                .contentShape(RoundedRectangle(cornerRadius: 5))
         }
         .buttonStyle(.plain)
         .padding(.top, 2)

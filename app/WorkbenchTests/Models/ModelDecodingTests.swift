@@ -206,3 +206,61 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     #expect(project.status == .paused)
     #expect(project.blurb == "Build pipeline consolidation.")
 }
+
+@Test func decodesPrDetail() throws {
+    let json = """
+    {"title":"Retry card capture on 5xx","url":"https://x/pull/23","state":"OPEN","isDraft":false,
+     "reviewState":"changes_requested","author":"wahid","createdAt":"2026-08-12T15:11:00Z",
+     "baseRefName":"main","headRefName":"atlas/retry-card-capture","commitCount":4,
+     "changedFiles":3,"additions":64,"deletions":7,
+     "files":[{"path":"src/capture.ts","status":"modified","additions":24,"deletions":5,"patch":"@@ -1 +1 @@\\n+x"}],
+     "threads":[{"path":"src/capture.ts","line":8,"diffSide":"RIGHT","isResolved":false,"isOutdated":false,
+       "comments":[{"id":1,"author":"sana","body":"q","createdAt":"2026-08-14T09:00:00Z"}]}],
+     "conversation":[{"kind":"review","author":"sana","body":"ok","createdAt":"2026-08-14T09:00:00Z","state":"COMMENTED"}]}
+    """
+    let detail = try decode(PrDetail.self, json)
+    #expect(detail.commitCount == 4)
+    #expect(detail.reviewState == .changesRequested)
+    #expect(detail.files.first?.patch == "@@ -1 +1 @@\n+x")
+    #expect(detail.threads.first?.comments.first?.id == 1)
+    #expect(detail.conversation.first?.kind == .review)
+}
+
+@Test func decodesPrDetailFileWithoutAPatch() throws {
+    let json = """
+    {"path":"assets/huge.bin","status":"modified","additions":900,"deletions":900,"patch":null}
+    """
+    #expect(try decode(PrDetailFile.self, json).patch == nil)
+}
+
+@Test func decodesAnOutdatedThreadWithoutALine() throws {
+    let json = """
+    {"path":"src/gone.ts","line":null,"diffSide":"LEFT","isResolved":true,"isOutdated":true,"comments":[]}
+    """
+    let thread = try decode(PrReviewThread.self, json)
+    #expect(thread.line == nil)
+    #expect(thread.isOutdated)
+}
+
+@Test func decodesPrDetailWithNoReviewStateAndAPlainComment() throws {
+    let json = """
+    {"title":"Add header","url":"https://x/pull/9","state":"OPEN","isDraft":false,
+     "reviewState":null,"author":"wahid","createdAt":"2026-08-15T10:00:00Z",
+     "baseRefName":"main","headRefName":"feat/header","commitCount":1,
+     "changedFiles":1,"additions":3,"deletions":0,
+     "files":[],"threads":[],
+     "conversation":[{"kind":"comment","author":"sana","body":"lgtm once tests pass","createdAt":"2026-08-15T11:00:00Z","state":null}]}
+    """
+    let detail = try decode(PrDetail.self, json)
+    #expect(detail.reviewState == nil)
+    #expect(detail.conversation.first?.kind == .comment)
+    #expect(detail.conversation.first?.state == nil)
+}
+
+@Test func decodesAThreadOnTheLeftSideOfTheDiff() throws {
+    let json = """
+    {"path":"src/capture.ts","line":40,"diffSide":"LEFT","isResolved":false,"isOutdated":false,
+     "comments":[{"id":9,"author":"sana","body":"why remove this?","createdAt":"2026-08-14T09:00:00Z"}]}
+    """
+    #expect(try decode(PrReviewThread.self, json).diffSide == "LEFT")
+}

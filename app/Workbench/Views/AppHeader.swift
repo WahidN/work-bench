@@ -29,27 +29,43 @@ enum AppHeaderLogic {
         case .issues: "Jira"
         }
     }
+
+    static func resolvedKicker(
+        for section: SidebarSection,
+        activeProjectCount: Int,
+        todayDateString: String,
+        override: String?
+    ) -> String {
+        override ?? kicker(for: section, activeProjectCount: activeProjectCount, todayDateString: todayDateString)
+    }
+
+    static func resolvedHeading(for section: SidebarSection, override: String?) -> String {
+        override ?? heading(for: section)
+    }
 }
 
 struct AppHeader: View {
     let section: SidebarSection
     let activeProjectCount: Int
+    var kickerOverride: String? = nil
+    var headingOverride: String? = nil
     let onOpenAgent: () -> Void
     let onAddProject: () -> Void
 
     var body: some View {
         HStack(alignment: .center, spacing: Theme.Space.s4) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(AppHeaderLogic.kicker(
+                Text(AppHeaderLogic.resolvedKicker(
                     for: section,
                     activeProjectCount: activeProjectCount,
-                    todayDateString: AppHeaderLogic.todayDateString(for: Date())
+                    todayDateString: AppHeaderLogic.todayDateString(for: Date()),
+                    override: kickerOverride
                 ))
                     .font(.system(size: Theme.FontSize.label))
                     .tracking(0.8)
                     .foregroundStyle(Theme.Neutral.n600)
                     .textCase(.uppercase)
-                Text(AppHeaderLogic.heading(for: section))
+                Text(AppHeaderLogic.resolvedHeading(for: section, override: headingOverride))
                     .font(Theme.heading(Theme.FontSize.screenTitle))
                     .tracking(-0.33)
                     .foregroundStyle(Theme.nocturneText)
