@@ -164,6 +164,15 @@ struct ProjectDetailViewModelTests {
         #expect(model.draft == "what I am typing")
     }
 
+    @Test func aReloadOfTheSameProjectAdoptsNewNotesWhenNothingIsUnsaved() {
+        let model = ProjectDetailViewModel(api: StubNotesAPI(), debounce: never)
+        model.start(project: project(id: 1, notes: "A"))
+
+        model.start(project: project(id: 1, notes: "B"))
+
+        #expect(model.draft == "B", "a late-arriving save for this same project must reach a clean draft")
+    }
+
     @Test func aReloadAfterASaveDoesNotRevertToTheOriginalNotes() async {
         let api = StubNotesAPI()
         let model = ProjectDetailViewModel(api: api, debounce: never)

@@ -21,6 +21,12 @@ final class ProjectDetailViewModel {
 
     private var projectId: Int?
     private var savedValue = ""
+    /// True once THIS instance has itself confirmed a write for the current project. Distinguishes
+    /// two same-id, draft-equals-savedValue states that look identical otherwise: a fresh instance
+    /// that has only ever copied `project.notes` verbatim (never confirmed, so a later value is
+    /// adopted) versus an instance whose `savedValue` was just set by its own successful write (the
+    /// server already has that exact text, so an older, stale `project.notes` must not overwrite it).
+    private var hasSavedSinceStart = false
     private let api: any ProjectNotesAPI
     private let debounce: Duration
     private let sleep: @Sendable (Duration) async -> Void
@@ -37,11 +43,20 @@ final class ProjectDetailViewModel {
 
     /// Called when the screen appears and on every render for the open project. Notes are written
     /// by exactly one place -- this class -- so once a project is loaded there is no external
-    /// change to pick up. A reload of the SAME project is therefore a no-op: applying a re-render's
-    /// copy of `Project` here could stomp text this model already saved (or is still holding as an
-    /// unsaved draft) with a now-stale value. A different project id is a real switch.
+    /// change to pick up, EXCEPT for a save that landed after this instance already read a stale
+    /// copy of the project (a fresh instance can start from an array the parent hasn't refreshed
+    /// yet; the later refresh arrives as a same-id call here). A reload of the same project adopts
+    /// the incoming notes only when there is nothing unsaved AND this instance has not itself
+    /// already confirmed a write: `draft == savedValue` alone can't tell those two apart, since a
+    /// draft that just landed a successful save also has draft == savedValue, and a stale
+    /// `project.notes` arriving after that must not overwrite the value the server actually has --
+    /// see `hasSavedSinceStart`. A different project id is a real switch.
     func start(project: Project) {
         if projectId == project.id {
+            if draft == savedValue, project.notes != savedValue, !hasSavedSinceStart {
+                savedValue = project.notes
+                draft = project.notes
+            }
             return
         }
         pendingTimer?.cancel()
@@ -64,6 +79,7 @@ final class ProjectDetailViewModel {
         savedValue = project.notes
         draft = project.notes
         saveError = nil
+        hasSavedSinceStart = false
     }
 
     func edited(_ text: String) {
@@ -119,6 +135,7 @@ final class ProjectDetailViewModel {
             if projectId == self.projectId {
                 savedValue = project.notes
                 saveError = nil
+                hasSavedSinceStart = true
             }
         } catch {
             if projectId == self.projectId {

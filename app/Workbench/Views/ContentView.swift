@@ -244,7 +244,12 @@ struct ContentView: View {
             }
             }
             .task { await projectsViewModel.load() }
-            .onChange(of: openProjectId) { Task { await projectsViewModel.load() } }
+            .onChange(of: openProjectId) {
+                Task {
+                    await projectsViewModel.load()
+                    await jiraViewModel.load()
+                }
+            }
         }
     }
 

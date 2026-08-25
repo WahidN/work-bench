@@ -54,6 +54,10 @@ struct ProjectDetailScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.nocturneBg)
         .task(id: project.id) { notesModel.start(project: project) }
+        // .task(id:) only fires on a project switch, not on a notes-only change. A save made
+        // elsewhere in the same visit (the departing write from a fast project switch, or a late
+        // refresh landing after this instance already started from a stale copy) surfaces here.
+        .onChange(of: project.notes) { notesModel.start(project: project) }
         .onDisappear { Task { await notesModel.flush() } }
     }
 
