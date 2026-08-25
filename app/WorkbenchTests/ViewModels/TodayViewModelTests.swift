@@ -10,6 +10,7 @@ final class MockTodayAPI: TodayAPI {
     var setTodoPriorityResult: Result<Todo, Error>?
     var setTodoPinnedResult: Result<Todo, Error>?
     private(set) var createTodoCalls: [String] = []
+    private(set) var createTodoProjectIds: [Int?] = []
     private(set) var setTodoDoneCalls: [(id: Int, done: Bool)] = []
     private(set) var promoteTodoCalls: [Int] = []
     private(set) var setTodoPriorityCalls: [(id: Int, priority: TodoPriority)] = []
@@ -18,6 +19,7 @@ final class MockTodayAPI: TodayAPI {
     func today() async throws -> TodayResponse { try todayResult.get() }
     func createTodo(text: String, projectId: Int?) async throws -> Todo {
         createTodoCalls.append(text)
+        createTodoProjectIds.append(projectId)
         return try createTodoResult!.get()
     }
     func setTodoDone(id: Int, done: Bool) async throws -> Todo {
@@ -78,7 +80,16 @@ struct TodayViewModelTests {
         let viewModel = TodayViewModel(api: api)
         await viewModel.addTodo(text: "call client")
         #expect(api.createTodoCalls == ["call client"])
+        #expect(api.createTodoProjectIds == [nil], "Today's quick-add has no project, so nil must reach the API")
         #expect(viewModel.todos.map(\.id) == [2])
+    }
+
+    @Test func addTodoForwardsTheProjectId() async {
+        let api = MockTodayAPI()
+        api.createTodoResult = .success(sampleTodo(id: 2))
+        let viewModel = TodayViewModel(api: api)
+        await viewModel.addTodo(text: "Fix the header", projectId: 7)
+        #expect(api.createTodoProjectIds == [7])
     }
 
     @Test func toggleDoneKeepsTheTodoSoTheDoneSectionCanShowIt() async {
