@@ -159,7 +159,7 @@ struct ProjectDetailViewModelTests {
         model.start(project: project(id: 1, notes: "on the server"))
         model.edited("what I am typing")
 
-        model.start(project: project(id: 1, notes: "on the server"))
+        model.start(project: project(id: 1, notes: "changed on the server"))
 
         #expect(model.draft == "what I am typing")
     }
