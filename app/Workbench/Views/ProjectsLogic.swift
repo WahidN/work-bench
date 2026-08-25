@@ -77,7 +77,7 @@ enum ProjectsLogic {
 
     /// Projects carry no timestamp of their own, so "updated" is the newest thing
     /// the project owns: a task, an issue or a pull request.
-    private static func activityText(
+    static func activityText(
         for project: Project,
         todos: [Todo],
         tickets: [Ticket],
