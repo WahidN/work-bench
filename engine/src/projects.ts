@@ -12,6 +12,7 @@ function rowToProject(row: any): Project {
     sentryProjectSlug: row.sentry_project_slug,
     status: row.status,
     blurb: row.blurb,
+    notes: row.notes,
   };
 }
 
@@ -60,6 +61,14 @@ export function updateProject(
      WHERE id = @id`
   ).run({ ...merged, repoPath: merged.repoPath, defaultBranch: merged.defaultBranch, id });
   return getProject(db, id);
+}
+
+// Deliberately narrow. updateProject rewrites all nine columns from {...current, ...input},
+// which is fine for a form submitted once and wrong for an autosave firing while the user
+// types: a stale client would keep reverting name and repo_path. One column, so it cannot.
+export function setProjectNotes(db: Database.Database, id: number, notes: string): Project | null {
+  const result = db.prepare('UPDATE projects SET notes = ? WHERE id = ?').run(notes, id);
+  return result.changes === 0 ? null : getProject(db, id);
 }
 
 // The chat thread belongs to the project, so it goes with it. The schema has no
