@@ -200,6 +200,14 @@ describe('POST /todos with a project', () => {
     const res = await auth(request(app).post('/todos').send({ text: 'Fix it', projectId: 'atlas' }));
 
     expect(res.status).toBe(400);
+    expect(res.body.error).toBe('projectId must be a number');
+  });
+
+  it('rejects a projectId that is not a number at all', async () => {
+    const res = await auth(request(app).post('/todos').send({ text: 'Fix it', projectId: true }));
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('projectId must be a number');
   });
 
   it('still accepts a task with no project', async () => {
