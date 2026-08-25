@@ -16,7 +16,7 @@ final class MockTodayAPI: TodayAPI {
     private(set) var setTodoPinnedCalls: [(id: Int, pinned: Bool)] = []
 
     func today() async throws -> TodayResponse { try todayResult.get() }
-    func createTodo(text: String) async throws -> Todo {
+    func createTodo(text: String, projectId: Int?) async throws -> Todo {
         createTodoCalls.append(text)
         return try createTodoResult!.get()
     }

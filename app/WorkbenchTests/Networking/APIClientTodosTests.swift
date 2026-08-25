@@ -19,6 +19,34 @@ struct APIClientTodosTests {
         #expect(todo.text == "renew SSL cert")
     }
 
+    @Test func createTodoSendsTheProjectId() async throws {
+        var capturedBody: [String: Any]?
+        let session = mockedSession { request in
+            capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
+            return jsonResponse(request.url!, status: 201, body: """
+            {"id":1,"source":"manual","sourceId":null,"text":"Fix the header","body":"","url":null,
+             "projectId":7,"canPromote":false,"done":false,"promotedTicketId":null,"priority":"med","pinned":false,"createdAt":"2026-08-12T00:00:00.000Z"}
+            """)
+        }
+        let todo = try await APIClient(session: session, keychain: StubSecretStore()).createTodo(text: "Fix the header", projectId: 7)
+        #expect(capturedBody?["text"] as? String == "Fix the header")
+        #expect(capturedBody?["projectId"] as? Int == 7)
+        #expect(todo.projectId == 7)
+    }
+
+    @Test func createTodoOmitsTheProjectIdWhenThereIsNone() async throws {
+        var capturedBody: [String: Any]?
+        let session = mockedSession { request in
+            capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
+            return jsonResponse(request.url!, status: 201, body: """
+            {"id":1,"source":"manual","sourceId":null,"text":"renew SSL cert","body":"","url":null,
+             "projectId":null,"canPromote":false,"done":false,"promotedTicketId":null,"priority":"med","pinned":false,"createdAt":"2026-08-12T00:00:00.000Z"}
+            """)
+        }
+        _ = try await APIClient(session: session, keychain: StubSecretStore()).createTodo(text: "renew SSL cert")
+        #expect(capturedBody?["projectId"] == nil, "a nil project must not be sent as null")
+    }
+
     @Test func setTodoDonePatchesTheDoneField() async throws {
         var capturedBody: [String: Any]?
         let session = mockedSession { request in
