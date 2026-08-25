@@ -81,6 +81,9 @@ private let noon = ISO8601DateFormatter().date(from: "2026-08-17T12:00:00Z")!
     var pinnedJira = todo(id: 5, projectId: 1)
     pinnedJira.pinned = true
 
+    var donePinnedJira = todo(id: 7, projectId: 1, done: true)
+    donePinnedJira.pinned = true
+
     let cards = ProjectsLogic.cards(
         projects: [project(id: 1), project(id: 2, name: "Relay")],
         todos: [
@@ -88,6 +91,7 @@ private let noon = ISO8601DateFormatter().date(from: "2026-08-17T12:00:00Z")!
             todo(id: 2, projectId: 1, done: true),     // done
             pinnedJira,                                // pinned: counts
             manualTodo(id: 6, projectId: 1),           // manual: counts
+            donePinnedJira,                            // pinned but done: must be excluded by done check, not by pinned alone
             todo(id: 3, projectId: 2),
             todo(id: 4, projectId: nil)
         ],

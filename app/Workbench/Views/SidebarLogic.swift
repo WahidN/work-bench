@@ -20,7 +20,7 @@ enum SidebarLogic {
     }
 
     static func projectOpenCount(for project: Project, todos: [Todo]) -> Int {
-        todos.filter { $0.projectId == project.id && !$0.done }.count
+        todos.filter { $0.projectId == project.id && ProjectsLogic.isOpenTask($0) }.count
     }
 
     static func projectDotColor(at index: Int) -> Color {
