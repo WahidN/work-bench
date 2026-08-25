@@ -38,6 +38,13 @@ enum ProjectsLogic {
         projects.filter { $0.status == .active }.count
     }
 
+    /// A task the user actually works from: something they typed, or a Jira issue they
+    /// pinned. The 138 mirrored Jira issues in a real database are neither, which is why
+    /// Today filters them out and why this count has to agree with what the Tasks tab lists.
+    static func isOpenTask(_ todo: Todo) -> Bool {
+        (todo.source == .manual || todo.pinned) && !todo.done
+    }
+
     /// Cards keep the order of the projects array, because the dot colour is taken
     /// by index the same way the sidebar takes it, and the two must agree.
     static func cards(
@@ -55,7 +62,7 @@ enum ProjectsLogic {
                 dot: SidebarLogic.projectDotColor(at: index),
                 statusLabel: statusLabel(project.status),
                 blurb: project.blurb,
-                openCount: todos.filter { $0.projectId == project.id && !$0.done }.count,
+                openCount: todos.filter { $0.projectId == project.id && isOpenTask($0) }.count,
                 prCount: prs.filter { $0.projectId == project.id && $0.status != .merged }.count,
                 activity: activityText(
                     for: project,
