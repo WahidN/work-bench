@@ -120,8 +120,7 @@ private let noon = ISO8601DateFormatter().date(from: "2026-08-24T12:00:00Z")!
             manualTodo(id: 1, projectId: 1),
             jiraTodo(id: 2, projectId: 1, pinned: false),
             manualTodo(id: 3, projectId: 1, done: true),
-            jiraTodo(id: 4, projectId: 1, pinned: true),
-            jiraTodo(id: 5, projectId: 2, pinned: false)
+            jiraTodo(id: 4, projectId: 1, pinned: true)
         ],
         tickets: [ticket(id: 1, projectId: 1)],
         prs: [pullRequest(id: 1, projectId: 1), pullRequest(id: 2, projectId: 1, status: .merged),
@@ -130,9 +129,22 @@ private let noon = ISO8601DateFormatter().date(from: "2026-08-24T12:00:00Z")!
     )
 
     #expect(facts.status == "Paused")
-    #expect(facts.openTasks == 2, "the pinned issue counts, but the unpinned Jira mirror, the done task and the other project's task do not")
+    #expect(facts.openTasks == 2, "the pinned issue counts, but the unpinned Jira mirror and the done task do not")
     #expect(facts.openPrs == 1, "a merged PR and another project's PR are not this project's open work")
     #expect(facts.lastActivity == "3h ago")
+}
+
+@Test func factsCountOnlyThisProjectsWork() {
+    let facts = ProjectDetailLogic.facts(
+        project: project(id: 1),
+        todos: [manualTodo(id: 1, projectId: 1), manualTodo(id: 2, projectId: 2)],
+        tickets: [],
+        prs: [pullRequest(id: 1, projectId: 1), pullRequest(id: 2, projectId: 2)],
+        now: noon
+    )
+
+    #expect(facts.openTasks == 1, "another project's manual task must not be counted here")
+    #expect(facts.openPrs == 1, "another project's open pull request must not be counted here")
 }
 
 @Test func openWorkListsPullRequestsThenIssues() {
