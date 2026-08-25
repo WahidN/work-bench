@@ -111,12 +111,13 @@ describe('openDb', () => {
     expect(columns(db, 'todos')).toContain('pinned');
     expect(columns(db, 'projects')).toContain('status');
     expect(columns(db, 'projects')).toContain('blurb');
+    expect(columns(db, 'projects')).toContain('notes');
     expect(db.prepare('SELECT priority, due_at, done_at FROM todos').get()).toEqual({
       priority: 'med', due_at: null, done_at: null,
     });
     expect(db.prepare('SELECT pinned FROM tickets').get()).toEqual({ pinned: 0 });
     expect(db.prepare('SELECT pinned FROM prs').get()).toEqual({ pinned: 0 });
-    expect(db.prepare('SELECT status, blurb FROM projects').get()).toEqual({ status: 'active', blurb: '' });
+    expect(db.prepare('SELECT status, blurb, notes FROM projects').get()).toEqual({ status: 'active', blurb: '', notes: '' });
     expect(db.pragma('user_version', { simple: true })).toBe(6);
     db.close();
 
