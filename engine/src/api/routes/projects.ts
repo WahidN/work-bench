@@ -1,7 +1,7 @@
 import type { Express } from 'express';
 import type Database from 'better-sqlite3';
 import {
-  listProjects, getProject, createProject, updateProject, deleteProject, listProjectMessages,
+  listProjects, getProject, createProject, updateProject, deleteProject, listProjectMessages, setProjectNotes,
 } from '../../projects.js';
 import { sendProjectMessage } from '../../projectChat.js';
 import type { ProjectStatus } from '../../types.js';
@@ -67,6 +67,17 @@ export function registerProjectsRoutes(app: Express, db: Database.Database): voi
       return;
     }
     const project = updateProject(db, Number(req.params.id), req.body);
+    if (!project) { res.status(404).json({ error: 'not found' }); return; }
+    res.json(project);
+  });
+
+  app.put('/projects/:id/notes', (req, res) => {
+    const notes = req.body?.notes;
+    if (typeof notes !== 'string') {
+      res.status(400).json({ error: 'notes must be a string' });
+      return;
+    }
+    const project = setProjectNotes(db, Number(req.params.id), notes);
     if (!project) { res.status(404).json({ error: 'not found' }); return; }
     res.json(project);
   });

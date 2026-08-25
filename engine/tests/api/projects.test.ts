@@ -143,3 +143,50 @@ describe('project status and blurb over the API', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('PUT /projects/:id/notes', () => {
+  it('stores the notes and returns the project', async () => {
+    const res = await auth(request(app).put(`/projects/${projectId}/notes`).send({ notes: 'Card capture next.' }));
+
+    expect(res.status).toBe(200);
+    expect(res.body.notes).toBe('Card capture next.');
+    expect(res.body.name).toBe('Atlas Payments');
+  });
+
+  it('accepts an empty string', async () => {
+    await auth(request(app).put(`/projects/${projectId}/notes`).send({ notes: 'something' }));
+
+    const res = await auth(request(app).put(`/projects/${projectId}/notes`).send({ notes: '' }));
+
+    expect(res.status).toBe(200);
+    expect(res.body.notes).toBe('');
+  });
+
+  it('rejects notes that are not a string', async () => {
+    const res = await auth(request(app).put(`/projects/${projectId}/notes`).send({ notes: 42 }));
+
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a body with no notes at all', async () => {
+    const res = await auth(request(app).put(`/projects/${projectId}/notes`).send({}));
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 for a project that does not exist', async () => {
+    const res = await auth(request(app).put('/projects/999/notes').send({ notes: 'x' }));
+
+    expect(res.status).toBe(404);
+  });
+
+  it('leaves the rest of the project alone', async () => {
+    await auth(request(app).put(`/projects/${projectId}/notes`).send({ notes: 'notes only' }));
+
+    const res = await auth(request(app).get(`/projects/${projectId}`));
+
+    expect(res.body).toMatchObject({
+      name: 'Atlas Payments', repoPath: '/repos/atlas', defaultBranch: 'main', notes: 'notes only',
+    });
+  });
+});
