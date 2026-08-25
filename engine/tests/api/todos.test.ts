@@ -3,6 +3,7 @@ import request from 'supertest';
 import Database from 'better-sqlite3';
 import { openDb } from '../../src/db.js';
 import { createManualTodo, promoteTodo, setTodoDone } from '../../src/todos.js';
+import { createProject } from '../../src/projects.js';
 import { createServer } from '../../src/api/server.js';
 
 // Only promoteTodo is faked; the rest of the module stays real so the todo rows
@@ -16,6 +17,7 @@ const TOKEN = 'test-token';
 let db: Database.Database;
 let app: ReturnType<typeof createServer>;
 let todoId: number;
+let projectId: number;
 
 function auth(req: request.Test): request.Test {
   return req.set('Authorization', `Bearer ${TOKEN}`);
@@ -25,6 +27,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   db = openDb(':memory:');
   app = createServer(db, TOKEN);
+  projectId = createProject(db, {
+    name: 'Atlas Payments', repoPath: '/repos/atlas', defaultBranch: 'main',
+    githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null,
+  }).id;
   todoId = createManualTodo(db, 'promote me').id;
 });
 
@@ -173,5 +179,33 @@ describe('PATCH /todos/:id/pin', () => {
   it('404s for a todo that does not exist', async () => {
     const res = await auth(request(app).patch('/todos/999/pin')).send({ pinned: true });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /todos with a project', () => {
+  it('creates the task against that project', async () => {
+    const res = await auth(request(app).post('/todos').send({ text: 'Fix the header', projectId }));
+
+    expect(res.status).toBe(201);
+    expect(res.body.projectId).toBe(projectId);
+  });
+
+  it('rejects a project that does not exist, rather than hiding the task', async () => {
+    const res = await auth(request(app).post('/todos').send({ text: 'Fix it', projectId: 999 }));
+
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a projectId that is not a number', async () => {
+    const res = await auth(request(app).post('/todos').send({ text: 'Fix it', projectId: 'atlas' }));
+
+    expect(res.status).toBe(400);
+  });
+
+  it('still accepts a task with no project', async () => {
+    const res = await auth(request(app).post('/todos').send({ text: 'Fix it' }));
+
+    expect(res.status).toBe(201);
+    expect(res.body.projectId).toBeNull();
   });
 });

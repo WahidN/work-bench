@@ -1,6 +1,7 @@
 import type { Express } from 'express';
 import type Database from 'better-sqlite3';
 import { listTodos, createManualTodo, setTodoDone, setTodoPriority, getTodo, promoteTodo, setTodoPinned } from '../../todos.js';
+import { getProject } from '../../projects.js';
 import { acquireJob, finishJob } from '../../jobs.js';
 
 export function registerTodosRoutes(app: Express, db: Database.Database): void {
@@ -19,7 +20,20 @@ export function registerTodosRoutes(app: Express, db: Database.Database): void {
       res.status(400).json({ error: 'text is required' });
       return;
     }
-    res.status(201).json(createManualTodo(db, text));
+    // A todo whose project does not exist would appear on no project screen at all,
+    // so this is a 400 rather than a silently stored null.
+    const projectId = req.body?.projectId ?? undefined;
+    if (projectId !== undefined) {
+      if (!Number.isInteger(projectId)) {
+        res.status(400).json({ error: 'projectId must be a number' });
+        return;
+      }
+      if (!getProject(db, projectId)) {
+        res.status(400).json({ error: 'projectId does not exist' });
+        return;
+      }
+    }
+    res.status(201).json(createManualTodo(db, text, { projectId }));
   });
 
   const PRIORITIES = ['high', 'med', 'low'];

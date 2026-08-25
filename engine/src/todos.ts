@@ -36,14 +36,20 @@ export function getTodo(db: Database.Database, id: number): Todo | null {
 export function createManualTodo(
   db: Database.Database,
   text: string,
-  options: { priority?: TodoPriority; dueAt?: string } = {}
+  options: { priority?: TodoPriority; dueAt?: string; projectId?: number } = {}
 ): Todo {
   const result = db
     .prepare(
-      `INSERT INTO todos (source, source_id, text, body, can_promote, done, priority, due_at, created_at)
-       VALUES ('manual', NULL, ?, '', 0, 0, ?, ?, ?)`
+      `INSERT INTO todos (source, source_id, text, body, project_id, can_promote, done, priority, due_at, created_at)
+       VALUES ('manual', NULL, ?, '', ?, 0, 0, ?, ?, ?)`
     )
-    .run(text, options.priority ?? 'med', options.dueAt ?? localDate(), new Date().toISOString());
+    .run(
+      text,
+      options.projectId ?? null,
+      options.priority ?? 'med',
+      options.dueAt ?? localDate(),
+      new Date().toISOString()
+    );
   return rowToTodo(db.prepare('SELECT * FROM todos WHERE id = ?').get(result.lastInsertRowid));
 }
 
