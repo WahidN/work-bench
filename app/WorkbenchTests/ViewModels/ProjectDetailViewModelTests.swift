@@ -6,11 +6,51 @@ private struct SavedNote: Equatable {
     let notes: String
 }
 
+/// Lets a test hold `updateProjectNotes` suspended so it can create a real interleaving --
+/// two saves racing, or a project switch landing mid-write -- without any sleep. `enter()` is
+/// called by the stub on every request; `waitForEntries` lets a test block until N requests have
+/// reached the gate; `open()` releases everything waiting (and lets any later arrival straight
+/// through).
+private actor Gate {
+    private var isOpen = false
+    private var entryCount = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var entryWaiters: [(threshold: Int, continuation: CheckedContinuation<Void, Never>)] = []
+
+    func enter() async {
+        entryCount += 1
+        let count = entryCount
+        entryWaiters.removeAll { waiter in
+            guard count >= waiter.threshold else { return false }
+            waiter.continuation.resume()
+            return true
+        }
+        guard !isOpen else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func waitForEntries(_ count: Int) async {
+        if entryCount >= count { return }
+        await withCheckedContinuation { entryWaiters.append((count, $0)) }
+    }
+
+    func open() {
+        isOpen = true
+        let toResume = waiters
+        waiters = []
+        for continuation in toResume {
+            continuation.resume()
+        }
+    }
+}
+
 private final class StubNotesAPI: ProjectNotesAPI {
     var saved: [SavedNote] = []
     var error: Error?
+    var gate: Gate?
 
     func updateProjectNotes(id: Int, notes: String) async throws -> Project {
+        if let gate { await gate.enter() }
         if let error { throw error }
         saved.append(SavedNote(id: id, notes: notes))
         var project = Project(id: id, name: "Atlas", repoPath: "/repos/atlas", defaultBranch: "main",
@@ -210,5 +250,55 @@ struct ProjectDetailViewModelTests {
 
         #expect(model.saveError == nil)
         #expect(api.saved == [SavedNote(id: 1, notes: "two")])
+    }
+
+    @Test func twoConcurrentFlushesProduceAtMostOneWrite() async {
+        let api = StubNotesAPI()
+        let gate = Gate()
+        api.gate = gate
+        let model = ProjectDetailViewModel(api: api, debounce: never)
+        model.start(project: project())
+        model.edited("racing")
+
+        let flushA = Task { await model.flush() }
+        await gate.waitForEntries(1)
+        let flushB = Task { await model.flush() }
+
+        await gate.open()
+        await flushA.value
+        await flushB.value
+
+        #expect(api.saved == [SavedNote(id: 1, notes: "racing")],
+                 "two concurrent flushes must produce at most one write")
+    }
+
+    @Test func aWriteThatBecomesStaleMidFlightDoesNotStampTheNewProject() async {
+        let api = StubNotesAPI()
+        let gate = Gate()
+        api.gate = gate
+        let model = ProjectDetailViewModel(api: api, debounce: never)
+        model.start(project: project(id: 1, notes: "atlas notes"))
+        model.edited("typing about atlas")
+
+        let flushTask = Task { await model.flush() }
+        await gate.waitForEntries(1)
+
+        // The switch lands while the write above is still in flight. start() may itself spawn a
+        // second write for the departing project (the draft is still dirty against the pre-switch
+        // savedValue); both target project 1, so both are let through the same gate below.
+        model.start(project: project(id: 2, notes: "relay notes"))
+        await gate.open()
+        await flushTask.value
+        await model.inFlightWrite?.value
+
+        #expect(model.saveError == nil,
+                 "a write that became stale mid-flight must not surface an error for the new project")
+        #expect(model.draft == "relay notes")
+
+        let savedCountBeforeFollowUp = api.saved.count
+        await model.flush()
+
+        #expect(api.saved.count == savedCountBeforeFollowUp,
+                 "a write that became stale mid-flight must not cause a spurious extra write on the new project")
     }
 }

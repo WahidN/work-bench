@@ -46,8 +46,9 @@ final class ProjectDetailViewModel {
         pendingTimer = nil
         // Switching project must not drop an unsaved draft. start is synchronous, so the old
         // project's text goes out in its own task instead of being discarded. It is stored in
-        // inFlightWrite, not the timer slot, so a keystroke on the new project can't cancel it --
-        // that used to be able to drop typed text on a fast switch.
+        // inFlightWrite, not the timer slot, so a keystroke on the new project can't cancel it.
+        // If a write for the OLD project is still in flight when it lands, write's own id check
+        // is what keeps it from touching the project now on screen -- see write(projectId:notes:).
         if let previousId = projectId, draft != savedValue {
             let text = draft
             inFlightWrite = Task { await self.write(projectId: previousId, notes: text) }
@@ -70,33 +71,50 @@ final class ProjectDetailViewModel {
 
     /// Save now if there is anything unsaved. Called on tab switch, on project change and on
     /// disappear, so closing the screen a keystroke after typing cannot lose the text. Only the
-    /// timer is cancelled -- a write already in flight is awaited, never abandoned.
+    /// timer is cancelled here -- save() itself chains behind any write already in flight rather
+    /// than abandoning it, so this doesn't need a wait of its own.
     func flush() async {
         pendingTimer?.cancel()
         pendingTimer = nil
-        await inFlightWrite?.value
         await save()
     }
 
+    /// Chains the new attempt behind whatever is already in `inFlightWrite` instead of racing it.
+    /// Two overlapping callers (a tab switch and onDisappear can both flush) would otherwise both
+    /// pass the dirty check while the first write is still in flight, sending two PUTs for the same
+    /// project. Assigning the slot here, before this task's first suspension, means a second caller
+    /// always finds this one already there and chains behind it -- which is why the dirty check
+    /// below is evaluated AFTER `previous` lands rather than before: only then does `savedValue`
+    /// reflect what the first write actually saved, so the second caller sees a clean draft and
+    /// writes nothing.
     private func save() async {
-        guard let projectId, draft != savedValue else { return }
-        let notes = draft
-        let task = Task { await self.write(projectId: projectId, notes: notes, isCurrent: true) }
+        let previous = inFlightWrite
+        let task = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
+            guard let pid = self.projectId, self.draft != self.savedValue else { return }
+            let notes = self.draft
+            await self.write(projectId: pid, notes: notes)
+        }
         inFlightWrite = task
         await task.value
     }
 
-    /// `isCurrent` is false for the departing project's draft in `start`: that write must not
-    /// touch `savedValue` or `saveError`, which by then describe the project now on screen.
-    private func write(projectId: Int, notes: String, isCurrent: Bool = false) async {
+    /// `projectId` is this write's OWN target, captured when it was created -- it may no longer
+    /// equal `self.projectId` by the time this lands, either because `start` switched projects (the
+    /// departing write above) or because a write that was current when it began became stale mid-
+    /// flight (a switch landed while it was still in the air). Either way, only a write whose target
+    /// still matches the project on screen may stamp `savedValue` or `saveError`; one that doesn't
+    /// must touch neither, since those fields by then describe a different project.
+    private func write(projectId: Int, notes: String) async {
         do {
             let project = try await api.updateProjectNotes(id: projectId, notes: notes)
-            if isCurrent {
+            if projectId == self.projectId {
                 savedValue = project.notes
                 saveError = nil
             }
         } catch {
-            if isCurrent {
+            if projectId == self.projectId {
                 saveError = (error as? APIError)?.errorDescription ?? error.localizedDescription
             }
         }
