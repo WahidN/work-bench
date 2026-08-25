@@ -34,6 +34,8 @@ private actor Gate {
         await withCheckedContinuation { entryWaiters.append((count, $0)) }
     }
 
+    func currentEntryCount() -> Int { entryCount }
+
     func open() {
         isOpen = true
         let toResume = waiters
@@ -300,5 +302,41 @@ struct ProjectDetailViewModelTests {
 
         #expect(api.saved.count == savedCountBeforeFollowUp,
                  "a write that became stale mid-flight must not cause a spurious extra write on the new project")
+    }
+
+    @Test func departingWriteDoesNotRaceAnAlreadyInFlightSameProjectWrite() async {
+        let api = StubNotesAPI()
+        let gate = Gate()
+        api.gate = gate
+        let model = ProjectDetailViewModel(api: api, debounce: never)
+        model.start(project: project(id: 1, notes: "A"))
+        model.edited("B")
+
+        // A save for "B" is already heading to the server, held open at the gate.
+        let flushTask = Task { await model.flush() }
+        await gate.waitForEntries(1)
+
+        // The user keeps typing before switching away. start()'s departing write must not race
+        // the "B" write already in flight -- it has to land after it, not alongside it.
+        model.edited("C")
+        model.start(project: project(id: 2, notes: "relay notes"))
+
+        // Give the scheduler many chances to run the departing write's own attempt to reach the
+        // server. An unordered write would have reached the gate by now; a properly chained one
+        // cannot have -- it is still awaiting the "B" task, which nothing has released yet. This
+        // is a scheduling yield, not a sleep: it costs no wall-clock time and never times out.
+        for _ in 0..<50 {
+            await Task.yield()
+        }
+        let entriesBeforeRelease = await gate.currentEntryCount()
+
+        await gate.open()
+        await flushTask.value
+        await model.inFlightWrite?.value
+
+        #expect(entriesBeforeRelease == 1,
+                 "the departing write must not reach the network before the same-project write already in flight has landed")
+        #expect(api.saved == [SavedNote(id: 1, notes: "B"), SavedNote(id: 1, notes: "C")],
+                 "the departing write must be ordered after the write already in flight for the same project, so the server ends up holding the newer text, not whichever PUT happens to land last")
     }
 }

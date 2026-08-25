@@ -13,8 +13,10 @@ final class ProjectDetailViewModel {
     private(set) var saveError: String?
     /// The debounce sleep, then the save it triggers. Cancellable: a new keystroke replaces it.
     private(set) var pendingTimer: Task<Void, Never>?
-    /// The network write actually in flight, if any. Awaited, never cancelled -- a save that has
-    /// already left for the server must not be abandoned by a later keystroke or tab switch.
+    /// The most recent save attempt, chained behind whatever came before it. It may complete
+    /// without writing at all -- the dirty check runs only after its predecessor has landed -- but
+    /// it is always awaited and never cancelled, so a write that does reach the server is never
+    /// abandoned by a later keystroke or tab switch.
     private(set) var inFlightWrite: Task<Void, Never>?
 
     private var projectId: Int?
@@ -47,11 +49,16 @@ final class ProjectDetailViewModel {
         // Switching project must not drop an unsaved draft. start is synchronous, so the old
         // project's text goes out in its own task instead of being discarded. It is stored in
         // inFlightWrite, not the timer slot, so a keystroke on the new project can't cancel it.
-        // If a write for the OLD project is still in flight when it lands, write's own id check
-        // is what keeps it from touching the project now on screen -- see write(projectId:notes:).
+        // It chains behind whatever is already in inFlightWrite, exactly like save() below: a
+        // write already heading to the server for this same project must not be raced by this
+        // one, or the two PUTs could land in either order and leave the server holding older
+        // text than what the model believes it saved. If a write for the OLD project is still in
+        // flight (or arrives later) when it lands, write's own id check is what keeps it from
+        // touching the project now on screen -- see write(projectId:notes:).
         if let previousId = projectId, draft != savedValue {
             let text = draft
-            inFlightWrite = Task { await self.write(projectId: previousId, notes: text) }
+            let previous = inFlightWrite
+            inFlightWrite = Task { await previous?.value; await self.write(projectId: previousId, notes: text) }
         }
         projectId = project.id
         savedValue = project.notes
