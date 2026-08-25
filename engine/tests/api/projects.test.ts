@@ -178,6 +178,7 @@ describe('PUT /projects/:id/notes', () => {
     const res = await auth(request(app).put('/projects/999/notes').send({ notes: 'x' }));
 
     expect(res.status).toBe(404);
+    expect(res.body.error).toBe('not found');
   });
 
   it('leaves the rest of the project alone', async () => {
