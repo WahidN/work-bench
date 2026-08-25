@@ -82,6 +82,6 @@ private struct ProjectCardView: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        .help("Edit \(card.name)")
+        .help("Open \(card.name)")
     }
 }
