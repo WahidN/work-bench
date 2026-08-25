@@ -1,13 +1,18 @@
 import Testing
 @testable import Workbench
 
+private struct SavedNote: Equatable {
+    let id: Int
+    let notes: String
+}
+
 private final class StubNotesAPI: ProjectNotesAPI {
-    var saved: [String] = []
+    var saved: [SavedNote] = []
     var error: Error?
 
     func updateProjectNotes(id: Int, notes: String) async throws -> Project {
         if let error { throw error }
-        saved.append(notes)
+        saved.append(SavedNote(id: id, notes: notes))
         var project = Project(id: id, name: "Atlas", repoPath: "/repos/atlas", defaultBranch: "main",
                               githubRepo: nil, jiraProjectKey: nil, sentryProjectSlug: nil)
         project.notes = notes
@@ -42,9 +47,9 @@ struct ProjectDetailViewModelTests {
         model.start(project: project())
 
         model.edited("first line")
-        await model.pendingSave?.value
+        await model.pendingTimer?.value
 
-        #expect(api.saved == ["first line"])
+        #expect(api.saved == [SavedNote(id: 1, notes: "first line")])
         #expect(model.saveError == nil)
     }
 
@@ -58,7 +63,7 @@ struct ProjectDetailViewModelTests {
         model.edited("abc")
         await model.flush()
 
-        #expect(api.saved == ["abc"], "keystrokes coalesce into one save")
+        #expect(api.saved == [SavedNote(id: 1, notes: "abc")], "keystrokes coalesce into one save")
     }
 
     @Test func flushWithNothingTypedSavesNothing() async {
@@ -80,7 +85,7 @@ struct ProjectDetailViewModelTests {
         await model.flush()
         await model.flush()
 
-        #expect(api.saved == ["once"])
+        #expect(api.saved == [SavedNote(id: 1, notes: "once")])
     }
 
     @Test func anEmptyEditIsSaved() async {
@@ -91,7 +96,7 @@ struct ProjectDetailViewModelTests {
         model.edited("")
         await model.flush()
 
-        #expect(api.saved == [""], "clearing your notes is a real edit, not a no-op")
+        #expect(api.saved == [SavedNote(id: 1, notes: "")], "clearing your notes is a real edit, not a no-op")
     }
 
     @Test func aFailedSaveShowsAMessageAndKeepsTheText() async {
@@ -117,6 +122,20 @@ struct ProjectDetailViewModelTests {
         #expect(model.draft == "what I am typing")
     }
 
+    @Test func aReloadAfterASaveDoesNotRevertToTheOriginalNotes() async {
+        let api = StubNotesAPI()
+        let model = ProjectDetailViewModel(api: api, debounce: never)
+        model.start(project: project(id: 1, notes: "original"))
+        model.edited("updated")
+        await model.flush()
+
+        // A re-render can still carry the parent's old copy of the project. Notes are written by
+        // exactly one endpoint -- this model -- so that stale copy must not revert what was just saved.
+        model.start(project: project(id: 1, notes: "original"))
+
+        #expect(model.draft == "updated", "a reload of the same project must never revert an already-saved edit")
+    }
+
     @Test func switchingProjectSavesTheOldDraftBeforeReplacingIt() async {
         let api = StubNotesAPI()
         let model = ProjectDetailViewModel(api: api, debounce: never)
@@ -124,10 +143,57 @@ struct ProjectDetailViewModelTests {
         model.edited("typing about atlas")
 
         model.start(project: project(id: 2, notes: "relay notes"))
-        await model.pendingSave?.value
+        await model.inFlightWrite?.value
 
         #expect(model.draft == "relay notes")
-        #expect(api.saved == ["typing about atlas"], "switching project must not drop the draft")
+        #expect(api.saved == [SavedNote(id: 1, notes: "typing about atlas")],
+                 "switching project must not drop the draft, and must target the OLD project id")
+    }
+
+    @Test func flushAfterASwitchStillSavesTheDepartingDraft() async {
+        let api = StubNotesAPI()
+        let model = ProjectDetailViewModel(api: api, debounce: never)
+        model.start(project: project(id: 1, notes: "atlas notes"))
+        model.edited("typing about atlas")
+
+        model.start(project: project(id: 2, notes: "relay notes"))
+        // No manual await of inFlightWrite here: flush itself must wait for a write already
+        // in flight rather than abandoning it, so a fast tab switch right after a project
+        // switch cannot drop the departing project's text.
+        await model.flush()
+
+        #expect(api.saved == [SavedNote(id: 1, notes: "typing about atlas")],
+                 "flush must wait for an in-flight departing write, not cancel it")
+    }
+
+    @Test func theDepartingWriteDoesNotStampSavedValueForTheNewProject() async {
+        let api = StubNotesAPI()
+        let model = ProjectDetailViewModel(api: api, debounce: never)
+        model.start(project: project(id: 1, notes: "atlas notes"))
+        model.edited("typing about atlas")
+
+        model.start(project: project(id: 2, notes: "relay notes"))
+        await model.inFlightWrite?.value
+
+        let savedCountBeforeFlush = api.saved.count
+        await model.flush()
+
+        #expect(api.saved.count == savedCountBeforeFlush,
+                 "a departing write must not mark the new, untouched project dirty")
+    }
+
+    @Test func aFailedDepartingWriteDoesNotShowAnErrorOnTheNewProject() async {
+        let api = StubNotesAPI()
+        let model = ProjectDetailViewModel(api: api, debounce: never)
+        model.start(project: project(id: 1, notes: "atlas notes"))
+        model.edited("typing about atlas")
+        api.error = APIError.transportFailed("engine is down")
+
+        model.start(project: project(id: 2, notes: "relay notes"))
+        await model.inFlightWrite?.value
+
+        #expect(model.saveError == nil,
+                 "a departing project's failed save must not paint an error banner on the new project")
     }
 
     @Test func aSuccessfulSaveClearsAnEarlierError() async {
@@ -143,6 +209,6 @@ struct ProjectDetailViewModelTests {
         await model.flush()
 
         #expect(model.saveError == nil)
-        #expect(api.saved == ["two"])
+        #expect(api.saved == [SavedNote(id: 1, notes: "two")])
     }
 }
