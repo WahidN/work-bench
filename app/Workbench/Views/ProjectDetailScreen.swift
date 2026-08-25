@@ -37,6 +37,11 @@ struct ProjectDetailScreen: View {
                 VStack(alignment: .leading, spacing: Theme.Space.s4) {
                     header
                     tabs
+                    if let saveError = notesModel.saveError {
+                        Text(saveError)
+                            .font(.system(size: Theme.FontSize.label))
+                            .foregroundStyle(Theme.Accent.a400)
+                    }
                     if tab == .tasks { tasks } else { notes }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -67,11 +72,13 @@ struct ProjectDetailScreen: View {
 
             Spacer()
 
-            Button("Edit", action: onEdit)
-                .font(.system(size: Theme.FontSize.tableMeta))
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.Accent.a400)
-                .contentShape(Rectangle())
+            Button(action: onEdit) {
+                Text("Edit")
+                    .font(.system(size: Theme.FontSize.tableMeta))
+                    .foregroundStyle(Theme.Accent.a400)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -105,13 +112,14 @@ struct ProjectDetailScreen: View {
     private var tasks: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s3) {
             quickAdd
-            if rows.isEmpty {
+            let taskRows = rows
+            if taskRows.isEmpty {
                 Text(ProjectDetailLogic.noTasksText)
                     .font(.system(size: Theme.FontSize.secondary))
                     .foregroundStyle(Theme.Neutral.n600)
                     .padding(.vertical, Theme.Space.s4)
             } else {
-                ForEach(rows) { row in
+                ForEach(taskRows) { row in
                     TaskRow(
                         row: row,
                         onToggle: { onToggleTask(row) },
@@ -131,6 +139,7 @@ struct ProjectDetailScreen: View {
             TextField("Add a task, press Enter", text: $draft)
                 .textFieldStyle(.plain)
                 .font(.system(size: Theme.FontSize.body))
+                .foregroundStyle(Theme.nocturneText)
                 .onSubmit(addTask)
             Text(project.name)
                 .font(.system(size: Theme.FontSize.label))
@@ -155,17 +164,12 @@ struct ProjectDetailScreen: View {
 
     private var notes: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s3) {
-            if let saveError = notesModel.saveError {
-                Text(saveError)
-                    .font(.system(size: Theme.FontSize.label))
-                    .foregroundStyle(Theme.Accent.a400)
-            }
             TextEditor(text: Binding(
                 get: { notesModel.draft },
                 set: { notesModel.edited($0) }
             ))
             .font(.system(size: Theme.FontSize.body))
-            .lineSpacing(Theme.FontSize.body * 0.7)
+            .lineSpacing(7)
             .scrollContentBackground(.hidden)
             .frame(minHeight: 420)
             .padding(Theme.Space.s6)
@@ -195,11 +199,12 @@ struct ProjectDetailScreen: View {
 
     private var rightColumn: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s6) {
+            let projectFacts = facts
             VStack(spacing: Theme.Space.s3) {
-                factRow("Status", facts.status)
-                factRow("Open tasks", "\(facts.openTasks)")
-                factRow("Open PRs", "\(facts.openPrs)")
-                factRow("Last activity", facts.lastActivity)
+                factRow("Status", projectFacts.status)
+                factRow("Open tasks", "\(projectFacts.openTasks)")
+                factRow("Open PRs", "\(projectFacts.openPrs)")
+                factRow("Last activity", projectFacts.lastActivity)
             }
             .padding(Theme.Space.s6)
             .background(Theme.nocturneSurface)
@@ -254,26 +259,24 @@ private struct OpenWorkRow: View {
 
     var body: some View {
         HStack(spacing: Theme.Space.s3) {
-            Button(action: onOpen) {
-                HStack(spacing: Theme.Space.s2) {
-                    Image(systemName: item.symbol)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.Accent.a400)
-                    Text("\(item.ref) — \(item.title)")
-                        .font(.system(size: Theme.FontSize.tableMeta))
-                        .foregroundStyle(Theme.nocturneText)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                    Spacer(minLength: 0)
-                }
-                .contentShape(Rectangle())
+            HStack(spacing: Theme.Space.s2) {
+                Image(systemName: item.symbol)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.Accent.a400)
+                Text("\(item.ref) — \(item.title)")
+                    .font(.system(size: Theme.FontSize.tableMeta))
+                    .foregroundStyle(Theme.nocturneText)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.plain)
 
             Button(action: onChat) {
                 Image(systemName: "sparkles")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.Neutral.n500)
+                    .padding(.vertical, Theme.Space.s2)
+                    .padding(.horizontal, Theme.Space.s4)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -287,6 +290,8 @@ private struct OpenWorkRow: View {
             RoundedRectangle(cornerRadius: Theme.Radius.md)
                 .strokeBorder(isHovered ? Theme.Accent.a700 : Theme.Neutral.n900, lineWidth: 1)
         )
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onOpen)
         .onHover { isHovered = $0 }
     }
 }

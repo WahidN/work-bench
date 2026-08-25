@@ -170,6 +170,15 @@ private let noon = ISO8601DateFormatter().date(from: "2026-08-24T12:00:00Z")!
     #expect(items[2].symbol == TodayLogic.issueSymbol)
 }
 
+@Test func anUntitledTicketFallsBackToItsRef() {
+    let untitledTicket = Ticket(id: 9, source: .jira, sourceId: "JIRA-ATL-9", projectId: 1,
+                                 title: "", body: "b", url: "u", analysis: nil, status: .new,
+                                 prId: nil, createdAt: "2026-08-24T09:00:00.000Z")
+    let items = ProjectDetailLogic.openWork(project: project(id: 1), tickets: [untitledTicket], prs: [])
+
+    #expect(items[0].title == items[0].ref, "an untitled ticket falls back to its ref rather than showing an empty title")
+}
+
 @Test func aPullRequestWithoutANumberFallsBackToItsBranch() {
     let items = ProjectDetailLogic.openWork(
         project: project(id: 1), tickets: [],

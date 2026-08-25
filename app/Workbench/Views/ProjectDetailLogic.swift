@@ -108,7 +108,7 @@ enum ProjectDetailLogic {
                     id: "ticket-\(ticket.id)",
                     target: .ticket(ticket),
                     ref: WorkItemRef.ticket(ticket),
-                    title: ticket.title,
+                    title: ticket.title.isEmpty ? WorkItemRef.ticket(ticket) : ticket.title,
                     symbol: TodayLogic.issueSymbol
                 )
             }
