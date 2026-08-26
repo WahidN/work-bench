@@ -259,8 +259,8 @@ struct ContentView: View {
     }
 
     private var chatProject: Project? {
-        guard let target = agentChatViewModel.target else { return nil }
-        return projectsViewModel.projects.first { $0.id == target.projectId }
+        guard let projectId = agentChatViewModel.target?.projectId else { return nil }
+        return projectsViewModel.projects.first { $0.id == projectId }
     }
 
     private var openProject: Project? {
