@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { openDb } from '../src/db.js';
 import { createProject } from '../src/projects.js';
-import { createTicket, updateTicketStatus, findTicketBySource } from '../src/tickets.js';
+import { createTicket, updateTicketStatus, findTicketBySource, listTicketMessages } from '../src/tickets.js';
 import { recordPr } from '../src/prs.js';
 import * as analyze from '../src/analyze.js';
 import {
@@ -245,6 +245,45 @@ describe('promoteTodo', () => {
     upsertJiraTodo(db, issue, null);
     const todo = listTodos(db)[0];
     await expect(promoteTodo(db, todo.id)).rejects.toThrow('cannot be promoted');
+  });
+
+  it('moves the thread onto the ticket, in order, and clears it from the todo', async () => {
+    const project = createProject(db, {
+      name: 'demo', repoPath: '/repos/demo', defaultBranch: 'main',
+      githubRepo: null, jiraProjectKey: 'DEMO', sentryProjectSlug: null,
+    });
+    upsertJiraTodo(db, issue, project);
+    const todo = listTodos(db)[0];
+    addTodoMessage(db, todo.id, 'user', 'is this worth doing?');
+    addTodoMessage(db, todo.id, 'assistant', 'Yes, it blocks logout.');
+    vi.mocked(analyze.analyzeIssue).mockResolvedValue({
+      summary: 's', rootCause: 'r', proposedFix: 'p', affectedFiles: [], confidence: 'high',
+    });
+
+    const ticket = await promoteTodo(db, todo.id);
+
+    expect(listTicketMessages(db, ticket.id).map((m) => [m.role, m.content])).toEqual([
+      ['user', 'is this worth doing?'],
+      ['assistant', 'Yes, it blocks logout.'],
+    ]);
+    expect(listTodoMessages(db, todo.id)).toEqual([]);
+  });
+
+  it('promotes an issue that was never discussed without inventing messages', async () => {
+    const project = createProject(db, {
+      name: 'demo', repoPath: '/repos/demo', defaultBranch: 'main',
+      githubRepo: null, jiraProjectKey: 'DEMO', sentryProjectSlug: null,
+    });
+    upsertJiraTodo(db, issue, project);
+    const todo = listTodos(db)[0];
+    vi.mocked(analyze.analyzeIssue).mockResolvedValue({
+      summary: 's', rootCause: 'r', proposedFix: 'p', affectedFiles: [], confidence: 'high',
+    });
+
+    const ticket = await promoteTodo(db, todo.id);
+
+    expect(listTicketMessages(db, ticket.id)).toEqual([]);
+    expect(getTodo(db, todo.id)!.promotedTicketId).toBe(ticket.id);
   });
 });
 

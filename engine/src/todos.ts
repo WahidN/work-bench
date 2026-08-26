@@ -138,8 +138,21 @@ export async function promoteTodo(db: Database.Database, todoId: number): Promis
     source: 'jira', sourceId: todo.sourceId, projectId: project.id,
     title: todo.text, body: todo.body, url: todo.url ?? '', analysis,
   });
-  db.prepare('UPDATE todos SET done = 1, done_at = ?, promoted_ticket_id = ? WHERE id = ?')
-    .run(localDate(), ticket.id, todo.id);
+  // The thread moves with the issue. From here the row opens the ticket chat, and
+  // the fix pipeline reads ticket_messages, so leaving history behind would hide it.
+  // One transaction: a crash between the copy and the stamp would otherwise leave a
+  // promoted issue whose history is still on the todo, or a cleared todo with no
+  // ticket to show it. promoteTodo awaits analyzeIssue above and so cannot itself be
+  // one transaction, but these three statements come after that await.
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO ticket_messages (ticket_id, role, content, created_at)
+         SELECT ?, role, content, created_at FROM todo_messages WHERE todo_id = ? ORDER BY id`
+    ).run(ticket.id, todo.id);
+    db.prepare('DELETE FROM todo_messages WHERE todo_id = ?').run(todo.id);
+    db.prepare('UPDATE todos SET done = 1, done_at = ?, promoted_ticket_id = ? WHERE id = ?')
+      .run(localDate(), ticket.id, todo.id);
+  })();
   return ticket;
 }
 
