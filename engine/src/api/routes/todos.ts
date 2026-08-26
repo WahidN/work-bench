@@ -1,8 +1,9 @@
 import type { Express } from 'express';
 import type Database from 'better-sqlite3';
-import { listTodos, createManualTodo, setTodoDone, setTodoPriority, getTodo, promoteTodo, setTodoPinned } from '../../todos.js';
+import { listTodos, createManualTodo, setTodoDone, setTodoPriority, getTodo, promoteTodo, setTodoPinned, listTodoMessages } from '../../todos.js';
 import { getProject } from '../../projects.js';
 import { acquireJob, finishJob } from '../../jobs.js';
+import { sendTodoMessage } from '../../todoChat.js';
 
 export function registerTodosRoutes(app: Express, db: Database.Database): void {
   app.get('/todos', (req, res) => {
@@ -92,5 +93,33 @@ export function registerTodosRoutes(app: Express, db: Database.Database): void {
     const todo = setTodoPinned(db, Number(req.params.id), pinned);
     if (!todo) { res.status(404).json({ error: 'not found' }); return; }
     res.json(todo);
+  });
+
+  app.get('/todos/:id/messages', (req, res) => {
+    const todo = getTodo(db, Number(req.params.id));
+    if (!todo) { res.status(404).json({ error: 'not found' }); return; }
+    res.json(listTodoMessages(db, todo.id));
+  });
+
+  app.post('/todos/:id/messages', async (req, res) => {
+    const todoId = Number(req.params.id);
+    const text = req.body?.text;
+    if (typeof text !== 'string' || !text.trim()) { res.status(400).json({ error: 'text is required' }); return; }
+
+    const todo = getTodo(db, todoId);
+    if (!todo) { res.status(404).json({ error: 'not found' }); return; }
+    // promoteTodo moves the thread onto the ticket, so a write here would land in a
+    // table nothing reads. Say so rather than accepting invisible messages.
+    if (todo.promotedTicketId !== null) {
+      res.status(409).json({ error: 'this issue has been promoted, the thread is on its ticket' });
+      return;
+    }
+
+    try {
+      const reply = await sendTodoMessage(db, todoId, text);
+      res.json({ reply });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
   });
 }
