@@ -22,6 +22,12 @@ private func todo(id: Int, projectId: Int?, done: Bool = false, createdAt: Strin
          createdAt: createdAt)
 }
 
+private func manualTodo(id: Int, projectId: Int?, done: Bool = false) -> Todo {
+    Todo(id: id, source: .manual, sourceId: nil, text: "Fix the header", body: "",
+         url: nil, projectId: projectId, canPromote: false, done: done, promotedTicketId: nil,
+         createdAt: "2026-08-17T09:00:00.000Z")
+}
+
 private func ticket(id: Int, projectId: Int, createdAt: String = "2026-08-17T09:00:00.000Z") -> Ticket {
     Ticket(id: id, source: .jira, sourceId: "JIRA-ATL-\(id)", projectId: projectId, title: "t",
            body: "b", url: "u", analysis: nil, status: .new, prId: nil, createdAt: createdAt)
@@ -71,20 +77,29 @@ private let noon = ISO8601DateFormatter().date(from: "2026-08-17T12:00:00Z")!
     #expect(cards[0].dot == SidebarLogic.projectDotColor(at: 0))
 }
 
-@Test func openCountIsTheProjectsUnfinishedTodosOfAnySource() {
+@Test func openCountIsTheProjectsManualAndPinnedUnfinishedTodos() {
+    var pinnedJira = todo(id: 5, projectId: 1)
+    pinnedJira.pinned = true
+
+    var donePinnedJira = todo(id: 7, projectId: 1, done: true)
+    donePinnedJira.pinned = true
+
     let cards = ProjectsLogic.cards(
         projects: [project(id: 1), project(id: 2, name: "Relay")],
         todos: [
-            todo(id: 1, projectId: 1),
-            todo(id: 2, projectId: 1, done: true),
+            todo(id: 1, projectId: 1),                 // Jira, unpinned: not a task you act on here
+            todo(id: 2, projectId: 1, done: true),     // done
+            pinnedJira,                                // pinned: counts
+            manualTodo(id: 6, projectId: 1),           // manual: counts
+            donePinnedJira,                            // pinned but done: must be excluded by done check, not by pinned alone
             todo(id: 3, projectId: 2),
             todo(id: 4, projectId: nil)
         ],
         tickets: [], prs: [], now: noon
     )
 
-    #expect(cards[0].openCount == 1, "done todos and other projects' todos do not count")
-    #expect(cards[1].openCount == 1)
+    #expect(cards[0].openCount == 2, "manual and pinned count; an unpinned Jira mirror does not")
+    #expect(cards[1].openCount == 0, "Relay has only an unpinned Jira mirror")
 }
 
 @Test func prCountExcludesMergedPullRequests() {

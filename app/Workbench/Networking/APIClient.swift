@@ -121,6 +121,10 @@ extension APIClient {
         try await send("GET", "/projects/\(id)/messages", body: nil)
     }
 
+    func updateProjectNotes(id: Int, notes: String) async throws -> Project {
+        try await send("PUT", "/projects/\(id)/notes", body: ["notes": notes])
+    }
+
     func sendProjectMessage(id: Int, text: String) async throws -> ChatReply {
         try await send("POST", "/projects/\(id)/messages", body: ["text": text])
     }
@@ -135,8 +139,8 @@ extension APIClient {
         try await send("PATCH", "/todos/\(id)/pin", body: ["pinned": pinned])
     }
 
-    func createTodo(text: String) async throws -> Todo {
-        try await send("POST", "/todos", body: ["text": text])
+    func createTodo(text: String, projectId: Int? = nil) async throws -> Todo {
+        try await send("POST", "/todos", body: CreateTodoBody(text: text, projectId: projectId))
     }
 
     func setTodoDone(id: Int, done: Bool) async throws -> Todo {

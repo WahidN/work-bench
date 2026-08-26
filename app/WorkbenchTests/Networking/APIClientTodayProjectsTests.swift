@@ -22,7 +22,7 @@ struct APIClientTodayProjectsTests {
             capturedMethod = request.httpMethod
             capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
             return jsonResponse(request.url!, status: 201, body: """
-            {"id":1,"name":"demo","repoPath":"/repos/demo","defaultBranch":"main","githubRepo":null,"jiraProjectKey":null,"sentryProjectSlug":null,"status":"active","blurb":""}
+            {"id":1,"name":"demo","repoPath":"/repos/demo","defaultBranch":"main","githubRepo":null,"jiraProjectKey":null,"sentryProjectSlug":null,"status":"active","blurb":"","notes":""}
             """)
         }
         let input = ProjectInput(name: "demo", repoPath: "/repos/demo", defaultBranch: "main", githubRepo: nil, jiraProjectKey: nil, sentryProjectSlug: nil)
@@ -48,7 +48,7 @@ struct APIClientTodayProjectsTests {
         let session = mockedSession { request in
             capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
             return jsonResponse(request.url!, status: 200, body: """
-            {"id":1,"name":"demo","repoPath":"/repos/demo","defaultBranch":"develop","githubRepo":null,"jiraProjectKey":null,"sentryProjectSlug":null,"status":"active","blurb":""}
+            {"id":1,"name":"demo","repoPath":"/repos/demo","defaultBranch":"develop","githubRepo":null,"jiraProjectKey":null,"sentryProjectSlug":null,"status":"active","blurb":"","notes":""}
             """)
         }
         let update = ProjectUpdate(defaultBranch: "develop")
@@ -72,5 +72,24 @@ struct APIClientTodayProjectsTests {
             (HTTPURLResponse(url: request.url!, statusCode: 204, httpVersion: nil, headerFields: nil)!, Data())
         }
         try await APIClient(session: session, keychain: StubSecretStore()).deleteProject(id: 1)
+    }
+
+    @Test func updateProjectNotesPutsToTheNotesPath() async throws {
+        var capturedPath: String?
+        var capturedMethod: String?
+        var capturedBody: [String: Any]?
+        let session = mockedSession { request in
+            capturedPath = request.url?.path
+            capturedMethod = request.httpMethod
+            capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
+            return jsonResponse(request.url!, status: 200, body: """
+            {"id":3,"name":"demo","repoPath":"/repos/demo","defaultBranch":"main","githubRepo":null,"jiraProjectKey":null,"sentryProjectSlug":null,"status":"active","blurb":"","notes":"hello"}
+            """)
+        }
+        let project = try await APIClient(session: session, keychain: StubSecretStore()).updateProjectNotes(id: 3, notes: "hello")
+        #expect(capturedMethod == "PUT")
+        #expect(capturedPath == "/projects/3/notes")
+        #expect(capturedBody?["notes"] as? String == "hello")
+        #expect(project.notes == "hello")
     }
 }

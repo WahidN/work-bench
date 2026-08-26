@@ -12,4 +12,5 @@ struct Project: Codable, Identifiable, Equatable {
     var sentryProjectSlug: String?
     var status: ProjectStatus = .active
     var blurb: String = ""
+    var notes: String = ""
 }

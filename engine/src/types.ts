@@ -10,6 +10,7 @@ export interface Project {
   sentryProjectSlug: string | null;
   status: ProjectStatus;
   blurb: string;
+  notes: string;
 }
 
 export type TodoSource = 'manual' | 'jira';

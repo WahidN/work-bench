@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS projects (
   jira_project_key TEXT,
   sentry_project_slug TEXT,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','planning')),
-  blurb TEXT NOT NULL DEFAULT ''
+  blurb TEXT NOT NULL DEFAULT '',
+  notes TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS todos (
@@ -173,6 +174,8 @@ const MIGRATIONS: string[] = [
      SELECT id, source, source_id, project_id, title, body, url, analysis_json, status, pr_id, pinned, created_at FROM tickets;
    DROP TABLE tickets;
    ALTER TABLE tickets_rebuilt RENAME TO tickets;`,
+  // 6: Project detail. Free-form per-project notes, autosaved from the Notes tab.
+  `ALTER TABLE projects ADD COLUMN notes TEXT NOT NULL DEFAULT '';`,
 ];
 
 function isEmptyDatabase(db: Database.Database): boolean {

@@ -8,6 +8,12 @@ private func todo(id: Int, projectId: Int?, done: Bool) -> Todo {
          createdAt: "2026-08-13T00:00:00.000Z")
 }
 
+private func jiraTodo(id: Int, projectId: Int?, done: Bool = false) -> Todo {
+    Todo(id: id, source: .jira, sourceId: "JIRA-\(id)", text: "[JIRA-\(id)] Fix it", body: "",
+         url: nil, projectId: projectId, canPromote: true, done: done, promotedTicketId: nil,
+         createdAt: "2026-08-13T00:00:00.000Z")
+}
+
 private func pr(id: Int) -> PullRequest {
     PullRequest(id: id, ticketId: 1, projectId: 1, branch: "fix/\(id)", number: id,
                 url: nil, status: .open, lastReviewScore: nil, createdAt: "2026-08-13T00:00:00.000Z",
@@ -49,14 +55,23 @@ private func pr(id: Int) -> PullRequest {
     #expect(count == 1, "the count is Jira work not yet started, not the ticket count")
 }
 
-@Test func projectOpenCountCountsOnlyIncompleteTodosForThatProject() {
+@Test func projectOpenCountCountsOnlyManualAndPinnedUnfinishedTodos() {
+    var pinnedJira = jiraTodo(id: 5, projectId: 1)
+    pinnedJira.pinned = true
+
+    var donePinnedJira = jiraTodo(id: 7, projectId: 1, done: true)
+    donePinnedJira.pinned = true
+
     let project = Project(id: 1, name: "a", repoPath: "/a", defaultBranch: "main", githubRepo: nil, jiraProjectKey: nil, sentryProjectSlug: nil)
     let todos = [
-        todo(id: 1, projectId: 1, done: false),
-        todo(id: 2, projectId: 1, done: true),
-        todo(id: 3, projectId: 2, done: false)
+        jiraTodo(id: 1, projectId: 1),                 // Jira, unpinned: not counted
+        jiraTodo(id: 2, projectId: 1, done: true),     // done
+        pinnedJira,                                    // pinned: counts
+        todo(id: 6, projectId: 1, done: false),        // manual: counts
+        donePinnedJira,                                // pinned but done: excluded by done check
+        todo(id: 3, projectId: 2, done: false)         // different project: not counted
     ]
-    #expect(SidebarLogic.projectOpenCount(for: project, todos: todos) == 1)
+    #expect(SidebarLogic.projectOpenCount(for: project, todos: todos) == 2, "manual and pinned count; unpinned Jira and done todos do not")
 }
 
 @Test func projectDotColorWrapsAroundThePalette() {

@@ -46,7 +46,7 @@ describe('openDb', () => {
   it('stamps a fresh database as already migrated', () => {
     dir = mkdtempSync(join(tmpdir(), 'workbench-db-'));
     const db = openDb(join(dir, 'test.db'));
-    expect(db.pragma('user_version', { simple: true })).toBe(5);
+    expect(db.pragma('user_version', { simple: true })).toBe(6);
     db.close();
   });
 
@@ -111,13 +111,14 @@ describe('openDb', () => {
     expect(columns(db, 'todos')).toContain('pinned');
     expect(columns(db, 'projects')).toContain('status');
     expect(columns(db, 'projects')).toContain('blurb');
+    expect(columns(db, 'projects')).toContain('notes');
     expect(db.prepare('SELECT priority, due_at, done_at FROM todos').get()).toEqual({
       priority: 'med', due_at: null, done_at: null,
     });
     expect(db.prepare('SELECT pinned FROM tickets').get()).toEqual({ pinned: 0 });
     expect(db.prepare('SELECT pinned FROM prs').get()).toEqual({ pinned: 0 });
-    expect(db.prepare('SELECT status, blurb FROM projects').get()).toEqual({ status: 'active', blurb: '' });
-    expect(db.pragma('user_version', { simple: true })).toBe(5);
+    expect(db.prepare('SELECT status, blurb, notes FROM projects').get()).toEqual({ status: 'active', blurb: '', notes: '' });
+    expect(db.pragma('user_version', { simple: true })).toBe(6);
     db.close();
 
     // Reopening an already-migrated file must be a no-op: no throw, version unchanged.
@@ -126,7 +127,7 @@ describe('openDb', () => {
     // at 0, so the next open replayed the ALTER TABLE and threw on the duplicate column.
     const reopened = openDb(path);
     expect(columns(reopened, 'todos')).toContain('priority');
-    expect(reopened.pragma('user_version', { simple: true })).toBe(5);
+    expect(reopened.pragma('user_version', { simple: true })).toBe(6);
     reopened.close();
   });
 
@@ -264,7 +265,7 @@ describe('openDb', () => {
 
     const db = openDb(file);
 
-    expect(db.pragma('user_version', { simple: true })).toBe(5);
+    expect(db.pragma('user_version', { simple: true })).toBe(6);
     expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
     expect(db.pragma('foreign_key_check')).toEqual([]);
     expect(db.prepare('SELECT ticket_id FROM prs').get()).toEqual({ ticket_id: 1 });

@@ -29,6 +29,10 @@ struct ContentView: View {
     @State private var jiraViewModel = JiraViewModel()
     @State private var projectSheet: ProjectSheetMode?
     @State private var selectedPr: PullRequest?
+    // The id, not the Project. A stored struct goes stale the moment the edit sheet saves or a
+    // notes save returns a new row, and the header would keep rendering the pre-edit copy.
+    // Resolving by id also means a deleted project falls back to the grid on its own.
+    @State private var openProjectId: Int?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -43,19 +47,21 @@ struct ContentView: View {
                 onSelect: { section in
                     selection = section
                     selectedPr = nil
+                    openProjectId = nil
                 },
                 onSelectProject: { project in
                     selection = .projects
                     projectsViewModel.selectedProject = project
                     selectedPr = nil
+                    openProjectId = project.id
                 }
             )
             VStack(spacing: 0) {
                 AppHeader(
                     section: selection,
                     activeProjectCount: ProjectsLogic.activeCount(projectsViewModel.projects),
-                    kickerOverride: prHeaderKicker,
-                    headingOverride: prHeaderHeading,
+                    kickerOverride: prHeaderKicker ?? projectHeaderKicker,
+                    headingOverride: prHeaderHeading ?? projectHeaderHeading,
                     onOpenAgent: openProjectChat,
                     onAddProject: { projectSheet = .create }
                 )
@@ -204,17 +210,46 @@ struct ContentView: View {
                 )
             }
         case .projects:
-            ProjectsScreen(
-                cards: ProjectsLogic.cards(
+            // The Group exists so .task and .onChange have something to attach to: a modifier
+            // cannot trail a bare if/else statement. The .pullRequests case has the same shape.
+            Group {
+            if let project = openProject {
+                ProjectDetailScreen(
+                    project: project,
                     projects: projectsViewModel.projects,
-                    todos: jiraViewModel.todos,
+                    todos: todayViewModel.todos,
                     tickets: ticketsViewModel.tickets,
                     prs: prsViewModel.pullRequests,
-                    now: Date()
-                ),
-                onSelect: { project in projectSheet = .edit(project) }
-            )
+                    onBack: { openProjectId = nil },
+                    onEdit: { projectSheet = .edit(project) },
+                    onAddTask: { text in
+                        Task { await todayViewModel.addTodo(text: text, projectId: project.id) }
+                    },
+                    onToggleTask: { row in toggleProjectTask(row) },
+                    onOpenWork: { item in openWork(item) },
+                    onChat: { item in openAgent(chatTarget(for: item)) }
+                )
+                .id(project.id)
+            } else {
+                ProjectsScreen(
+                    cards: ProjectsLogic.cards(
+                        projects: projectsViewModel.projects,
+                        todos: jiraViewModel.todos,
+                        tickets: ticketsViewModel.tickets,
+                        prs: prsViewModel.pullRequests,
+                        now: Date()
+                    ),
+                    onSelect: { project in openProjectId = project.id }
+                )
+            }
+            }
             .task { await projectsViewModel.load() }
+            .onChange(of: openProjectId) {
+                Task {
+                    await projectsViewModel.load()
+                    await jiraViewModel.load()
+                }
+            }
         }
     }
 
@@ -226,6 +261,11 @@ struct ContentView: View {
     private var chatProject: Project? {
         guard let target = agentChatViewModel.target else { return nil }
         return projectsViewModel.projects.first { $0.id == target.projectId }
+    }
+
+    private var openProject: Project? {
+        guard let openProjectId else { return nil }
+        return projectsViewModel.projects.first { $0.id == openProjectId }
     }
 
     private var prHeaderKicker: String? {
@@ -255,6 +295,44 @@ struct ContentView: View {
 
     private func openAgent(_ target: AgentChatTarget) {
         Task { await agentChatViewModel.open(target) }
+    }
+
+    private var projectHeaderKicker: String? {
+        guard let openProject else { return nil }
+        return ProjectsLogic.statusLabel(openProject.status)
+    }
+
+    private var projectHeaderHeading: String? {
+        openProject?.name
+    }
+
+    private func toggleProjectTask(_ row: TodayTaskRow) {
+        switch row.source {
+        case .todo(let todo):
+            Task { await todayViewModel.toggleDone(todo) }
+        case .pinnedTodo(let todo):
+            Task { await todayViewModel.togglePin(todo) }
+        case .pinnedTicket, .pinnedPullRequest:
+            break
+        }
+    }
+
+    private func openWork(_ item: OpenWorkItem) {
+        switch item.target {
+        case .pullRequest(let pr):
+            openProjectId = nil
+            selection = .pullRequests
+            selectedPr = pr
+        case .ticket(let ticket):
+            openAgent(.ticket(ticket))
+        }
+    }
+
+    private func chatTarget(for item: OpenWorkItem) -> AgentChatTarget {
+        switch item.target {
+        case .pullRequest(let pr): .pullRequest(pr)
+        case .ticket(let ticket): .ticket(ticket)
+        }
     }
 
     private func notificationTitle(for item: TodayItem) -> String {

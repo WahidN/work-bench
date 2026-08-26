@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { openDb } from '../src/db.js';
-import { listProjects, getProject, createProject, updateProject, deleteProject, listProjectMessages, addProjectMessage } from '../src/projects.js';
+import { listProjects, getProject, createProject, updateProject, deleteProject, listProjectMessages, addProjectMessage, setProjectNotes } from '../src/projects.js';
 import { createTicket } from '../src/tickets.js';
 
 let db: Database.Database;
@@ -173,5 +173,59 @@ describe('project status and blurb', () => {
     });
 
     expect(() => updateProject(db, project.id, { status: 'archived' as any })).toThrow(/CHECK/);
+  });
+});
+
+describe('setProjectNotes', () => {
+  it('writes notes and leaves every other column untouched', () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, {
+      name: 'Atlas Payments', repoPath: '/repos/atlas', defaultBranch: 'main',
+      githubRepo: 'acme/atlas', jiraProjectKey: 'ATL', sentryProjectSlug: null,
+    });
+
+    const updated = setProjectNotes(db, project.id, 'Ship the card capture rewrite.');
+
+    expect(updated).toEqual({ ...project, notes: 'Ship the card capture rewrite.' });
+  });
+
+  it('starts a project off with empty notes', () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, {
+      name: 'Relay', repoPath: '/repos/relay', defaultBranch: 'main',
+      githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null,
+    });
+
+    expect(project.notes).toBe('');
+  });
+
+  it('accepts an empty string, because clearing your notes is a real edit', () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, {
+      name: 'Relay', repoPath: '/repos/relay', defaultBranch: 'main',
+      githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null,
+    });
+    setProjectNotes(db, project.id, 'something');
+
+    expect(setProjectNotes(db, project.id, '')?.notes).toBe('');
+  });
+
+  it('returns null for a project that does not exist', () => {
+    const db = openDb(':memory:');
+    expect(setProjectNotes(db, 999, 'x')).toBeNull();
+  });
+
+  it('is not disturbed by updateProject, which must leave notes alone', () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, {
+      name: 'Atlas', repoPath: '/repos/atlas', defaultBranch: 'main',
+      githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null,
+    });
+    setProjectNotes(db, project.id, 'keep me');
+
+    const updated = updateProject(db, project.id, { blurb: 'new blurb' });
+
+    expect(updated?.notes).toBe('keep me');
+    expect(updated?.blurb).toBe('new blurb');
   });
 });

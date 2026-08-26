@@ -2,7 +2,7 @@ import Observation
 
 protocol TodayAPI {
     func today() async throws -> TodayResponse
-    func createTodo(text: String) async throws -> Todo
+    func createTodo(text: String, projectId: Int?) async throws -> Todo
     func setTodoDone(id: Int, done: Bool) async throws -> Todo
     func promoteTodo(id: Int) async throws -> Ticket
     func setTodoPriority(id: Int, priority: TodoPriority) async throws -> Todo
@@ -47,9 +47,9 @@ final class TodayViewModel {
         }
     }
 
-    func addTodo(text: String) async {
+    func addTodo(text: String, projectId: Int? = nil) async {
         do {
-            let todo = try await api.createTodo(text: text)
+            let todo = try await api.createTodo(text: text, projectId: projectId)
             todos.append(todo)
         } catch {
             present(error)

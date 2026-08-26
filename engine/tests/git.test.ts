@@ -8,7 +8,7 @@ afterEach(() => vi.clearAllMocks());
 const demoProject = {
   id: 1, name: 'demo', repoPath: '/repos/demo', defaultBranch: 'main',
   githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null,
-  status: 'active' as const, blurb: '',
+  status: 'active' as const, blurb: '', notes: '',
 };
 
 describe('worktreePathFor', () => {

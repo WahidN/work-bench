@@ -275,3 +275,21 @@ describe('pinning a todo', () => {
     expect(pinned.priority).toBe('high');
   });
 });
+
+describe('createManualTodo with a project', () => {
+  it('stores the project id', () => {
+    const project = createProject(db, {
+      name: 'Atlas', repoPath: '/repos/atlas', defaultBranch: 'main',
+      githubRepo: null, jiraProjectKey: null, sentryProjectSlug: null,
+    });
+
+    const todo = createManualTodo(db, 'Fix the header', { projectId: project.id });
+
+    expect(todo.projectId).toBe(project.id);
+    expect(todo.source).toBe('manual');
+  });
+
+  it('still stores null when no project is given, which is what Today does', () => {
+    expect(createManualTodo(db, 'Fix the header').projectId).toBeNull();
+  });
+});

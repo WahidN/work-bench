@@ -10,7 +10,7 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     let json = """
     {"id":1,"name":"demo","repoPath":"/repos/demo","defaultBranch":"main",
      "githubRepo":"linku/demo","jiraProjectKey":"DEMO","sentryProjectSlug":"demo-frontend",
-     "status":"active","blurb":""}
+     "status":"active","blurb":"","notes":""}
     """
     let project = try decode(Project.self, json)
     #expect(project.id == 1)
@@ -22,7 +22,7 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     let json = """
     {"id":2,"name":"solo","repoPath":"/repos/solo","defaultBranch":"main",
      "githubRepo":null,"jiraProjectKey":null,"sentryProjectSlug":null,
-     "status":"active","blurb":""}
+     "status":"active","blurb":"","notes":""}
     """
     let project = try decode(Project.self, json)
     #expect(project.githubRepo == nil)
@@ -200,7 +200,7 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     let json = """
     {"id":3,"name":"Drydock","repoPath":"/repos/drydock","defaultBranch":"main",
      "githubRepo":null,"jiraProjectKey":null,"sentryProjectSlug":null,
-     "status":"paused","blurb":"Build pipeline consolidation."}
+     "status":"paused","blurb":"Build pipeline consolidation.","notes":""}
     """
     let project = try decode(Project.self, json)
     #expect(project.status == .paused)
