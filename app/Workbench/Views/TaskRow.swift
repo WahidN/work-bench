@@ -5,12 +5,26 @@ struct TaskRow: View {
     let onToggle: () -> Void
     let onCyclePriority: (Todo) -> Void
     let onPromote: (Todo) -> Void
+    let onChat: (Todo) -> Void
     @State private var isHovered = false
     @State private var isCheckboxHovered = false
 
     private var todo: Todo? {
         if case .todo(let todo) = row.source { return todo }
         return nil
+    }
+
+    /// A mirrored Jira issue, whether it sits here as a plain row or as a pinned
+    /// pseudo-task. Only these have an issue to discuss; a manual task has no body,
+    /// no reference and no source issue. Kept separate from `todo` above, which
+    /// deliberately stays narrower so the promote item does not change behaviour.
+    private var jiraTodo: Todo? {
+        switch row.source {
+        case .todo(let todo), .pinnedTodo(let todo):
+            return todo.source == .jira ? todo : nil
+        case .pinnedTicket, .pinnedPullRequest:
+            return nil
+        }
     }
 
     var body: some View {
@@ -50,6 +64,9 @@ struct TaskRow: View {
         .opacity(row.isDone ? 0.42 : 1)
         .onHover { isHovered = $0 }
         .contextMenu {
+            if let jiraTodo {
+                Button("Chat with the agent") { onChat(jiraTodo) }
+            }
             if let todo, todo.canPromote {
                 Button("Start fixing this") { onPromote(todo) }
             }
