@@ -156,4 +156,43 @@ struct APIClientTodosTests {
         #expect(capturedBody?["pinned"] as? Bool == true)
         #expect(todo.pinned == true)
     }
+
+    @Test func todoMessagesGetsTheThread() async throws {
+        var capturedPath: String?
+        var capturedMethod: String?
+        let session = mockedSession { request in
+            capturedPath = request.url?.path
+            capturedMethod = request.httpMethod
+            return jsonResponse(request.url!, status: 200, body: """
+            [{"id":1,"todoId":12,"role":"user","content":"what is this?","createdAt":"2026-08-26T00:00:00.000Z"},
+             {"id":2,"todoId":12,"role":"assistant","content":"A redirect loop.","createdAt":"2026-08-26T00:00:01.000Z"}]
+            """)
+        }
+        let thread = try await APIClient(session: session, keychain: StubSecretStore()).todoMessages(id: 12)
+
+        #expect(capturedPath == "/todos/12/messages")
+        #expect(capturedMethod == "GET")
+        #expect(thread.count == 2)
+        #expect(thread[0].role == .user)
+        #expect(thread[1].content == "A redirect loop.")
+    }
+
+    @Test func sendTodoMessagePostsTheText() async throws {
+        var capturedPath: String?
+        var capturedMethod: String?
+        var capturedBody: [String: Any]?
+        let session = mockedSession { request in
+            capturedPath = request.url?.path
+            capturedMethod = request.httpMethod
+            capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
+            return jsonResponse(request.url!, status: 200, body: #"{"reply":"It is the redirect guard."}"#)
+        }
+        let reply = try await APIClient(session: session, keychain: StubSecretStore())
+            .sendTodoMessage(id: 12, text: "what is this?")
+
+        #expect(capturedPath == "/todos/12/messages")
+        #expect(capturedMethod == "POST")
+        #expect(capturedBody?["text"] as? String == "what is this?")
+        #expect(reply.reply == "It is the redirect guard.")
+    }
 }
