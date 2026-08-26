@@ -190,7 +190,8 @@ struct ContentView: View {
                 viewModel: jiraViewModel,
                 projects: projectsViewModel.projects,
                 tickets: ticketsViewModel.tickets,
-                onDidMutate: { Task { await ticketsViewModel.load() } }
+                onDidMutate: { Task { await ticketsViewModel.load() } },
+                onChat: { row in openTodoChat(row.todo) }
             )
         case .pullRequests:
             if let pr = selectedPr {
@@ -295,6 +296,10 @@ struct ContentView: View {
 
     private func openAgent(_ target: AgentChatTarget) {
         Task { await agentChatViewModel.open(target) }
+    }
+
+    private func openTodoChat(_ todo: Todo) {
+        openAgent(AgentChatLogic.target(for: todo, tickets: ticketsViewModel.tickets))
     }
 
     private var projectHeaderKicker: String? {
