@@ -7,7 +7,7 @@ import { recordPr } from '../src/prs.js';
 import * as analyze from '../src/analyze.js';
 import {
   listTodos, getTodo, createManualTodo, setTodoDone, upsertJiraTodo, reconcileJiraTodos, promoteTodo, getTodayView,
-  setTodoPriority, setTodoPinned, listTodayTodos, localDate,
+  setTodoPriority, setTodoPinned, listTodayTodos, localDate, listTodoMessages, addTodoMessage,
 } from '../src/todos.js';
 
 vi.mock('../src/analyze.js');
@@ -291,5 +291,37 @@ describe('createManualTodo with a project', () => {
 
   it('still stores null when no project is given, which is what Today does', () => {
     expect(createManualTodo(db, 'Fix the header').projectId).toBeNull();
+  });
+});
+
+describe('todo messages', () => {
+  it('stores a thread and lists it in insertion order', () => {
+    const todo = createManualTodo(db, 'discuss me');
+
+    addTodoMessage(db, todo.id, 'user', 'what is this about?');
+    addTodoMessage(db, todo.id, 'assistant', 'A logout redirect loop.');
+
+    expect(listTodoMessages(db, todo.id).map((m) => [m.role, m.content])).toEqual([
+      ['user', 'what is this about?'],
+      ['assistant', 'A logout redirect loop.'],
+    ]);
+  });
+
+  it('returns the stored row, with the todo id mapped from snake case', () => {
+    const todo = createManualTodo(db, 'discuss me');
+
+    const message = addTodoMessage(db, todo.id, 'user', 'hi');
+
+    expect(message.todoId).toBe(todo.id);
+    expect(message.id).toBeGreaterThan(0);
+    expect(message.createdAt).not.toBe('');
+  });
+
+  it('keeps two todos threads apart', () => {
+    const first = createManualTodo(db, 'first');
+    const second = createManualTodo(db, 'second');
+    addTodoMessage(db, first.id, 'user', 'about the first');
+
+    expect(listTodoMessages(db, second.id)).toEqual([]);
   });
 });

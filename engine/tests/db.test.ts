@@ -20,9 +20,26 @@ describe('openDb', () => {
       .all()
       .map((r: any) => r.name);
     expect(tables).toEqual([
-      'jobs', 'pr_messages', 'project_messages', 'projects', 'prs', 'ticket_messages', 'tickets', 'todos',
+      'jobs', 'pr_messages', 'project_messages', 'projects', 'prs',
+      'ticket_messages', 'tickets', 'todo_messages', 'todos',
     ]);
     db.close();
+  });
+
+  it('adds todo_messages to a database that predates it, without a migration', () => {
+    dir = mkdtempSync(join(tmpdir(), 'workbench-db-'));
+    const path = join(dir, 'test.db');
+    const first = openDb(path);
+    first.exec('DROP TABLE todo_messages');
+    first.close();
+
+    const second = openDb(path);
+    const row = second
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='todo_messages'")
+      .get();
+    expect(row).toBeTruthy();
+    expect(second.pragma('user_version', { simple: true })).toBe(6);
+    second.close();
   });
 
   it('enforces UNIQUE(source, source_id) on tickets', () => {

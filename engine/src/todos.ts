@@ -3,7 +3,7 @@ import { getProject } from './projects.js';
 import { getTicket, listTickets, findTicketBySource, createTicket } from './tickets.js';
 import { listPrs } from './prs.js';
 import { analyzeIssue } from './analyze.js';
-import type { Todo, SourceIssue, Project, Ticket, TicketStatus, PrStatus, TodoPriority } from './types.js';
+import type { Todo, SourceIssue, Project, Ticket, TicketStatus, PrStatus, TodoPriority, TodoMessage } from './types.js';
 
 function rowToTodo(row: any): Todo {
   return {
@@ -12,6 +12,37 @@ function rowToTodo(row: any): Todo {
     promotedTicketId: row.promoted_ticket_id, priority: row.priority, dueAt: row.due_at,
     doneAt: row.done_at, pinned: !!row.pinned, createdAt: row.created_at,
   };
+}
+
+function rowToTodoMessage(row: any): TodoMessage {
+  return {
+    id: row.id,
+    todoId: row.todo_id,
+    role: row.role,
+    content: row.content,
+    createdAt: row.created_at,
+  };
+}
+
+export function listTodoMessages(db: Database.Database, todoId: number): TodoMessage[] {
+  return db
+    .prepare('SELECT * FROM todo_messages WHERE todo_id = ? ORDER BY id')
+    .all(todoId)
+    .map(rowToTodoMessage);
+}
+
+export function addTodoMessage(
+  db: Database.Database,
+  todoId: number,
+  role: 'user' | 'assistant',
+  content: string
+): TodoMessage {
+  const result = db
+    .prepare('INSERT INTO todo_messages (todo_id, role, content, created_at) VALUES (?, ?, ?, ?)')
+    .run(todoId, role, content, new Date().toISOString());
+  return rowToTodoMessage(
+    db.prepare('SELECT * FROM todo_messages WHERE id = ?').get(result.lastInsertRowid)
+  );
 }
 
 /** The local calendar date as YYYY-MM-DD. Not the UTC date: a task added at 00:30 belongs to that day. */
