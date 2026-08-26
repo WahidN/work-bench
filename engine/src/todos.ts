@@ -148,14 +148,33 @@ export function countJiraTodos(db: Database.Database): number {
   return row.n;
 }
 
+// todo_messages references todos(id) and foreign keys are enforced at runtime, so
+// a thread has to go before the row it hangs off. Without this the poller throws
+// FOREIGN KEY constraint failed on the first discussed issue that leaves Jira, and
+// reconciliation stops for every project. One transaction so a failure cannot
+// leave a thread orphaned from its todo.
 export function reconcileJiraTodos(db: Database.Database, currentSourceIds: string[]): number {
   if (currentSourceIds.length === 0) {
-    return db.prepare(`DELETE FROM todos WHERE source = 'jira'`).run().changes;
+    return db.transaction(() => {
+      db.prepare(
+        `DELETE FROM todo_messages
+         WHERE todo_id IN (SELECT id FROM todos WHERE source = 'jira')`
+      ).run();
+      return db.prepare(`DELETE FROM todos WHERE source = 'jira'`).run().changes;
+    })();
   }
   const placeholders = currentSourceIds.map(() => '?').join(',');
-  return db
-    .prepare(`DELETE FROM todos WHERE source = 'jira' AND source_id NOT IN (${placeholders})`)
-    .run(...currentSourceIds).changes;
+  return db.transaction(() => {
+    db.prepare(
+      `DELETE FROM todo_messages
+       WHERE todo_id IN (
+         SELECT id FROM todos WHERE source = 'jira' AND source_id NOT IN (${placeholders})
+       )`
+    ).run(...currentSourceIds);
+    return db
+      .prepare(`DELETE FROM todos WHERE source = 'jira' AND source_id NOT IN (${placeholders})`)
+      .run(...currentSourceIds).changes;
+  })();
 }
 
 export interface TodayItem {

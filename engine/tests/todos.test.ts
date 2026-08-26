@@ -160,6 +160,43 @@ describe('upsertJiraTodo / reconcileJiraTodos', () => {
     expect(removed).toBe(0);
     expect(listTodos(db)).toHaveLength(1);
   });
+
+  it('deletes a jira todo that has a thread, instead of failing on the foreign key', () => {
+    upsertJiraTodo(db, issue, null);
+    const todo = listTodos(db)[0];
+    addTodoMessage(db, todo.id, 'user', 'is this worth doing?');
+
+    const removed = reconcileJiraTodos(db, []);
+
+    expect(removed).toBe(1);
+    expect(listTodos(db)).toEqual([]);
+    expect(listTodoMessages(db, todo.id)).toEqual([]);
+  });
+
+  it('deletes the thread of a stale issue but keeps the thread of one still present', () => {
+    upsertJiraTodo(db, issue, null);
+    upsertJiraTodo(db, { ...issue, sourceId: 'JIRA-DEMO-2', title: '[DEMO-2] Keep me' }, null);
+    const [stale, kept] = listTodos(db);
+    addTodoMessage(db, stale.id, 'user', 'about the stale one');
+    addTodoMessage(db, kept.id, 'user', 'about the kept one');
+
+    const removed = reconcileJiraTodos(db, ['JIRA-DEMO-2']);
+
+    expect(removed).toBe(1);
+    expect(listTodos(db).map((t) => t.sourceId)).toEqual(['JIRA-DEMO-2']);
+    expect(listTodoMessages(db, stale.id)).toEqual([]);
+    expect(listTodoMessages(db, kept.id).map((m) => m.content)).toEqual(['about the kept one']);
+  });
+
+  it('leaves a manual todo and its thread alone', () => {
+    const manual = createManualTodo(db, 'unrelated manual item');
+    addTodoMessage(db, manual.id, 'user', 'still here');
+    upsertJiraTodo(db, issue, null);
+
+    reconcileJiraTodos(db, []);
+
+    expect(listTodoMessages(db, manual.id).map((m) => m.content)).toEqual(['still here']);
+  });
 });
 
 describe('promoteTodo', () => {
