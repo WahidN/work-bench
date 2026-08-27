@@ -5,6 +5,7 @@ struct JiraScreen: View {
     let projects: [Project]
     let tickets: [Ticket]
     let onDidMutate: () -> Void
+    let onChat: (JiraRow) -> Void
 
     private var groups: [JiraProjectGroup] {
         JiraLogic.groups(todos: viewModel.todos, projects: projects)
@@ -80,7 +81,8 @@ struct JiraScreen: View {
                             isBusy: viewModel.busyTodoId == row.id,
                             onPromote: { Task { await viewModel.promote(row); onDidMutate() } },
                             onTogglePin: { Task { await viewModel.togglePin(row) } },
-                            onCreatePr: { Task { await viewModel.createPr(row); onDidMutate() } }
+                            onCreatePr: { Task { await viewModel.createPr(row); onDidMutate() } },
+                            onChat: { onChat(row) }
                         )
                     }
                 }
@@ -98,6 +100,7 @@ private struct JiraIssueRow: View {
     let onPromote: () -> Void
     let onTogglePin: () -> Void
     let onCreatePr: () -> Void
+    let onChat: () -> Void
     @State private var isHovered = false
 
     var body: some View {
@@ -177,12 +180,12 @@ private struct JiraIssueRow: View {
                 .help("Open in Jira")
                 .accessibilityLabel("Open in Jira")
             }
-            // Present but inert until the per-issue agent thread ships in the next phase.
-            Image(systemName: "sparkles")
-                .font(.system(size: 14))
-                .foregroundStyle(Theme.Neutral.n800)
-                .help("Agent chat for a Jira issue is not built yet")
-                .accessibilityLabel("Chat with the agent, not available yet")
+            JiraIconButton(
+                symbol: "sparkles",
+                tint: Theme.Neutral.n700,
+                label: "Chat with the agent",
+                action: onChat
+            )
         }
         .padding(.top, 1)
     }

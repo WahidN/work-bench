@@ -19,6 +19,9 @@ struct AgentChatPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             if let subject {
                 header(subject)
+                if let note = subject.note {
+                    NoteBanner(text: note)
+                }
                 messages
                 composer(subject)
             }
@@ -77,6 +80,7 @@ struct AgentChatPanel: View {
         switch viewModel.target {
         case .pullRequest: "arrow.triangle.pull"
         case .ticket: "list.bullet.rectangle"
+        case .todo: "checklist"
         case .project, .none: "folder"
         }
     }
@@ -225,6 +229,23 @@ private struct SendButton: View {
         .disabled(isBusy)
         .opacity(isBusy ? 0.5 : 1)
         .accessibilityLabel("Send")
+    }
+}
+
+private struct NoteBanner: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: Theme.FontSize.tableMeta))
+            .foregroundStyle(Theme.Neutral.n600)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Theme.Space.s6)
+            .padding(.vertical, Theme.Space.s3)
+            .background(Theme.nocturneSurface)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Theme.Neutral.n900).frame(height: 1)
+            }
     }
 }
 

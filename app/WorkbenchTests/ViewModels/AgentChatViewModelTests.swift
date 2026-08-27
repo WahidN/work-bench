@@ -25,6 +25,16 @@ private func prMessage(_ id: Int, _ role: ChatRole, _ content: String) -> PullRe
     PullRequestMessage(id: id, prId: 9, role: role, content: content, createdAt: "")
 }
 
+private func sampleTodo(promotedTicketId: Int? = nil) -> Todo {
+    Todo(id: 12, source: .jira, sourceId: "JIRA-ATL-441", text: "Logout redirects in a loop",
+         body: "b", url: "u", projectId: 3, canPromote: true, done: false,
+         promotedTicketId: promotedTicketId, createdAt: "2026-08-26T00:00:00.000Z")
+}
+
+private func todoMessage(_ id: Int, _ role: ChatRole, _ content: String) -> TodoMessage {
+    TodoMessage(id: id, todoId: 12, role: role, content: content, createdAt: "")
+}
+
 @MainActor
 final class MockAgentChatAPI: AgentChatAPI {
     var projectThread: [ProjectMessage] = []
@@ -35,6 +45,9 @@ final class MockAgentChatAPI: AgentChatAPI {
     var sendTicketResult: Result<ChatReply, Error> = .success(ChatReply(reply: "ok"))
     var sendPrResult: Result<PrChatResult, Error> = .success(PrChatResult(action: .revised, reply: "ok"))
     var mergeResult: Result<PrChatResult, Error> = .success(PrChatResult(action: .merged, reply: "Merged."))
+    var todoThread: [TodoMessage] = []
+    var sendTodoResult: Result<ChatReply, Error> = .success(ChatReply(reply: "ok"))
+    private(set) var sentTodoMessages: [String] = []
 
     private(set) var sentProjectMessages: [String] = []
     private(set) var sentTicketMessages: [String] = []
@@ -93,6 +106,15 @@ final class MockAgentChatAPI: AgentChatAPI {
     func mergePr(id: Int) async throws -> PrChatResult {
         mergeCalls.append(id)
         return try mergeResult.get()
+    }
+
+    func todoMessages(id: Int) async throws -> [TodoMessage] {
+        todoThread
+    }
+
+    func sendTodoMessage(id: Int, text: String) async throws -> ChatReply {
+        sentTodoMessages.append(text)
+        return try sendTodoResult.get()
     }
 }
 
@@ -316,5 +338,48 @@ struct AgentChatViewModelTests {
 
         #expect(viewModel.target == .ticket(api.ticketResult), "the superseding target must win")
         #expect(viewModel.messages.map(\.content) == ["fresh"], "the stale project response must not overwrite the ticket thread")
+    }
+
+    @Test func openingATodoLoadsItsThread() async {
+        let api = MockAgentChatAPI()
+        api.todoThread = [todoMessage(1, .user, "what is this?"), todoMessage(2, .assistant, "A loop.")]
+        let viewModel = AgentChatViewModel(api: api)
+
+        await viewModel.open(.todo(sampleTodo()))
+
+        #expect(viewModel.isOpen)
+        #expect(viewModel.messages.map(\.content) == ["what is this?", "A loop."])
+        #expect(viewModel.diffText == nil)
+    }
+
+    @Test func sendingOnATodoPostsThenReloadsTheThread() async {
+        let api = MockAgentChatAPI()
+        let viewModel = AgentChatViewModel(api: api)
+        await viewModel.open(.todo(sampleTodo()))
+        api.todoThread = [todoMessage(1, .user, "hello")]
+
+        await viewModel.send("hello")
+
+        #expect(api.sentTodoMessages == ["hello"])
+        #expect(viewModel.messages.map(\.content) == ["hello"])
+    }
+
+    @Test func aFailedTodoSendIsPresented() async {
+        let api = MockAgentChatAPI()
+        api.sendTodoResult = .failure(APIError.serverError("claude timed out"))
+        let viewModel = AgentChatViewModel(api: api)
+        await viewModel.open(.todo(sampleTodo()))
+
+        await viewModel.send("hello")
+
+        #expect(viewModel.errorMessage == "claude timed out")
+    }
+
+    @Test func aTodoTargetOffersNoMergeButton() async {
+        let api = MockAgentChatAPI()
+        let viewModel = AgentChatViewModel(api: api)
+        await viewModel.open(.todo(sampleTodo()))
+
+        #expect(AgentChatLogic.canMerge(viewModel.target) == false)
     }
 }

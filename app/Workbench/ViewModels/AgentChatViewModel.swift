@@ -15,6 +15,8 @@ protocol AgentChatAPI {
     func sendPrMessage(id: Int, text: String) async throws -> PrChatResult
     func diff(prId: Int) async throws -> DiffResponse
     func mergePr(id: Int) async throws -> PrChatResult
+    func todoMessages(id: Int) async throws -> [TodoMessage]
+    func sendTodoMessage(id: Int, text: String) async throws -> ChatReply
 }
 
 extension APIClient: AgentChatAPI {}
@@ -74,6 +76,8 @@ final class AgentChatViewModel {
                 _ = try await api.sendTicketMessage(id: ticket.id, text: text)
             case .pullRequest(let pr):
                 _ = try await api.sendPrMessage(id: pr.id, text: text)
+            case .todo(let todo):
+                _ = try await api.sendTodoMessage(id: todo.id, text: text)
             }
             guard token == loadToken else { return }
             await loadThread(token: token)
@@ -118,6 +122,12 @@ final class AgentChatViewModel {
                 self.target = .pullRequest(detail)
                 messages = (detail.messages ?? []).map { AgentMessage(id: $0.id, role: $0.role, content: $0.content) }
                 await loadDiff(for: detail, token: token)
+            // Chatting cannot change a todo's state the way it can a ticket's or a
+            // PR's, so this mirrors .project: a plain thread fetch, no target refresh.
+            case .todo(let todo):
+                let thread = try await api.todoMessages(id: todo.id)
+                guard token == loadToken else { return }
+                messages = thread.map { AgentMessage(id: $0.id, role: $0.role, content: $0.content) }
             }
         } catch {
             guard token == loadToken else { return }

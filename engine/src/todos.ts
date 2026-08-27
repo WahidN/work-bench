@@ -3,7 +3,7 @@ import { getProject } from './projects.js';
 import { getTicket, listTickets, findTicketBySource, createTicket } from './tickets.js';
 import { listPrs } from './prs.js';
 import { analyzeIssue } from './analyze.js';
-import type { Todo, SourceIssue, Project, Ticket, TicketStatus, PrStatus, TodoPriority } from './types.js';
+import type { Todo, SourceIssue, Project, Ticket, TicketStatus, PrStatus, TodoPriority, TodoMessage } from './types.js';
 
 function rowToTodo(row: any): Todo {
   return {
@@ -12,6 +12,37 @@ function rowToTodo(row: any): Todo {
     promotedTicketId: row.promoted_ticket_id, priority: row.priority, dueAt: row.due_at,
     doneAt: row.done_at, pinned: !!row.pinned, createdAt: row.created_at,
   };
+}
+
+function rowToTodoMessage(row: any): TodoMessage {
+  return {
+    id: row.id,
+    todoId: row.todo_id,
+    role: row.role,
+    content: row.content,
+    createdAt: row.created_at,
+  };
+}
+
+export function listTodoMessages(db: Database.Database, todoId: number): TodoMessage[] {
+  return db
+    .prepare('SELECT * FROM todo_messages WHERE todo_id = ? ORDER BY id')
+    .all(todoId)
+    .map(rowToTodoMessage);
+}
+
+export function addTodoMessage(
+  db: Database.Database,
+  todoId: number,
+  role: 'user' | 'assistant',
+  content: string
+): TodoMessage {
+  const result = db
+    .prepare('INSERT INTO todo_messages (todo_id, role, content, created_at) VALUES (?, ?, ?, ?)')
+    .run(todoId, role, content, new Date().toISOString());
+  return rowToTodoMessage(
+    db.prepare('SELECT * FROM todo_messages WHERE id = ?').get(result.lastInsertRowid)
+  );
 }
 
 /** The local calendar date as YYYY-MM-DD. Not the UTC date: a task added at 00:30 belongs to that day. */
@@ -107,8 +138,21 @@ export async function promoteTodo(db: Database.Database, todoId: number): Promis
     source: 'jira', sourceId: todo.sourceId, projectId: project.id,
     title: todo.text, body: todo.body, url: todo.url ?? '', analysis,
   });
-  db.prepare('UPDATE todos SET done = 1, done_at = ?, promoted_ticket_id = ? WHERE id = ?')
-    .run(localDate(), ticket.id, todo.id);
+  // The thread moves with the issue. From here the row opens the ticket chat, and
+  // the fix pipeline reads ticket_messages, so leaving history behind would hide it.
+  // One transaction: a crash between the copy and the stamp would otherwise leave a
+  // promoted issue whose history is still on the todo, or a cleared todo with no
+  // ticket to show it. promoteTodo awaits analyzeIssue above and so cannot itself be
+  // one transaction, but these three statements come after that await.
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO ticket_messages (ticket_id, role, content, created_at)
+         SELECT ?, role, content, created_at FROM todo_messages WHERE todo_id = ? ORDER BY id`
+    ).run(ticket.id, todo.id);
+    db.prepare('DELETE FROM todo_messages WHERE todo_id = ?').run(todo.id);
+    db.prepare('UPDATE todos SET done = 1, done_at = ?, promoted_ticket_id = ? WHERE id = ?')
+      .run(localDate(), ticket.id, todo.id);
+  })();
   return ticket;
 }
 
@@ -117,14 +161,33 @@ export function countJiraTodos(db: Database.Database): number {
   return row.n;
 }
 
+// todo_messages references todos(id) and foreign keys are enforced at runtime, so
+// a thread has to go before the row it hangs off. Without this the poller throws
+// FOREIGN KEY constraint failed on the first discussed issue that leaves Jira, and
+// reconciliation stops for every project. One transaction so a failure cannot
+// leave a thread orphaned from its todo.
 export function reconcileJiraTodos(db: Database.Database, currentSourceIds: string[]): number {
   if (currentSourceIds.length === 0) {
-    return db.prepare(`DELETE FROM todos WHERE source = 'jira'`).run().changes;
+    return db.transaction(() => {
+      db.prepare(
+        `DELETE FROM todo_messages
+         WHERE todo_id IN (SELECT id FROM todos WHERE source = 'jira')`
+      ).run();
+      return db.prepare(`DELETE FROM todos WHERE source = 'jira'`).run().changes;
+    })();
   }
   const placeholders = currentSourceIds.map(() => '?').join(',');
-  return db
-    .prepare(`DELETE FROM todos WHERE source = 'jira' AND source_id NOT IN (${placeholders})`)
-    .run(...currentSourceIds).changes;
+  return db.transaction(() => {
+    db.prepare(
+      `DELETE FROM todo_messages
+       WHERE todo_id IN (
+         SELECT id FROM todos WHERE source = 'jira' AND source_id NOT IN (${placeholders})
+       )`
+    ).run(...currentSourceIds);
+    return db
+      .prepare(`DELETE FROM todos WHERE source = 'jira' AND source_id NOT IN (${placeholders})`)
+      .run(...currentSourceIds).changes;
+  })();
 }
 
 export interface TodayItem {

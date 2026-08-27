@@ -264,3 +264,15 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     """
     #expect(try decode(PrReviewThread.self, json).diffSide == "LEFT")
 }
+
+@Test func todoMessageDecodesTheEnginePayload() throws {
+    let json = """
+    {"id":7,"todoId":12,"role":"assistant","content":"A redirect loop.","createdAt":"2026-08-26T00:00:00.000Z"}
+    """
+    let message = try decode(TodoMessage.self, json)
+
+    #expect(message.id == 7)
+    #expect(message.todoId == 12)
+    #expect(message.role == .assistant)
+    #expect(message.content == "A redirect loop.")
+}

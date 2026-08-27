@@ -183,14 +183,16 @@ struct ContentView: View {
                 onTogglePinPullRequest: { pr in Task { await prsViewModel.togglePin(pr) } },
                 onNavigate: { selection = $0 },
                 onDidPromote: { Task { await ticketsViewModel.load() } },
-                onTogglePinTodo: { todo in Task { await todayViewModel.togglePin(todo) } }
+                onTogglePinTodo: { todo in Task { await todayViewModel.togglePin(todo) } },
+                onChatTodo: openTodoChat
             )
         case .issues:
             JiraScreen(
                 viewModel: jiraViewModel,
                 projects: projectsViewModel.projects,
                 tickets: ticketsViewModel.tickets,
-                onDidMutate: { Task { await ticketsViewModel.load() } }
+                onDidMutate: { Task { await ticketsViewModel.load() } },
+                onChat: { row in openTodoChat(row.todo) }
             )
         case .pullRequests:
             if let pr = selectedPr {
@@ -227,7 +229,8 @@ struct ContentView: View {
                     },
                     onToggleTask: { row in toggleProjectTask(row) },
                     onOpenWork: { item in openWork(item) },
-                    onChat: { item in openAgent(chatTarget(for: item)) }
+                    onChat: { item in openAgent(chatTarget(for: item)) },
+                    onChatTodo: openTodoChat
                 )
                 .id(project.id)
             } else {
@@ -259,8 +262,8 @@ struct ContentView: View {
     }
 
     private var chatProject: Project? {
-        guard let target = agentChatViewModel.target else { return nil }
-        return projectsViewModel.projects.first { $0.id == target.projectId }
+        guard let projectId = agentChatViewModel.target?.projectId else { return nil }
+        return projectsViewModel.projects.first { $0.id == projectId }
     }
 
     private var openProject: Project? {
@@ -295,6 +298,10 @@ struct ContentView: View {
 
     private func openAgent(_ target: AgentChatTarget) {
         Task { await agentChatViewModel.open(target) }
+    }
+
+    private func openTodoChat(_ todo: Todo) {
+        openAgent(AgentChatLogic.target(for: todo, tickets: ticketsViewModel.tickets))
     }
 
     private var projectHeaderKicker: String? {

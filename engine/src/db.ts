@@ -101,6 +101,14 @@ CREATE TABLE IF NOT EXISTS project_messages (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS todo_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  todo_id INTEGER NOT NULL REFERENCES todos(id),
+  role TEXT NOT NULL CHECK (role IN ('user','assistant')),
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   type TEXT NOT NULL CHECK (type IN ('triage','spar','fix','pr-chat','merge')),

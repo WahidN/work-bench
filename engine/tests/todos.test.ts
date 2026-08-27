@@ -2,12 +2,12 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { openDb } from '../src/db.js';
 import { createProject } from '../src/projects.js';
-import { createTicket, updateTicketStatus, findTicketBySource } from '../src/tickets.js';
+import { createTicket, updateTicketStatus, findTicketBySource, listTicketMessages } from '../src/tickets.js';
 import { recordPr } from '../src/prs.js';
 import * as analyze from '../src/analyze.js';
 import {
   listTodos, getTodo, createManualTodo, setTodoDone, upsertJiraTodo, reconcileJiraTodos, promoteTodo, getTodayView,
-  setTodoPriority, setTodoPinned, listTodayTodos, localDate,
+  setTodoPriority, setTodoPinned, listTodayTodos, localDate, listTodoMessages, addTodoMessage,
 } from '../src/todos.js';
 
 vi.mock('../src/analyze.js');
@@ -160,6 +160,43 @@ describe('upsertJiraTodo / reconcileJiraTodos', () => {
     expect(removed).toBe(0);
     expect(listTodos(db)).toHaveLength(1);
   });
+
+  it('deletes a jira todo that has a thread, instead of failing on the foreign key', () => {
+    upsertJiraTodo(db, issue, null);
+    const todo = listTodos(db)[0];
+    addTodoMessage(db, todo.id, 'user', 'is this worth doing?');
+
+    const removed = reconcileJiraTodos(db, []);
+
+    expect(removed).toBe(1);
+    expect(listTodos(db)).toEqual([]);
+    expect(listTodoMessages(db, todo.id)).toEqual([]);
+  });
+
+  it('deletes the thread of a stale issue but keeps the thread of one still present', () => {
+    upsertJiraTodo(db, issue, null);
+    upsertJiraTodo(db, { ...issue, sourceId: 'JIRA-DEMO-2', title: '[DEMO-2] Keep me' }, null);
+    const [stale, kept] = listTodos(db);
+    addTodoMessage(db, stale.id, 'user', 'about the stale one');
+    addTodoMessage(db, kept.id, 'user', 'about the kept one');
+
+    const removed = reconcileJiraTodos(db, ['JIRA-DEMO-2']);
+
+    expect(removed).toBe(1);
+    expect(listTodos(db).map((t) => t.sourceId)).toEqual(['JIRA-DEMO-2']);
+    expect(listTodoMessages(db, stale.id)).toEqual([]);
+    expect(listTodoMessages(db, kept.id).map((m) => m.content)).toEqual(['about the kept one']);
+  });
+
+  it('leaves a manual todo and its thread alone', () => {
+    const manual = createManualTodo(db, 'unrelated manual item');
+    addTodoMessage(db, manual.id, 'user', 'still here');
+    upsertJiraTodo(db, issue, null);
+
+    reconcileJiraTodos(db, []);
+
+    expect(listTodoMessages(db, manual.id).map((m) => m.content)).toEqual(['still here']);
+  });
 });
 
 describe('promoteTodo', () => {
@@ -208,6 +245,45 @@ describe('promoteTodo', () => {
     upsertJiraTodo(db, issue, null);
     const todo = listTodos(db)[0];
     await expect(promoteTodo(db, todo.id)).rejects.toThrow('cannot be promoted');
+  });
+
+  it('moves the thread onto the ticket, in order, and clears it from the todo', async () => {
+    const project = createProject(db, {
+      name: 'demo', repoPath: '/repos/demo', defaultBranch: 'main',
+      githubRepo: null, jiraProjectKey: 'DEMO', sentryProjectSlug: null,
+    });
+    upsertJiraTodo(db, issue, project);
+    const todo = listTodos(db)[0];
+    addTodoMessage(db, todo.id, 'user', 'is this worth doing?');
+    addTodoMessage(db, todo.id, 'assistant', 'Yes, it blocks logout.');
+    vi.mocked(analyze.analyzeIssue).mockResolvedValue({
+      summary: 's', rootCause: 'r', proposedFix: 'p', affectedFiles: [], confidence: 'high',
+    });
+
+    const ticket = await promoteTodo(db, todo.id);
+
+    expect(listTicketMessages(db, ticket.id).map((m) => [m.role, m.content])).toEqual([
+      ['user', 'is this worth doing?'],
+      ['assistant', 'Yes, it blocks logout.'],
+    ]);
+    expect(listTodoMessages(db, todo.id)).toEqual([]);
+  });
+
+  it('promotes an issue that was never discussed without inventing messages', async () => {
+    const project = createProject(db, {
+      name: 'demo', repoPath: '/repos/demo', defaultBranch: 'main',
+      githubRepo: null, jiraProjectKey: 'DEMO', sentryProjectSlug: null,
+    });
+    upsertJiraTodo(db, issue, project);
+    const todo = listTodos(db)[0];
+    vi.mocked(analyze.analyzeIssue).mockResolvedValue({
+      summary: 's', rootCause: 'r', proposedFix: 'p', affectedFiles: [], confidence: 'high',
+    });
+
+    const ticket = await promoteTodo(db, todo.id);
+
+    expect(listTicketMessages(db, ticket.id)).toEqual([]);
+    expect(getTodo(db, todo.id)!.promotedTicketId).toBe(ticket.id);
   });
 });
 
@@ -291,5 +367,37 @@ describe('createManualTodo with a project', () => {
 
   it('still stores null when no project is given, which is what Today does', () => {
     expect(createManualTodo(db, 'Fix the header').projectId).toBeNull();
+  });
+});
+
+describe('todo messages', () => {
+  it('stores a thread and lists it in insertion order', () => {
+    const todo = createManualTodo(db, 'discuss me');
+
+    addTodoMessage(db, todo.id, 'user', 'what is this about?');
+    addTodoMessage(db, todo.id, 'assistant', 'A logout redirect loop.');
+
+    expect(listTodoMessages(db, todo.id).map((m) => [m.role, m.content])).toEqual([
+      ['user', 'what is this about?'],
+      ['assistant', 'A logout redirect loop.'],
+    ]);
+  });
+
+  it('returns the stored row, with the todo id mapped from snake case', () => {
+    const todo = createManualTodo(db, 'discuss me');
+
+    const message = addTodoMessage(db, todo.id, 'user', 'hi');
+
+    expect(message.todoId).toBe(todo.id);
+    expect(message.id).toBeGreaterThan(0);
+    expect(message.createdAt).not.toBe('');
+  });
+
+  it('keeps two todos threads apart', () => {
+    const first = createManualTodo(db, 'first');
+    const second = createManualTodo(db, 'second');
+    addTodoMessage(db, first.id, 'user', 'about the first');
+
+    expect(listTodoMessages(db, second.id)).toEqual([]);
   });
 });

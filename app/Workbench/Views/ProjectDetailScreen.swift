@@ -19,6 +19,7 @@ struct ProjectDetailScreen: View {
     let onToggleTask: (TodayTaskRow) -> Void
     let onOpenWork: (OpenWorkItem) -> Void
     let onChat: (OpenWorkItem) -> Void
+    let onChatTodo: (Todo) -> Void
 
     @State private var tab: ProjectDetailTab = .tasks
     @State private var draft = ""
@@ -128,7 +129,8 @@ struct ProjectDetailScreen: View {
                         row: row,
                         onToggle: { onToggleTask(row) },
                         onCyclePriority: { _ in },
-                        onPromote: { _ in }
+                        onPromote: { _ in },
+                        onChat: onChatTodo
                     )
                 }
             }
