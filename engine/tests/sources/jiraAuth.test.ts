@@ -7,7 +7,44 @@ import {
   consumeAuthorizationState,
   buildAuthorizeUrl,
   resetJiraAuthStateForTests,
+  exchangeCode,
+  fetchAccessibleSites,
 } from '../../src/sources/jiraAuth.js';
+import { getSecret, setSecret } from '../../src/keychain.js';
+
+vi.mock('../../src/keychain.js');
+
+const realFetch = globalThis.fetch;
+
+function stubSecrets(values: Record<string, string | null>): void {
+  vi.mocked(getSecret).mockImplementation(async (account: string) => values[account] ?? null);
+}
+
+/// Routes each Atlassian host to a canned response and records what was sent.
+function stubAtlassian(options: {
+  token?: { status?: number; body?: any };
+  sites?: { status?: number; body?: any };
+}): { tokenBodies: () => any[]; urls: () => string[] } {
+  const tokenBodies: any[] = [];
+  const urls: string[] = [];
+  globalThis.fetch = vi.fn(async (url: any, init: any) => {
+    const asString = String(url);
+    urls.push(asString);
+    // Checked first on purpose: the sites endpoint is /oauth/token/accessible-resources,
+    // so it contains the token path as a substring and would otherwise be misrouted.
+    if (asString.includes('accessible-resources')) {
+      const status = options.sites?.status ?? 200;
+      return { ok: status < 400, status, json: async () => options.sites?.body ?? [] } as any;
+    }
+    if (asString.includes('/oauth/token')) {
+      tokenBodies.push(JSON.parse(init.body));
+      const status = options.token?.status ?? 200;
+      return { ok: status < 400, status, json: async () => options.token?.body ?? {} } as any;
+    }
+    throw new Error(`unexpected fetch to ${asString}`);
+  }) as any;
+  return { tokenBodies: () => tokenBodies, urls: () => urls };
+}
 
 beforeEach(() => {
   resetJiraAuthStateForTests();
@@ -94,5 +131,121 @@ describe('buildAuthorizeUrl', () => {
   it('never puts a secret in the url', () => {
     const url = buildAuthorizeUrl('client-abc', 'state-xyz', 'challenge-123');
     expect(url).not.toContain('client_secret');
+  });
+});
+
+describe('exchangeCode', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stubSecrets({ 'jira-client-id': 'client-abc', 'jira-client-secret': 'secret-xyz' });
+  });
+
+  afterEach(() => { globalThis.fetch = realFetch; });
+
+  it('sends the code, the verifier and the exact redirect uri', async () => {
+    const captured = stubAtlassian({
+      token: { body: { access_token: 'at-1', refresh_token: 'rt-1', expires_in: 3600 } },
+      sites: { body: [{ id: 'cloud-1', url: 'https://demo.atlassian.net', name: 'Demo' }] },
+    });
+
+    await exchangeCode('code-1', 'verifier-1');
+
+    expect(captured.tokenBodies()[0]).toEqual({
+      grant_type: 'authorization_code',
+      client_id: 'client-abc',
+      client_secret: 'secret-xyz',
+      code: 'code-1',
+      redirect_uri: JIRA_REDIRECT_URI,
+      code_verifier: 'verifier-1',
+    });
+  });
+
+  it('stores the refresh token, and the site when there is exactly one', async () => {
+    stubAtlassian({
+      token: { body: { access_token: 'at-1', refresh_token: 'rt-1', expires_in: 3600 } },
+      sites: { body: [{ id: 'cloud-1', url: 'https://demo.atlassian.net', name: 'Demo' }] },
+    });
+
+    await exchangeCode('code-1', 'verifier-1');
+
+    expect(setSecret).toHaveBeenCalledWith('jira-refresh-token', 'rt-1');
+    expect(setSecret).toHaveBeenCalledWith('jira-cloud-id', 'cloud-1');
+    expect(setSecret).toHaveBeenCalledWith('jira-site-url', 'https://demo.atlassian.net');
+    expect(setSecret).toHaveBeenCalledWith('jira-site-name', 'Demo');
+  });
+
+  // The refresh token is the only way back in, and Atlassian rotates it, so it must
+  // be safe on disk before anything that can fail runs.
+  it('stores the refresh token before it looks up the sites', async () => {
+    const order: string[] = [];
+    vi.mocked(setSecret).mockImplementation(async (account: string) => { order.push(`set:${account}`); });
+    globalThis.fetch = vi.fn(async (url: any) => {
+      const asString = String(url);
+      // accessible-resources first: its path contains /oauth/token as a substring.
+      if (asString.includes('accessible-resources')) {
+        order.push('fetch:sites');
+        return { ok: true, status: 200, json: async () => [] } as any;
+      }
+      return { ok: true, status: 200, json: async () => ({ access_token: 'at-1', refresh_token: 'rt-1', expires_in: 3600 }) } as any;
+    }) as any;
+
+    await exchangeCode('code-1', 'verifier-1');
+
+    expect(order.indexOf('set:jira-refresh-token')).toBeLessThan(order.indexOf('fetch:sites'));
+  });
+
+  it('stores no site when several came back, leaving the choice to the app', async () => {
+    stubAtlassian({
+      token: { body: { access_token: 'at-1', refresh_token: 'rt-1', expires_in: 3600 } },
+      sites: { body: [
+        { id: 'cloud-1', url: 'https://one.atlassian.net', name: 'One' },
+        { id: 'cloud-2', url: 'https://two.atlassian.net', name: 'Two' },
+      ] },
+    });
+
+    await exchangeCode('code-1', 'verifier-1');
+
+    expect(setSecret).toHaveBeenCalledWith('jira-refresh-token', 'rt-1');
+    expect(setSecret).not.toHaveBeenCalledWith('jira-cloud-id', expect.anything());
+  });
+
+  it('throws when Atlassian rejects the exchange', async () => {
+    stubAtlassian({ token: { status: 400, body: { error: 'invalid_grant' } } });
+
+    await expect(exchangeCode('code-1', 'verifier-1')).rejects.toThrow(/exchange failed \(400\)/);
+    expect(setSecret).not.toHaveBeenCalled();
+  });
+
+  it('explains itself when offline_access was left out of the app scopes', async () => {
+    stubAtlassian({ token: { body: { access_token: 'at-1', expires_in: 3600 } } });
+
+    await expect(exchangeCode('code-1', 'verifier-1')).rejects.toThrow(/offline_access/);
+  });
+
+  it('refuses to run without client credentials', async () => {
+    stubSecrets({});
+    stubAtlassian({});
+
+    await expect(exchangeCode('code-1', 'verifier-1')).rejects.toThrow(/client credentials/);
+  });
+});
+
+describe('fetchAccessibleSites', () => {
+  afterEach(() => { globalThis.fetch = realFetch; });
+
+  it('maps id, url and name and drops the rest', async () => {
+    stubAtlassian({ sites: { body: [
+      { id: 'cloud-1', url: 'https://demo.atlassian.net', name: 'Demo', scopes: ['read:jira-work'], avatarUrl: 'x' },
+    ] } });
+
+    expect(await fetchAccessibleSites('at-1')).toEqual([
+      { id: 'cloud-1', url: 'https://demo.atlassian.net', name: 'Demo' },
+    ]);
+  });
+
+  it('throws when the lookup fails', async () => {
+    stubAtlassian({ sites: { status: 403 } });
+
+    await expect(fetchAccessibleSites('at-1')).rejects.toThrow(/site lookup failed \(403\)/);
   });
 });

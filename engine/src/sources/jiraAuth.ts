@@ -1,7 +1,9 @@
 import { randomBytes, createHash } from 'node:crypto';
 import { ENGINE_PORT } from '../config.js';
+import { getSecret, setSecret } from '../keychain.js';
 
 const AUTH_HOST = 'https://auth.atlassian.com';
+const API_HOST = 'https://api.atlassian.com';
 const STATE_TTL_MS = 10 * 60 * 1000;
 
 /// The exact string Atlassian must be configured with. Assembled once, here.
@@ -55,9 +57,72 @@ export function buildAuthorizeUrl(clientId: string, state: string, challenge: st
   return `${AUTH_HOST}/authorize?${params}`;
 }
 
+export interface JiraSite {
+  id: string;
+  url: string;
+  name: string;
+}
+
+let cachedAccessToken: { value: string; expiresAt: number } | null = null;
+
+function cacheAccessToken(value: string, expiresInSeconds: number): void {
+  cachedAccessToken = { value, expiresAt: Date.now() + expiresInSeconds * 1000 };
+}
+
+export async function fetchAccessibleSites(accessToken: string): Promise<JiraSite[]> {
+  const res = await fetch(`${API_HOST}/oauth/token/accessible-resources`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`Jira site lookup failed (${res.status})`);
+  const data: any = await res.json();
+  return (data ?? []).map((site: any) => ({ id: site.id, url: site.url, name: site.name }));
+}
+
+async function persistSite(site: JiraSite): Promise<void> {
+  await setSecret('jira-cloud-id', site.id);
+  await setSecret('jira-site-url', site.url);
+  await setSecret('jira-site-name', site.name);
+}
+
+export async function exchangeCode(code: string, verifier: string): Promise<void> {
+  const clientId = await getSecret('jira-client-id');
+  const clientSecret = await getSecret('jira-client-secret');
+  if (!clientId || !clientSecret) throw new Error('Jira client credentials are not set');
+
+  const res = await fetch(`${AUTH_HOST}/oauth/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      grant_type: 'authorization_code',
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+      redirect_uri: JIRA_REDIRECT_URI,
+      code_verifier: verifier,
+    }),
+  });
+  if (!res.ok) throw new Error(`Jira token exchange failed (${res.status})`);
+
+  const data: any = await res.json();
+  if (!data.refresh_token) {
+    throw new Error('Jira returned no refresh token. Add offline_access to the app scopes and connect again.');
+  }
+
+  // Stored before the site lookup, which can fail: this token is the only way back
+  // in without a fresh consent, and Atlassian rotates it on every use.
+  await setSecret('jira-refresh-token', data.refresh_token);
+  cacheAccessToken(data.access_token, data.expires_in);
+
+  // One site needs no question. Several are left for the app to choose, and
+  // getConnection re-resolves them, so an engine restart in between is harmless.
+  const sites = await fetchAccessibleSites(data.access_token);
+  if (sites.length === 1) await persistSite(sites[0]);
+}
+
 /// Test seam. This module holds process-wide state on purpose (pending states, and
 /// later the cached access token and the in-flight refresh), so tests need a way to
 /// start from a clean slate.
 export function resetJiraAuthStateForTests(): void {
   pendingStates.clear();
+  cachedAccessToken = null;
 }
