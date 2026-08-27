@@ -21,6 +21,9 @@ enum SidebarSection: String, CaseIterable, Identifiable {
 struct ContentView: View {
     @Environment(AppDelegate.self) private var appDelegate
     @State private var selection: SidebarSection = .today
+    @State private var isPaletteOpen = false
+    @State private var paletteQuery = ""
+    @State private var paletteSelection = 0
     @State private var todayViewModel = TodayViewModel()
     @State private var ticketsViewModel = TicketsViewModel()
     @State private var prsViewModel = PRsViewModel()
@@ -44,17 +47,9 @@ struct ContentView: View {
                 prs: prsViewModel.pullRequests,
                 projects: projectsViewModel.projects,
                 selectedProject: projectsViewModel.selectedProject,
-                onSelect: { section in
-                    selection = section
-                    selectedPr = nil
-                    openProjectId = nil
-                },
-                onSelectProject: { project in
-                    selection = .projects
-                    projectsViewModel.selectedProject = project
-                    selectedPr = nil
-                    openProjectId = project.id
-                }
+                onSelect: { section in navigate(to: section) },
+                onSelectProject: { project in openProject(project) },
+                onOpenPalette: openPalette
             )
             VStack(spacing: 0) {
                 AppHeader(
@@ -87,6 +82,30 @@ struct ContentView: View {
                 }
             }
             .animation(.easeOut(duration: 0.16), value: agentChatViewModel.isOpen)
+            // The palette belongs to the main column, right of the sidebar, per the
+            // handoff. That is why it hangs off this VStack and not the outer HStack.
+            .overlay {
+                if isPaletteOpen {
+                    CommandPalette(
+                        rows: paletteRows,
+                        selection: paletteSelection,
+                        query: $paletteQuery,
+                        onRun: runPaletteRow,
+                        onMove: { delta in
+                            paletteSelection = CommandPaletteLogic.move(
+                                selection: paletteSelection, by: delta, count: paletteRows.count
+                            )
+                        },
+                        onHighlight: { paletteSelection = $0 },
+                        onClose: { isPaletteOpen = false }
+                    )
+                    .transition(.wbIn)
+                }
+            }
+            .animation(.easeOut(duration: 0.13), value: isPaletteOpen)
+            // Resetting the selection is what makes Enter right after typing hit the
+            // add-task row rather than whatever the arrows last landed on.
+            .onChange(of: paletteQuery) { paletteSelection = 0 }
             .sheet(item: $projectSheet) { mode in
                 let canDelete: Bool = {
                     if case .edit = mode { return true }
@@ -302,6 +321,49 @@ struct ContentView: View {
 
     private func openTodoChat(_ todo: Todo) {
         openAgent(AgentChatLogic.target(for: todo, tickets: ticketsViewModel.tickets))
+    }
+
+    private var paletteRows: [PaletteRow] {
+        CommandPaletteLogic.results(query: paletteQuery, projects: projectsViewModel.projects)
+    }
+
+    private func openPalette() {
+        paletteQuery = ""
+        paletteSelection = 0
+        isPaletteOpen = true
+    }
+
+    /// Clearing both detail routes is not optional: they drive the project detail
+    /// and PR detail screens, so leaving them set lands the user on a stale detail
+    /// screen instead of the list.
+    private func navigate(to section: SidebarSection) {
+        selection = section
+        selectedPr = nil
+        openProjectId = nil
+    }
+
+    private func openProject(_ project: Project) {
+        selection = .projects
+        projectsViewModel.selectedProject = project
+        selectedPr = nil
+        openProjectId = project.id
+    }
+
+    private func runPaletteRow(_ row: PaletteRow) {
+        isPaletteOpen = false
+        switch row.action {
+        case .navigate(let section):
+            navigate(to: section)
+        case .openProject(let project):
+            openProject(project)
+        case .askAgent:
+            openProjectChat()
+        case .addTask(let text):
+            Task {
+                await todayViewModel.addTodo(text: text)
+                navigate(to: .today)
+            }
+        }
     }
 
     private var projectHeaderKicker: String? {
