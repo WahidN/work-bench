@@ -234,3 +234,30 @@ extension APIClient {
         )
     }
 }
+
+extension APIClient {
+    func jiraConnection() async throws -> JiraConnection {
+        try await send("GET", "/settings/jira", body: nil)
+    }
+
+    func saveJiraClient(clientId: String, clientSecret: String) async throws {
+        let _: OkResponse = try await send(
+            "PUT", "/settings/jira/client",
+            body: ["clientId": clientId, "clientSecret": clientSecret]
+        )
+    }
+
+    /// Returns the authorize URL for the view to open. The engine mints the state.
+    func authorizeJira() async throws -> String {
+        let response: AuthorizeUrlResponse = try await send("POST", "/settings/jira/authorize", body: nil)
+        return response.url
+    }
+
+    func chooseJiraSite(cloudId: String) async throws {
+        let _: OkResponse = try await send("POST", "/settings/jira/site", body: ["cloudId": cloudId])
+    }
+
+    func disconnectJira() async throws {
+        let _: OkResponse = try await send("DELETE", "/settings/jira", body: nil)
+    }
+}

@@ -265,6 +265,33 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     #expect(try decode(PrReviewThread.self, json).diffSide == "LEFT")
 }
 
+@Test func jiraConnectionDecodesAConnectedSite() throws {
+    let json = """
+    {"hasClientCredentials":true,"connected":true,"siteUrl":"https://demo.atlassian.net",
+     "siteName":"Demo","availableSites":[],"callbackUrl":"http://localhost:4173/oauth/jira/callback"}
+    """
+    let connection = try decode(JiraConnection.self, json)
+
+    #expect(connection.connected)
+    #expect(connection.siteName == "Demo")
+    #expect(connection.availableSites.isEmpty)
+    #expect(connection.callbackUrl == "http://localhost:4173/oauth/jira/callback")
+}
+
+@Test func jiraConnectionDecodesSeveralSitesAwaitingAChoice() throws {
+    let json = """
+    {"hasClientCredentials":true,"connected":false,"siteUrl":null,"siteName":null,
+     "availableSites":[{"id":"cloud-1","url":"https://one.atlassian.net","name":"One"},
+                       {"id":"cloud-2","url":"https://two.atlassian.net","name":"Two"}],
+     "callbackUrl":"http://localhost:4173/oauth/jira/callback"}
+    """
+    let connection = try decode(JiraConnection.self, json)
+
+    #expect(connection.connected == false)
+    #expect(connection.siteUrl == nil)
+    #expect(connection.availableSites.map(\.name) == ["One", "Two"])
+}
+
 @Test func todoMessageDecodesTheEnginePayload() throws {
     let json = """
     {"id":7,"todoId":12,"role":"assistant","content":"A redirect loop.","createdAt":"2026-08-26T00:00:00.000Z"}

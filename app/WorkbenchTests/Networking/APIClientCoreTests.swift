@@ -77,6 +77,77 @@ struct APIClientCoreTests {
         #expect(decoded?["text"] == "renew SSL cert")
     }
 
+    @Test func jiraConnectionGetsTheStatus() async throws {
+        var capturedPath: String?
+        let session = mockedSession { request in
+            capturedPath = request.url?.path
+            return jsonResponse(request.url!, status: 200, body: """
+            {"hasClientCredentials":false,"connected":false,"siteUrl":null,"siteName":null,
+             "availableSites":[],"callbackUrl":"http://localhost:4173/oauth/jira/callback"}
+            """)
+        }
+        let connection = try await APIClient(session: session, keychain: StubSecretStore()).jiraConnection()
+
+        #expect(capturedPath == "/settings/jira")
+        #expect(connection.connected == false)
+    }
+
+    @Test func saveJiraClientPutsBothHalves() async throws {
+        var capturedPath: String?
+        var capturedMethod: String?
+        var capturedBody: [String: Any]?
+        let session = mockedSession { request in
+            capturedPath = request.url?.path
+            capturedMethod = request.httpMethod
+            capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
+            return jsonResponse(request.url!, status: 200, body: #"{"ok":true}"#)
+        }
+        try await APIClient(session: session, keychain: StubSecretStore())
+            .saveJiraClient(clientId: "client-abc", clientSecret: "secret-xyz")
+
+        #expect(capturedPath == "/settings/jira/client")
+        #expect(capturedMethod == "PUT")
+        #expect(capturedBody?["clientId"] as? String == "client-abc")
+        #expect(capturedBody?["clientSecret"] as? String == "secret-xyz")
+    }
+
+    @Test func authorizeJiraReturnsTheUrl() async throws {
+        var capturedMethod: String?
+        let session = mockedSession { request in
+            capturedMethod = request.httpMethod
+            return jsonResponse(request.url!, status: 200, body: #"{"url":"https://auth.atlassian.com/authorize?state=s"}"#)
+        }
+        let url = try await APIClient(session: session, keychain: StubSecretStore()).authorizeJira()
+
+        #expect(capturedMethod == "POST")
+        #expect(url == "https://auth.atlassian.com/authorize?state=s")
+    }
+
+    @Test func chooseJiraSitePostsTheCloudId() async throws {
+        var capturedBody: [String: Any]?
+        let session = mockedSession { request in
+            capturedBody = try? JSONSerialization.jsonObject(with: request.capturedBodyData() ?? Data()) as? [String: Any]
+            return jsonResponse(request.url!, status: 200, body: #"{"ok":true}"#)
+        }
+        try await APIClient(session: session, keychain: StubSecretStore()).chooseJiraSite(cloudId: "cloud-2")
+
+        #expect(capturedBody?["cloudId"] as? String == "cloud-2")
+    }
+
+    @Test func disconnectJiraDeletes() async throws {
+        var capturedMethod: String?
+        var capturedPath: String?
+        let session = mockedSession { request in
+            capturedMethod = request.httpMethod
+            capturedPath = request.url?.path
+            return jsonResponse(request.url!, status: 200, body: #"{"ok":true}"#)
+        }
+        try await APIClient(session: session, keychain: StubSecretStore()).disconnectJira()
+
+        #expect(capturedMethod == "DELETE")
+        #expect(capturedPath == "/settings/jira")
+    }
+
     @Test func pollPostsAndDecodesTheSummary() async throws {
         var capturedPath: String?
         var capturedMethod: String?
