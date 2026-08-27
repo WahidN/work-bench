@@ -7,10 +7,16 @@ import { registerTodosRoutes } from './routes/todos.js';
 import { registerTicketsRoutes } from './routes/tickets.js';
 import { registerPrsRoutes } from './routes/prs.js';
 import { registerPollRoutes } from './routes/poll.js';
+import { registerJiraCallbackRoute, registerSettingsRoutes } from './routes/settings.js';
 
 export function createServer(db: Database.Database, apiToken: string): express.Express {
   const app = express();
   app.use(express.json());
+
+  // Registered before the auth middleware on purpose: Atlassian redirects a browser
+  // here, and a browser cannot send the bearer token. It is the only unauthenticated
+  // route on this engine, and a single-use state is what guards it.
+  registerJiraCallbackRoute(app);
 
   app.use((req, res, next) => {
     if (req.header('authorization') !== `Bearer ${apiToken}`) {
@@ -26,6 +32,7 @@ export function createServer(db: Database.Database, apiToken: string): express.E
   registerTicketsRoutes(app, db);
   registerPrsRoutes(app, db);
   registerPollRoutes(app, db);
+  registerSettingsRoutes(app);
 
   // Safety net: an uncaught throw in a route must never leave as an HTML error
   // page with a stack trace. Registered last so it sees every route's errors.
