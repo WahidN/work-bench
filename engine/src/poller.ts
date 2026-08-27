@@ -66,6 +66,83 @@ async function syncGithubPrs(db: Database.Database, projects: Project[]): Promis
   return seen.length;
 }
 
+/// Upserts the fetched Jira issues and deletes the todos that are gone.
+///
+/// Shared by the full cycle and the quick poll because of the reconcile guard
+/// below, not for tidiness: an empty Jira result on a setup that already has todos
+/// is far more likely a credential or Keychain problem than an empty board, and
+/// reconciling would delete every todo along with its done state. Duplicating that
+/// rule into a second caller is how you lose the lot.
+///
+/// Only call this when the fetch actually succeeded; a failed fetch must not be
+/// mistaken for an empty board.
+export function applyJiraIssues(
+  db: Database.Database,
+  projects: Project[],
+  issues: SourceIssue[]
+): number {
+  for (const issue of issues) {
+    const project = findProjectByKey(projects, 'jiraProjectKey', issue.projectKey);
+    upsertJiraTodo(db, issue, project);
+  }
+  const sourceIds = issues.map((issue) => issue.sourceId);
+  if (sourceIds.length > 0 || countJiraTodos(db) === 0) {
+    reconcileJiraTodos(db, sourceIds);
+  } else {
+    console.warn('Jira returned 0 issues while jira todos exist; skipping reconciliation this cycle');
+  }
+  return issues.length;
+}
+
+/// Jira and pull requests only, for the header's refresh button.
+///
+/// It deliberately skips the Sentry and GitHub issue pass, because that runs
+/// analyzeIssue (a Claude call) sequentially per new issue and would turn one click
+/// into a multi-minute wait. The interval poller still runs the full cycle, so
+/// nothing is lost, only delayed.
+export async function runQuickPoll(db: Database.Database): Promise<PollSummary> {
+  const projects = listProjects(db);
+  const summary: PollSummary = { jiraTodos: 0, ticketsCreated: 0, prsSynced: 0, sourceErrors: [] };
+
+  try {
+    summary.jiraTodos = applyJiraIssues(db, projects, await fetchAssignedJiraIssues());
+  } catch (err) {
+    summary.sourceErrors.push(`jira: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  try {
+    summary.prsSynced = await syncGithubPrs(db, projects);
+  } catch (err) {
+    summary.sourceErrors.push(`githubPrs: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  return summary;
+}
+
+// A cycle is unbounded (every analyzeIssue may take minutes), so two overlapping
+// cycles would analyse the same new issue twice. The guard lives out here rather
+// than inside startPoller's closure so the refresh endpoint respects it too.
+// Keyed by database, so one test's :memory: database cannot leak this into the next.
+const inFlight = new WeakMap<Database.Database, Promise<PollSummary>>();
+
+export function isPolling(db: Database.Database): boolean {
+  return inFlight.has(db);
+}
+
+/// Runs a cycle, or hands back the one already running. A caller that arrives
+/// mid-cycle rides along on it instead of starting a second one.
+export function pollOnce(
+  db: Database.Database,
+  run: (db: Database.Database) => Promise<PollSummary>
+): Promise<PollSummary> {
+  const existing = inFlight.get(db);
+  if (existing) return existing;
+
+  const promise = run(db).finally(() => { inFlight.delete(db); });
+  inFlight.set(db, promise);
+  return promise;
+}
+
 export async function runPollCycle(db: Database.Database): Promise<PollSummary> {
   const projects = listProjects(db);
   const summary: PollSummary = { jiraTodos: 0, ticketsCreated: 0, prsSynced: 0, sourceErrors: [] };
@@ -89,21 +166,8 @@ export async function runPollCycle(db: Database.Database): Promise<PollSummary> 
     else summary.sourceErrors.push(`${names[i]}: ${result.reason.message ?? String(result.reason)}`);
   });
 
-  for (const issue of issuesBySource[0]) {
-    const project = findProjectByKey(projects, 'jiraProjectKey', issue.projectKey);
-    upsertJiraTodo(db, issue, project);
-    summary.jiraTodos++;
-  }
   if (results[0].status === 'fulfilled') {
-    const sourceIds = issuesBySource[0].map((issue) => issue.sourceId);
-    // An empty Jira result on a setup that has Jira todos is more likely a
-    // credential or Keychain problem than a genuinely empty board, and
-    // reconciling would delete every todo with its done state. Skip instead.
-    if (sourceIds.length > 0 || countJiraTodos(db) === 0) {
-      reconcileJiraTodos(db, sourceIds);
-    } else {
-      console.warn('Jira returned 0 issues while jira todos exist; skipping reconciliation this cycle');
-    }
+    summary.jiraTodos = applyJiraIssues(db, projects, issuesBySource[0]);
   }
 
   for (const issue of [...issuesBySource[1], ...issuesBySource[2]]) {
@@ -136,23 +200,19 @@ export async function runPollCycle(db: Database.Database): Promise<PollSummary> 
 }
 
 export function startPoller(db: Database.Database, intervalMs: number = 5 * 60 * 1000): () => void {
-  let running = false;
-
   const tick = (): void => {
-    // A cycle is unbounded (every analyzeIssue may take minutes), so without
-    // this guard a slow cycle would overlap the next one and analyse the same
-    // issue twice.
-    if (running) {
+    // The timer skips rather than riding along: the interval comes round again
+    // shortly, and a warning is more useful than a silently queued duplicate. The
+    // refresh endpoint does ride along, because a user who clicked wants a result.
+    if (isPolling(db)) {
       console.warn('previous poll cycle is still running; skipping this one');
       return;
     }
-    running = true;
-    runPollCycle(db)
+    pollOnce(db, runPollCycle)
       .then((summary) => {
         for (const error of summary.sourceErrors) console.error('poll cycle error:', error);
       })
-      .catch((err) => console.error('poll cycle failed', err))
-      .finally(() => { running = false; });
+      .catch((err) => console.error('poll cycle failed', err));
   };
 
   tick();

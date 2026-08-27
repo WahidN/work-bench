@@ -6,6 +6,7 @@ import { registerProjectsRoutes } from './routes/projects.js';
 import { registerTodosRoutes } from './routes/todos.js';
 import { registerTicketsRoutes } from './routes/tickets.js';
 import { registerPrsRoutes } from './routes/prs.js';
+import { registerPollRoutes } from './routes/poll.js';
 
 export function createServer(db: Database.Database, apiToken: string): express.Express {
   const app = express();
@@ -24,6 +25,7 @@ export function createServer(db: Database.Database, apiToken: string): express.E
   registerTodosRoutes(app, db);
   registerTicketsRoutes(app, db);
   registerPrsRoutes(app, db);
+  registerPollRoutes(app, db);
 
   // Safety net: an uncaught throw in a route must never leave as an HTML error
   // page with a stack trace. Registered last so it sees every route's errors.

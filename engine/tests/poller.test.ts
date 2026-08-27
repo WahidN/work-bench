@@ -11,7 +11,7 @@ import * as analyze from '../src/analyze.js';
 import * as todos from '../src/todos.js';
 import { listPrs, upsertGithubPr } from '../src/prs.js';
 import { getSecret } from '../src/keychain.js';
-import { runPollCycle, startPoller } from '../src/poller.js';
+import { runPollCycle, startPoller, runQuickPoll, pollOnce, isPolling } from '../src/poller.js';
 
 vi.mock('../src/sources/jira.js');
 vi.mock('../src/sources/sentry.js');
@@ -275,5 +275,96 @@ describe('startPoller', () => {
     stop();
     releaseFetch!();
     await new Promise((r) => setTimeout(r, 10));
+  });
+});
+
+describe('runQuickPoll', () => {
+  it('fetches jira and pull requests and never analyses an issue', async () => {
+    vi.mocked(jiraSource.fetchAssignedJiraIssues).mockResolvedValue([
+      { source: 'jira', sourceId: 'JIRA-DEMO-1', title: '[DEMO-1] t', url: 'u', body: 'b', projectKey: 'DEMO' },
+    ]);
+
+    const summary = await runQuickPoll(db);
+
+    expect(summary.jiraTodos).toBe(1);
+    expect(todos.upsertJiraTodo).toHaveBeenCalledTimes(1);
+    expect(fetchMyOpenPrs).toHaveBeenCalledTimes(1);
+    // The whole point of the quick poll: no Claude, so no multi-minute click.
+    expect(analyze.analyzeIssue).not.toHaveBeenCalled();
+    expect(summary.ticketsCreated).toBe(0);
+    expect(sentrySource.fetchSentryIssues).not.toHaveBeenCalled();
+    expect(githubSource.fetchGithubIssues).not.toHaveBeenCalled();
+  });
+
+  it('records a jira failure as a source error and reconciles nothing', async () => {
+    vi.mocked(jiraSource.fetchAssignedJiraIssues).mockRejectedValue(new Error('401 unauthorized'));
+
+    const summary = await runQuickPoll(db);
+
+    expect(summary.sourceErrors).toEqual(['jira: 401 unauthorized']);
+    expect(todos.reconcileJiraTodos).not.toHaveBeenCalled();
+  });
+
+  it('still refuses to reconcile an empty jira result while todos exist', async () => {
+    vi.mocked(jiraSource.fetchAssignedJiraIssues).mockResolvedValue([]);
+    vi.mocked(todos.countJiraTodos).mockReturnValue(145);
+
+    await runQuickPoll(db);
+
+    expect(todos.reconcileJiraTodos).not.toHaveBeenCalled();
+  });
+
+  it('reconciles when jira genuinely returns issues', async () => {
+    vi.mocked(jiraSource.fetchAssignedJiraIssues).mockResolvedValue([
+      { source: 'jira', sourceId: 'JIRA-DEMO-1', title: '[DEMO-1] t', url: 'u', body: 'b', projectKey: 'DEMO' },
+    ]);
+    vi.mocked(todos.countJiraTodos).mockReturnValue(145);
+
+    await runQuickPoll(db);
+
+    expect(todos.reconcileJiraTodos).toHaveBeenCalledWith(db, ['JIRA-DEMO-1']);
+  });
+
+  it('records a pull request failure as a source error', async () => {
+    vi.mocked(fetchMyOpenPrs).mockRejectedValue(new Error('gh exploded'));
+
+    const summary = await runQuickPoll(db);
+
+    expect(summary.sourceErrors[0]).toContain('githubPrs: gh exploded');
+  });
+});
+
+describe('pollOnce', () => {
+  it('gives a second caller the cycle already running instead of starting another', async () => {
+    let release: () => void;
+    vi.mocked(jiraSource.fetchAssignedJiraIssues).mockReturnValueOnce(
+      new Promise((resolve) => { release = () => resolve([]); })
+    );
+
+    const first = pollOnce(db, runQuickPoll);
+    const second = pollOnce(db, runQuickPoll);
+
+    expect(second).toBe(first);
+    expect(isPolling(db)).toBe(true);
+
+    release!();
+    await first;
+
+    expect(isPolling(db)).toBe(false);
+    expect(jiraSource.fetchAssignedJiraIssues).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows a new cycle once the previous one finished', async () => {
+    await pollOnce(db, runQuickPoll);
+    expect(isPolling(db)).toBe(false);
+
+    await pollOnce(db, runQuickPoll);
+
+    expect(jiraSource.fetchAssignedJiraIssues).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears the guard when a cycle throws, so refresh is not wedged forever', async () => {
+    await expect(pollOnce(db, () => Promise.reject(new Error('nope')))).rejects.toThrow('nope');
+    expect(isPolling(db)).toBe(false);
   });
 });
