@@ -29,15 +29,18 @@ struct DiffView: View {
     private func isAddition(_ line: String) -> Bool { line.hasPrefix("+") && !line.hasPrefix("+++") }
     private func isDeletion(_ line: String) -> Bool { line.hasPrefix("-") && !line.hasPrefix("---") }
 
+    // These are the tokens PrDiffView already uses for the same three line kinds.
+    // The app has two diff renderers, so they have to name the same colours or
+    // removed lines end up in two different reds.
     private func backgroundColor(for line: String) -> Color {
-        if isAddition(line) { return Theme.positive.opacity(0.12) }
-        if isDeletion(line) { return Theme.negative.opacity(0.12) }
+        if isAddition(line) { return Theme.Status.approved.opacity(0.12) }
+        if isDeletion(line) { return Theme.Status.changesRequested.opacity(0.12) }
         return .clear
     }
 
     private func foregroundColor(for line: String) -> Color {
-        if isAddition(line) { return Theme.positive }
-        if isDeletion(line) { return Theme.negative }
-        return Theme.Neutral.n500
+        if isAddition(line) { return Theme.Status.approved }
+        if isDeletion(line) { return Theme.Status.changesRequested }
+        return Theme.Neutral.n400
     }
 }

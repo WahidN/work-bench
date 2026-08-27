@@ -54,11 +54,13 @@ extension Theme {
         static let draft = Neutral.n500
     }
 
-    /// Added lines and a completed action. The handoff's low-chroma green, the same
-    /// value Status.approved uses.
-    static let positive = Color(hex: "8FBF9F")
-    /// Removed lines and validation errors. The handoff's low-chroma red. Kept
-    /// top-level rather than inside Status, because a form error is not a status.
+    /// Validation errors. The handoff's low-chroma red, and a different hue from
+    /// Status.changesRequested on purpose: a form error is not a review state.
+    /// Kept top-level rather than inside Status for the same reason.
+    ///
+    /// There is deliberately no matching `positive`: it would duplicate
+    /// Status.approved's hex, and diff and merge affordances use that instead so
+    /// the two diff renderers cannot drift apart.
     static let negative = Color(hex: "C49A9A")
 
     static let sidebarGradientTop = Color(hex: "1A1C2B")
