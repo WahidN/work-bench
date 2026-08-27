@@ -10,11 +10,12 @@ struct Sidebar: View {
     let selectedProject: Project?
     let onSelect: (SidebarSection) -> Void
     let onSelectProject: (Project) -> Void
+    let onOpenPalette: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s6) {
             brandRow
-            SearchButton()
+            SearchButton(action: onOpenPalette)
             navRows
             projectsList
             footer
@@ -141,10 +142,11 @@ struct Sidebar: View {
 }
 
 private struct SearchButton: View {
+    let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: {}) {
+        Button(action: action) {
             HStack {
                 HStack(spacing: Theme.Space.s2) {
                     Image(systemName: "magnifyingglass")

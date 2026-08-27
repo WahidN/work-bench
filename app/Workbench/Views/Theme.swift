@@ -73,6 +73,11 @@ extension Theme {
     static let nocturneAccent = Color(hex: "9184D9")
     static let nocturneDivider = Color(hex: "E9E9ED").opacity(0.16)
 
+    // The palette's own surface and backdrop, from handoff section 8. It sits on a
+    // tone of its own, between the sidebar's #1a1c2b and the surface #232532.
+    static let paletteSurface = Color(hex: "1C1E2C")
+    static let paletteBackdrop = Color(hex: "0A0B12").opacity(0.6)
+
     static let projectDotColors: [Color] = [
         nocturneAccent,
         Color(hex: "7EA8C4"),
