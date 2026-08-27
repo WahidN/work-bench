@@ -186,6 +186,11 @@ struct ContentView: View {
         .onChange(of: todayViewModel.needsInput.count) { _, newCount in
             appDelegate.updateBadge(count: newCount)
         }
+        .focusedSceneValue(\.paletteCommands, PaletteCommands(
+            openPalette: openPalette,
+            navigate: navigate(to:),
+            askAgent: openProjectChat
+        ))
     }
 
     @ViewBuilder

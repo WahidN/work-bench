@@ -9,5 +9,6 @@ struct WorkbenchApp: App {
             ContentView()
                 .environment(appDelegate)
         }
+        .commands { GoCommands() }
     }
 }
