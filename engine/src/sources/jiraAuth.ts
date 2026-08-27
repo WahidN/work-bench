@@ -5,6 +5,9 @@ import { getSecret, setSecret } from '../keychain.js';
 const AUTH_HOST = 'https://auth.atlassian.com';
 const API_HOST = 'https://api.atlassian.com';
 const STATE_TTL_MS = 10 * 60 * 1000;
+// Refresh a minute before expiry rather than on it, so a request that starts just
+// before the boundary does not arrive with a token that died in flight.
+const REFRESH_MARGIN_MS = 60 * 1000;
 
 /// The exact string Atlassian must be configured with. Assembled once, here.
 export const JIRA_REDIRECT_URI = `http://localhost:${ENGINE_PORT}/oauth/jira/callback`;
@@ -64,9 +67,54 @@ export interface JiraSite {
 }
 
 let cachedAccessToken: { value: string; expiresAt: number } | null = null;
+let refreshInFlight: Promise<string> | null = null;
 
 function cacheAccessToken(value: string, expiresInSeconds: number): void {
   cachedAccessToken = { value, expiresAt: Date.now() + expiresInSeconds * 1000 };
+}
+
+/// The one way to get a bearer token for Jira. Refreshes when needed, and never more
+/// than once at a time: Atlassian rotates the refresh token on every use, so two
+/// concurrent refreshes would spend it twice and silently log the user out.
+export async function getAccessToken(): Promise<string> {
+  if (cachedAccessToken && cachedAccessToken.expiresAt - Date.now() > REFRESH_MARGIN_MS) {
+    return cachedAccessToken.value;
+  }
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = refreshAccessToken().finally(() => { refreshInFlight = null; });
+  return refreshInFlight;
+}
+
+async function refreshAccessToken(): Promise<string> {
+  const clientId = await getSecret('jira-client-id');
+  const clientSecret = await getSecret('jira-client-secret');
+  const refreshToken = await getSecret('jira-refresh-token');
+  if (!clientId || !clientSecret || !refreshToken) throw new Error('Jira is not connected');
+
+  const res = await fetch(`${AUTH_HOST}/oauth/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      grant_type: 'refresh_token',
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+    }),
+  });
+  if (!res.ok) {
+    // The stored token is deliberately left alone. It may still be good and this may
+    // be transient; discarding the only way back in on a 500 would force a needless
+    // re-login.
+    throw new Error(`Jira login expired, reconnect in Settings (${res.status} refreshing the token)`);
+  }
+
+  const data: any = await res.json();
+  // Persisted before the access token is handed out. A crash between receiving the
+  // rotated token and storing it breaks the chain and forces a full re-login.
+  if (data.refresh_token) await setSecret('jira-refresh-token', data.refresh_token);
+  cacheAccessToken(data.access_token, data.expires_in);
+  return data.access_token;
 }
 
 export async function fetchAccessibleSites(accessToken: string): Promise<JiraSite[]> {
@@ -125,4 +173,5 @@ export async function exchangeCode(code: string, verifier: string): Promise<void
 export function resetJiraAuthStateForTests(): void {
   pendingStates.clear();
   cachedAccessToken = null;
+  refreshInFlight = null;
 }

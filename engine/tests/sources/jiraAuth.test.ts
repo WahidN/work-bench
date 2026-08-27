@@ -9,6 +9,7 @@ import {
   resetJiraAuthStateForTests,
   exchangeCode,
   fetchAccessibleSites,
+  getAccessToken,
 } from '../../src/sources/jiraAuth.js';
 import { getSecret, setSecret } from '../../src/keychain.js';
 
@@ -247,5 +248,109 @@ describe('fetchAccessibleSites', () => {
     stubAtlassian({ sites: { status: 403 } });
 
     await expect(fetchAccessibleSites('at-1')).rejects.toThrow(/site lookup failed \(403\)/);
+  });
+});
+
+describe('getAccessToken', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetJiraAuthStateForTests();
+    stubSecrets({
+      'jira-client-id': 'client-abc',
+      'jira-client-secret': 'secret-xyz',
+      'jira-refresh-token': 'rt-old',
+    });
+  });
+
+  afterEach(() => { globalThis.fetch = realFetch; });
+
+  it('refreshes with the stored token and returns the new access token', async () => {
+    const captured = stubAtlassian({
+      token: { body: { access_token: 'at-new', refresh_token: 'rt-new', expires_in: 3600 } },
+    });
+
+    expect(await getAccessToken()).toBe('at-new');
+    expect(captured.tokenBodies()[0]).toEqual({
+      grant_type: 'refresh_token',
+      client_id: 'client-abc',
+      client_secret: 'secret-xyz',
+      refresh_token: 'rt-old',
+    });
+  });
+
+  // Atlassian kills the old refresh token when it issues a new one.
+  it('stores the rotated refresh token', async () => {
+    stubAtlassian({ token: { body: { access_token: 'at-new', refresh_token: 'rt-new', expires_in: 3600 } } });
+
+    await getAccessToken();
+
+    expect(setSecret).toHaveBeenCalledWith('jira-refresh-token', 'rt-new');
+  });
+
+  it('reuses a cached token instead of refreshing again', async () => {
+    const captured = stubAtlassian({ token: { body: { access_token: 'at-new', refresh_token: 'rt-new', expires_in: 3600 } } });
+
+    await getAccessToken();
+    await getAccessToken();
+
+    expect(captured.tokenBodies()).toHaveLength(1);
+  });
+
+  it('refreshes again once the cached token is inside the last minute of its life', async () => {
+    const captured = stubAtlassian({ token: { body: { access_token: 'at-new', refresh_token: 'rt-new', expires_in: 120 } } });
+
+    vi.useFakeTimers();
+    await getAccessToken();
+    vi.advanceTimersByTime(70 * 1000);
+    await getAccessToken();
+
+    expect(captured.tokenBodies()).toHaveLength(2);
+  });
+
+  // Two concurrent refreshes would each spend the rotating token; one wins and the
+  // loser's token is dead, silently logging the user out.
+  it('performs one token request for two concurrent callers', async () => {
+    let release: (value: any) => void;
+    const gate = new Promise((resolve) => { release = resolve; });
+    let tokenCalls = 0;
+    globalThis.fetch = vi.fn(async (url: any) => {
+      if (String(url).includes('/oauth/token')) {
+        tokenCalls++;
+        await gate;
+        return { ok: true, status: 200, json: async () => ({ access_token: 'at-new', refresh_token: 'rt-new', expires_in: 3600 }) } as any;
+      }
+      throw new Error('unexpected fetch');
+    }) as any;
+
+    const first = getAccessToken();
+    const second = getAccessToken();
+    release!(null);
+
+    expect(await first).toBe('at-new');
+    expect(await second).toBe('at-new');
+    expect(tokenCalls).toBe(1);
+  });
+
+  it('asks the user to reconnect when the refresh is rejected, and keeps the stored token', async () => {
+    stubAtlassian({ token: { status: 400, body: { error: 'invalid_grant' } } });
+
+    await expect(getAccessToken()).rejects.toThrow(/reconnect in Settings/);
+    expect(setSecret).not.toHaveBeenCalledWith('jira-refresh-token', expect.anything());
+  });
+
+  it('allows a later attempt after a failure instead of wedging', async () => {
+    stubAtlassian({ token: { status: 400 } });
+    await expect(getAccessToken()).rejects.toThrow();
+
+    const captured = stubAtlassian({ token: { body: { access_token: 'at-new', refresh_token: 'rt-new', expires_in: 3600 } } });
+    expect(await getAccessToken()).toBe('at-new');
+    expect(captured.tokenBodies()).toHaveLength(1);
+  });
+
+  it('says Jira is not connected when there is no refresh token', async () => {
+    stubSecrets({ 'jira-client-id': 'client-abc', 'jira-client-secret': 'secret-xyz' });
+    stubAtlassian({});
+
+    await expect(getAccessToken()).rejects.toThrow(/not connected/);
   });
 });
