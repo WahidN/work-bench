@@ -30,6 +30,8 @@ struct ContentView: View {
     @State private var projectsViewModel = ProjectsViewModel()
     @State private var agentChatViewModel = AgentChatViewModel()
     @State private var refreshViewModel = RefreshViewModel()
+    @State private var settingsViewModel = SettingsViewModel()
+    @State private var isSettingsOpen = false
     @State private var jiraViewModel = JiraViewModel()
     @State private var projectSheet: ProjectSheetMode?
     @State private var selectedPr: PullRequest?
@@ -50,7 +52,8 @@ struct ContentView: View {
                 selectedProject: projectsViewModel.selectedProject,
                 onSelect: { section in navigate(to: section) },
                 onSelectProject: { project in openProject(project) },
-                onOpenPalette: openPalette
+                onOpenPalette: openPalette,
+                onOpenSettings: { isSettingsOpen = true }
             )
             VStack(spacing: 0) {
                 AppHeader(
@@ -109,6 +112,14 @@ struct ContentView: View {
             // Resetting the selection is what makes Enter right after typing hit the
             // add-task row rather than whatever the arrows last landed on.
             .onChange(of: paletteQuery) { paletteSelection = 0 }
+            .sheet(isPresented: $isSettingsOpen) {
+                // Closing stops the polling, so an unanswered browser trip does not
+                // keep asking the engine in the background.
+                SettingsSheet(viewModel: settingsViewModel, onClose: {
+                    settingsViewModel.stopPolling()
+                    isSettingsOpen = false
+                })
+            }
             .sheet(item: $projectSheet) { mode in
                 let canDelete: Bool = {
                     if case .edit = mode { return true }

@@ -11,6 +11,7 @@ struct Sidebar: View {
     let onSelect: (SidebarSection) -> Void
     let onSelectProject: (Project) -> Void
     let onOpenPalette: () -> Void
+    let onOpenSettings: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s6) {
@@ -131,7 +132,7 @@ struct Sidebar: View {
                 .font(.system(size: Theme.FontSize.tableMeta))
                 .foregroundStyle(Theme.Neutral.n400)
             Spacer()
-            FooterGearButton()
+            FooterGearButton(action: onOpenSettings)
         }
         .padding(.vertical, Theme.Space.s2)
         .padding(.horizontal, Theme.Space.s3)
@@ -172,10 +173,11 @@ private struct SearchButton: View {
 }
 
 private struct FooterGearButton: View {
+    let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: {}) {
+        Button(action: action) {
             Image(systemName: "gearshape")
                 .font(.system(size: 14))
                 .padding(Theme.Space.s2)
