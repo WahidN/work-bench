@@ -29,6 +29,7 @@ struct ContentView: View {
     @State private var prsViewModel = PRsViewModel()
     @State private var projectsViewModel = ProjectsViewModel()
     @State private var agentChatViewModel = AgentChatViewModel()
+    @State private var refreshViewModel = RefreshViewModel()
     @State private var jiraViewModel = JiraViewModel()
     @State private var projectSheet: ProjectSheetMode?
     @State private var selectedPr: PullRequest?
@@ -58,7 +59,9 @@ struct ContentView: View {
                     kickerOverride: prHeaderKicker ?? projectHeaderKicker,
                     headingOverride: prHeaderHeading ?? projectHeaderHeading,
                     onOpenAgent: openProjectChat,
-                    onAddProject: { projectSheet = .create }
+                    onAddProject: { projectSheet = .create },
+                    isRefreshing: refreshViewModel.isRefreshing,
+                    onRefresh: refresh
                 )
                 content
             }
@@ -191,6 +194,19 @@ struct ContentView: View {
             navigate: navigate(to:),
             askAgent: openProjectChat
         ))
+        // A poll can fail per source, so this is also where an expired Jira token
+        // finally becomes visible instead of only reaching the engine's console.
+        .alert(
+            "Refresh",
+            isPresented: Binding(
+                get: { refreshViewModel.errorMessage != nil },
+                set: { if !$0 { refreshViewModel.errorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(refreshViewModel.errorMessage ?? "")
+        }
     }
 
     @ViewBuilder
@@ -322,6 +338,20 @@ struct ContentView: View {
 
     private func openAgent(_ target: AgentChatTarget) {
         Task { await agentChatViewModel.open(target) }
+    }
+
+    /// Asks the engine to fetch Jira and pull requests now, then reloads every list
+    /// that could have changed. The view model owns the busy guard, so a second
+    /// click while one is in flight is a no-op rather than a second poll.
+    private func refresh() {
+        Task {
+            guard await refreshViewModel.refresh() else { return }
+            await todayViewModel.load()
+            await ticketsViewModel.load()
+            await prsViewModel.load()
+            await jiraViewModel.load()
+            await projectsViewModel.load()
+        }
     }
 
     private func openTodoChat(_ todo: Todo) {

@@ -139,6 +139,12 @@ extension APIClient {
         try await send("PATCH", "/todos/\(id)/pin", body: ["pinned": pinned])
     }
 
+    /// Fetches Jira and pull requests now, rather than waiting for the engine's
+    /// 5 minute cycle. Deliberately does not analyse new Sentry or GitHub issues.
+    func poll() async throws -> PollSummary {
+        try await send("POST", "/poll", body: nil)
+    }
+
     func todoMessages(id: Int) async throws -> [TodoMessage] {
         try await send("GET", "/todos/\(id)/messages", body: nil)
     }

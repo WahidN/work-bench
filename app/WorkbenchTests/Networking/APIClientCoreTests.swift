@@ -76,4 +76,23 @@ struct APIClientCoreTests {
         let decoded = try JSONSerialization.jsonObject(with: capturedBody ?? Data()) as? [String: String]
         #expect(decoded?["text"] == "renew SSL cert")
     }
+
+    @Test func pollPostsAndDecodesTheSummary() async throws {
+        var capturedPath: String?
+        var capturedMethod: String?
+        let session = mockedSession { request in
+            capturedPath = request.url?.path
+            capturedMethod = request.httpMethod
+            return jsonResponse(request.url!, status: 200, body: """
+            {"jiraTodos":12,"ticketsCreated":0,"prsSynced":3,"sourceErrors":["jira: 401 unauthorized"]}
+            """)
+        }
+        let summary = try await APIClient(session: session, keychain: StubSecretStore()).poll()
+
+        #expect(capturedPath == "/poll")
+        #expect(capturedMethod == "POST")
+        #expect(summary.jiraTodos == 12)
+        #expect(summary.prsSynced == 3)
+        #expect(summary.sourceErrors == ["jira: 401 unauthorized"])
+    }
 }
