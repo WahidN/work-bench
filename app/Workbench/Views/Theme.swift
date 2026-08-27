@@ -63,6 +63,13 @@ extension Theme {
         static let draft = Neutral.n500
     }
 
+    /// Added lines and a completed action. The handoff's low-chroma green, the same
+    /// value Status.approved uses.
+    static let positive = Color(hex: "8FBF9F")
+    /// Removed lines and validation errors. The handoff's low-chroma red. Kept
+    /// top-level rather than inside Status, because a form error is not a status.
+    static let negative = Color(hex: "C49A9A")
+
     static let sidebarGradientTop = Color(hex: "1A1C2B")
     // The slide-over panel shares the sidebar's raised tone (#1a1c2b).
     static let panelBackground = sidebarGradientTop

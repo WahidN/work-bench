@@ -36,6 +36,11 @@ private func expectHex(_ color: Color, _ hex: String) {
     expectHex(Theme.Accent.a900, "2B2741")
 }
 
+@Test func positiveAndNegativeUseTheHandoffsLowChromaHues() {
+    expectHex(Theme.positive, "8FBF9F")
+    expectHex(Theme.negative, "C49A9A")
+}
+
 @Test func baseNocturneTokensMatchDesignTokens() {
     expectHex(Theme.nocturneBg, "161826")
     expectHex(Theme.nocturneSurface, "232532")

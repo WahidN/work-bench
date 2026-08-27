@@ -22,7 +22,7 @@ struct DiffView: View {
                 }
             }
         }
-        .background(Theme.cardBackground)
+        .background(Theme.nocturneBg)
         .cornerRadius(8)
     }
 
@@ -30,14 +30,14 @@ struct DiffView: View {
     private func isDeletion(_ line: String) -> Bool { line.hasPrefix("-") && !line.hasPrefix("---") }
 
     private func backgroundColor(for line: String) -> Color {
-        if isAddition(line) { return Theme.success.opacity(0.12) }
-        if isDeletion(line) { return Theme.danger.opacity(0.12) }
+        if isAddition(line) { return Theme.positive.opacity(0.12) }
+        if isDeletion(line) { return Theme.negative.opacity(0.12) }
         return .clear
     }
 
     private func foregroundColor(for line: String) -> Color {
-        if isAddition(line) { return Theme.success }
-        if isDeletion(line) { return Theme.danger }
-        return Theme.textSecondary
+        if isAddition(line) { return Theme.positive }
+        if isDeletion(line) { return Theme.negative }
+        return Theme.Neutral.n500
     }
 }
