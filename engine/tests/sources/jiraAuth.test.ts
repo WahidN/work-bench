@@ -10,8 +10,12 @@ import {
   exchangeCode,
   fetchAccessibleSites,
   getAccessToken,
+  getConnection,
+  chooseSite,
+  disconnect,
+  saveClientCredentials,
 } from '../../src/sources/jiraAuth.js';
-import { getSecret, setSecret } from '../../src/keychain.js';
+import { getSecret, setSecret, deleteSecret } from '../../src/keychain.js';
 
 vi.mock('../../src/keychain.js');
 
@@ -352,5 +356,174 @@ describe('getAccessToken', () => {
     stubAtlassian({});
 
     await expect(getAccessToken()).rejects.toThrow(/not connected/);
+  });
+});
+
+const fullyConnectedSecrets = {
+  'jira-client-id': 'client-abc',
+  'jira-client-secret': 'secret-xyz',
+  'jira-refresh-token': 'rt-1',
+  'jira-cloud-id': 'cloud-1',
+  'jira-site-url': 'https://demo.atlassian.net',
+  'jira-site-name': 'Demo',
+};
+
+describe('getConnection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetJiraAuthStateForTests();
+  });
+
+  afterEach(() => { globalThis.fetch = realFetch; });
+
+  it('reports a fresh install as unconfigured, and always gives the callback url', async () => {
+    stubSecrets({});
+    stubAtlassian({});
+
+    const connection = await getConnection();
+
+    expect(connection.hasClientCredentials).toBe(false);
+    expect(connection.connected).toBe(false);
+    expect(connection.siteUrl).toBeNull();
+    expect(connection.availableSites).toEqual([]);
+    expect(connection.callbackUrl).toBe(JIRA_REDIRECT_URI);
+  });
+
+  it('reports client credentials without a connection', async () => {
+    stubSecrets({ 'jira-client-id': 'client-abc', 'jira-client-secret': 'secret-xyz' });
+    stubAtlassian({});
+
+    const connection = await getConnection();
+
+    expect(connection.hasClientCredentials).toBe(true);
+    expect(connection.connected).toBe(false);
+  });
+
+  it('reports a finished connection with its site', async () => {
+    stubSecrets(fullyConnectedSecrets);
+    stubAtlassian({});
+
+    const connection = await getConnection();
+
+    expect(connection.connected).toBe(true);
+    expect(connection.siteUrl).toBe('https://demo.atlassian.net');
+    expect(connection.siteName).toBe('Demo');
+    expect(connection.availableSites).toEqual([]);
+  });
+
+  // Covers an engine restart between consent and choosing a site: re-resolving here
+  // means that state never needs a fresh consent.
+  it('offers the sites again when consent happened but no site was chosen', async () => {
+    stubSecrets({
+      'jira-client-id': 'client-abc', 'jira-client-secret': 'secret-xyz', 'jira-refresh-token': 'rt-1',
+    });
+    stubAtlassian({
+      token: { body: { access_token: 'at-1', refresh_token: 'rt-2', expires_in: 3600 } },
+      sites: { body: [
+        { id: 'cloud-1', url: 'https://one.atlassian.net', name: 'One' },
+        { id: 'cloud-2', url: 'https://two.atlassian.net', name: 'Two' },
+      ] },
+    });
+
+    const connection = await getConnection();
+
+    expect(connection.connected).toBe(false);
+    expect(connection.availableSites.map((site) => site.name)).toEqual(['One', 'Two']);
+  });
+
+  it('does not blow up when the site lookup fails while resolving candidates', async () => {
+    stubSecrets({
+      'jira-client-id': 'client-abc', 'jira-client-secret': 'secret-xyz', 'jira-refresh-token': 'rt-1',
+    });
+    stubAtlassian({ token: { status: 400 } });
+
+    const connection = await getConnection();
+
+    expect(connection.availableSites).toEqual([]);
+    expect(connection.connected).toBe(false);
+  });
+
+  it('never returns a secret or a token', async () => {
+    stubSecrets(fullyConnectedSecrets);
+    stubAtlassian({});
+
+    const serialised = JSON.stringify(await getConnection());
+
+    expect(serialised).not.toContain('secret-xyz');
+    expect(serialised).not.toContain('rt-1');
+    expect(serialised).not.toContain('client-abc');
+  });
+});
+
+describe('chooseSite', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetJiraAuthStateForTests();
+    stubSecrets({
+      'jira-client-id': 'client-abc', 'jira-client-secret': 'secret-xyz', 'jira-refresh-token': 'rt-1',
+    });
+  });
+
+  afterEach(() => { globalThis.fetch = realFetch; });
+
+  it('stores the chosen site', async () => {
+    stubAtlassian({
+      token: { body: { access_token: 'at-1', refresh_token: 'rt-2', expires_in: 3600 } },
+      sites: { body: [
+        { id: 'cloud-1', url: 'https://one.atlassian.net', name: 'One' },
+        { id: 'cloud-2', url: 'https://two.atlassian.net', name: 'Two' },
+      ] },
+    });
+
+    await chooseSite('cloud-2');
+
+    expect(setSecret).toHaveBeenCalledWith('jira-cloud-id', 'cloud-2');
+    expect(setSecret).toHaveBeenCalledWith('jira-site-url', 'https://two.atlassian.net');
+    expect(setSecret).toHaveBeenCalledWith('jira-site-name', 'Two');
+  });
+
+  it('refuses a site the user has no access to', async () => {
+    stubAtlassian({
+      token: { body: { access_token: 'at-1', refresh_token: 'rt-2', expires_in: 3600 } },
+      sites: { body: [{ id: 'cloud-1', url: 'https://one.atlassian.net', name: 'One' }] },
+    });
+
+    await expect(chooseSite('cloud-999')).rejects.toThrow(/not one you have access to/);
+    expect(setSecret).not.toHaveBeenCalledWith('jira-cloud-id', 'cloud-999');
+  });
+});
+
+describe('disconnect', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetJiraAuthStateForTests();
+  });
+
+  it('removes the connection but keeps the client credentials', async () => {
+    await disconnect();
+
+    const removed = vi.mocked(deleteSecret).mock.calls.map((call) => call[0]);
+    expect(removed).toEqual(
+      expect.arrayContaining(['jira-refresh-token', 'jira-cloud-id', 'jira-site-url', 'jira-site-name'])
+    );
+    expect(removed).not.toContain('jira-client-id');
+    expect(removed).not.toContain('jira-client-secret');
+  });
+
+  it('survives items that were never there', async () => {
+    vi.mocked(deleteSecret).mockRejectedValue(new Error('not found'));
+
+    await expect(disconnect()).resolves.toBeUndefined();
+  });
+});
+
+describe('saveClientCredentials', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('stores both halves', async () => {
+    await saveClientCredentials('client-abc', 'secret-xyz');
+
+    expect(setSecret).toHaveBeenCalledWith('jira-client-id', 'client-abc');
+    expect(setSecret).toHaveBeenCalledWith('jira-client-secret', 'secret-xyz');
   });
 });

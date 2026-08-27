@@ -1,6 +1,6 @@
 import { randomBytes, createHash } from 'node:crypto';
 import { ENGINE_PORT } from '../config.js';
-import { getSecret, setSecret } from '../keychain.js';
+import { getSecret, setSecret, deleteSecret } from '../keychain.js';
 
 const AUTH_HOST = 'https://auth.atlassian.com';
 const API_HOST = 'https://api.atlassian.com';
@@ -165,6 +165,82 @@ export async function exchangeCode(code: string, verifier: string): Promise<void
   // getConnection re-resolves them, so an engine restart in between is harmless.
   const sites = await fetchAccessibleSites(data.access_token);
   if (sites.length === 1) await persistSite(sites[0]);
+}
+
+export interface JiraConnection {
+  hasClientCredentials: boolean;
+  connected: boolean;
+  siteUrl: string | null;
+  siteName: string | null;
+  /// Non-empty only while a site still has to be chosen.
+  availableSites: JiraSite[];
+  /// The exact value to paste into the Atlassian console, so the user never retypes it.
+  callbackUrl: string;
+}
+
+export async function saveClientCredentials(clientId: string, clientSecret: string): Promise<void> {
+  await setSecret('jira-client-id', clientId);
+  await setSecret('jira-client-secret', clientSecret);
+}
+
+/// Only the id, never the secret, and only so the authorize URL can be built.
+export async function getClientId(): Promise<string> {
+  const clientId = await getSecret('jira-client-id');
+  if (!clientId) throw new Error('Jira client credentials are not set');
+  return clientId;
+}
+
+export async function getConnection(): Promise<JiraConnection> {
+  const [clientId, clientSecret, refreshToken, cloudId, siteUrl, siteName] = await Promise.all([
+    getSecret('jira-client-id'),
+    getSecret('jira-client-secret'),
+    getSecret('jira-refresh-token'),
+    getSecret('jira-cloud-id'),
+    getSecret('jira-site-url'),
+    getSecret('jira-site-name'),
+  ]);
+
+  let availableSites: JiraSite[] = [];
+  // Consent happened but no site was chosen, which also covers an engine restart in
+  // between. Resolving here means that state never needs a fresh consent. A failure
+  // is swallowed: the status endpoint must answer even when Atlassian is unreachable.
+  if (refreshToken && !cloudId) {
+    try {
+      availableSites = await fetchAccessibleSites(await getAccessToken());
+    } catch {
+      availableSites = [];
+    }
+  }
+
+  return {
+    hasClientCredentials: !!clientId && !!clientSecret,
+    connected: !!refreshToken && !!cloudId && !!siteUrl,
+    siteUrl: siteUrl ?? null,
+    siteName: siteName ?? null,
+    availableSites,
+    callbackUrl: JIRA_REDIRECT_URI,
+  };
+}
+
+export async function chooseSite(cloudId: string): Promise<void> {
+  const sites = await fetchAccessibleSites(await getAccessToken());
+  const site = sites.find((candidate) => candidate.id === cloudId);
+  if (!site) throw new Error('That Jira site is not one you have access to');
+  await persistSite(site);
+}
+
+export async function disconnect(): Promise<void> {
+  // The client credentials stay, so reconnecting does not mean pasting them again.
+  for (const account of ['jira-refresh-token', 'jira-cloud-id', 'jira-site-url', 'jira-site-name']) {
+    // deleteSecret throws when the item was never there, which is not a failure here.
+    try {
+      await deleteSecret(account);
+    } catch {
+      // nothing to remove
+    }
+  }
+  cachedAccessToken = null;
+  refreshInFlight = null;
 }
 
 /// Test seam. This module holds process-wide state on purpose (pending states, and
