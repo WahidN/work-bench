@@ -3,8 +3,7 @@ import { reconcileInterruptedJobs } from './jobs.js';
 import { getOrCreateApiToken } from './keychain.js';
 import { startPoller } from './poller.js';
 import { createServer } from './api/server.js';
-
-const PORT = 4173;
+import { ENGINE_PORT } from './config.js';
 
 async function main(): Promise<void> {
   const db = openDb(DB_PATH);
@@ -17,8 +16,8 @@ async function main(): Promise<void> {
   const app = createServer(db, apiToken);
   // Loopback only: this API runs claude -p with Bash enabled and gh pr merge,
   // so it must never be reachable from the LAN.
-  const server = app.listen(PORT, '127.0.0.1', () => {
-    console.log(`Workbench engine listening on http://localhost:${PORT}`);
+  const server = app.listen(ENGINE_PORT, '127.0.0.1', () => {
+    console.log(`Workbench engine listening on http://localhost:${ENGINE_PORT}`);
   });
 
   const shutdown = () => {
