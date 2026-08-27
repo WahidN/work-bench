@@ -79,7 +79,7 @@ struct ProjectFormSheet: View {
             if let errorMessage {
                 Text(errorMessage)
                     .font(.system(size: Theme.FontSize.tableMeta))
-                    .foregroundStyle(Theme.danger)
+                    .foregroundStyle(Theme.negative)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -97,7 +97,7 @@ struct ProjectFormSheet: View {
                 if let onDelete {
                     Button("Remove project", role: .destructive, action: onDelete)
                         .buttonStyle(.plain)
-                        .foregroundStyle(Theme.danger)
+                        .foregroundStyle(Theme.negative)
                 }
             }
         }

@@ -36,6 +36,13 @@ private func expectHex(_ color: Color, _ hex: String) {
     expectHex(Theme.Accent.a900, "2B2741")
 }
 
+@Test func negativeUsesTheHandoffsLowChromaRedAndIsNotAStatusHue() {
+    expectHex(Theme.negative, "C49A9A")
+    // Distinct from the review-state red on purpose. If these two ever converge,
+    // one of them has lost its meaning.
+    expectHex(Theme.Status.changesRequested, "C49AB0")
+}
+
 @Test func baseNocturneTokensMatchDesignTokens() {
     expectHex(Theme.nocturneBg, "161826")
     expectHex(Theme.nocturneSurface, "232532")

@@ -261,10 +261,10 @@ private struct MergeButton: View {
                 .padding(.horizontal, Theme.Space.s3)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(Theme.success)
+        .foregroundStyle(Theme.Status.approved)
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
-                .strokeBorder(Theme.success, lineWidth: 1)
+                .strokeBorder(Theme.Status.approved, lineWidth: 1)
         )
         .disabled(isBusy)
         .opacity(isBusy ? 0.5 : 1)
