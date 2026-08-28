@@ -25,8 +25,8 @@ beforeEach(() => {
     name: 'demo', repoPath: '/repos/demo', defaultBranch: 'main',
     githubRepo: null, jiraProjectKey: 'DEMO', sentryProjectSlug: null,
   });
-  upsertJiraTodo(db, { source: 'jira', sourceId: 'JIRA-DEMO-1', title: 'Update env vars', url: 'u', body: 'b', projectKey: 'DEMO' }, project);
-  upsertJiraTodo(db, { source: 'jira', sourceId: 'JIRA-DEMO-2', title: 'Renew cert', url: 'u', body: 'b', projectKey: 'DEMO' }, project);
+  upsertJiraTodo(db, { source: 'jira', sourceId: 'JIRA-DEMO-1', title: 'Update env vars', url: 'u', body: 'b', projectKey: 'DEMO', statusName: null, statusCategory: null }, project);
+  upsertJiraTodo(db, { source: 'jira', sourceId: 'JIRA-DEMO-2', title: 'Renew cert', url: 'u', body: 'b', projectKey: 'DEMO', statusName: null, statusCategory: null }, project);
 
   vi.mocked(jiraSource.fetchAssignedJiraIssues).mockResolvedValue([]);
   vi.mocked(sentrySource.fetchSentryIssues).mockResolvedValue([]);
@@ -43,7 +43,7 @@ describe('runPollCycle jira todo safety', () => {
 
   it('still removes a jira todo that is genuinely gone from a non-empty result', async () => {
     vi.mocked(jiraSource.fetchAssignedJiraIssues).mockResolvedValue([
-      { source: 'jira', sourceId: 'JIRA-DEMO-1', title: 'Update env vars', url: 'u', body: 'b', projectKey: 'DEMO' },
+      { source: 'jira', sourceId: 'JIRA-DEMO-1', title: 'Update env vars', url: 'u', body: 'b', projectKey: 'DEMO', statusName: null, statusCategory: null },
     ]);
 
     await runPollCycle(db);

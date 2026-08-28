@@ -47,7 +47,7 @@ beforeEach(() => {
 describe('runPollCycle', () => {
   it('creates a new ticket with analysis for a fresh GitHub issue', async () => {
     vi.mocked(githubSource.fetchGithubIssues).mockResolvedValue([
-      { source: 'github', sourceId: 'GH-linku/demo#1', title: 'Crash', url: 'u', body: 'b', projectKey: 'linku/demo' },
+      { source: 'github', sourceId: 'GH-linku/demo#1', title: 'Crash', url: 'u', body: 'b', projectKey: 'linku/demo', statusName: null, statusCategory: null },
     ]);
     vi.mocked(analyze.analyzeIssue).mockResolvedValue({
       summary: 's', rootCause: 'r', proposedFix: 'p', affectedFiles: [], confidence: 'high',
@@ -62,7 +62,7 @@ describe('runPollCycle', () => {
 
   it('skips a GitHub issue that already has a ticket', async () => {
     vi.mocked(githubSource.fetchGithubIssues).mockResolvedValue([
-      { source: 'github', sourceId: 'GH-linku/demo#1', title: 'Crash', url: 'u', body: 'b', projectKey: 'linku/demo' },
+      { source: 'github', sourceId: 'GH-linku/demo#1', title: 'Crash', url: 'u', body: 'b', projectKey: 'linku/demo', statusName: null, statusCategory: null },
     ]);
     vi.mocked(analyze.analyzeIssue).mockResolvedValue({
       summary: 's', rootCause: 'r', proposedFix: 'p', affectedFiles: [], confidence: 'high',
@@ -75,7 +75,7 @@ describe('runPollCycle', () => {
 
   it('upserts every Jira issue as a todo and reconciles stale ones via todos.ts', async () => {
     vi.mocked(jiraSource.fetchAssignedJiraIssues).mockResolvedValue([
-      { source: 'jira', sourceId: 'JIRA-DEMO-1', title: '[DEMO-1] Update env vars', url: 'u', body: 'b', projectKey: 'DEMO' },
+      { source: 'jira', sourceId: 'JIRA-DEMO-1', title: '[DEMO-1] Update env vars', url: 'u', body: 'b', projectKey: 'DEMO', statusName: null, statusCategory: null },
     ]);
     await runPollCycle(db);
     expect(todos.upsertJiraTodo).toHaveBeenCalledTimes(1);
@@ -102,7 +102,7 @@ describe('runPollCycle', () => {
   it('records a source error without aborting the rest of the cycle', async () => {
     vi.mocked(jiraSource.fetchAssignedJiraIssues).mockRejectedValue(new Error('Jira API error 401'));
     vi.mocked(githubSource.fetchGithubIssues).mockResolvedValue([
-      { source: 'github', sourceId: 'GH-linku/demo#2', title: 'Other', url: 'u', body: 'b', projectKey: 'linku/demo' },
+      { source: 'github', sourceId: 'GH-linku/demo#2', title: 'Other', url: 'u', body: 'b', projectKey: 'linku/demo', statusName: null, statusCategory: null },
     ]);
     vi.mocked(analyze.analyzeIssue).mockResolvedValue({
       summary: 's', rootCause: 'r', proposedFix: 'p', affectedFiles: [], confidence: 'high',
@@ -116,8 +116,8 @@ describe('runPollCycle', () => {
 
   it('keeps going when one issue fails to analyse and records why', async () => {
     vi.mocked(githubSource.fetchGithubIssues).mockResolvedValue([
-      { source: 'github', sourceId: 'GH-linku/demo#1', title: 'Broken', url: 'u', body: 'b', projectKey: 'linku/demo' },
-      { source: 'github', sourceId: 'GH-linku/demo#2', title: 'Fine', url: 'u', body: 'b', projectKey: 'linku/demo' },
+      { source: 'github', sourceId: 'GH-linku/demo#1', title: 'Broken', url: 'u', body: 'b', projectKey: 'linku/demo', statusName: null, statusCategory: null },
+      { source: 'github', sourceId: 'GH-linku/demo#2', title: 'Fine', url: 'u', body: 'b', projectKey: 'linku/demo', statusName: null, statusCategory: null },
     ]);
     vi.mocked(analyze.analyzeIssue)
       .mockRejectedValueOnce(new Error('Claude did not return valid JSON after 2 attempts'))
@@ -281,7 +281,7 @@ describe('startPoller', () => {
 describe('runQuickPoll', () => {
   it('fetches jira and pull requests and never analyses an issue', async () => {
     vi.mocked(jiraSource.fetchAssignedJiraIssues).mockResolvedValue([
-      { source: 'jira', sourceId: 'JIRA-DEMO-1', title: '[DEMO-1] t', url: 'u', body: 'b', projectKey: 'DEMO' },
+      { source: 'jira', sourceId: 'JIRA-DEMO-1', title: '[DEMO-1] t', url: 'u', body: 'b', projectKey: 'DEMO', statusName: null, statusCategory: null },
     ]);
 
     const summary = await runQuickPoll(db);
@@ -316,7 +316,7 @@ describe('runQuickPoll', () => {
 
   it('reconciles when jira genuinely returns issues', async () => {
     vi.mocked(jiraSource.fetchAssignedJiraIssues).mockResolvedValue([
-      { source: 'jira', sourceId: 'JIRA-DEMO-1', title: '[DEMO-1] t', url: 'u', body: 'b', projectKey: 'DEMO' },
+      { source: 'jira', sourceId: 'JIRA-DEMO-1', title: '[DEMO-1] t', url: 'u', body: 'b', projectKey: 'DEMO', statusName: null, statusCategory: null },
     ]);
     vi.mocked(todos.countJiraTodos).mockReturnValue(145);
 

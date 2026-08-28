@@ -4,7 +4,7 @@ import type { SourceIssue } from '../src/types.js';
 
 const issue: SourceIssue = {
   source: 'github', sourceId: 'GH-linku/demo#1', title: 'Crash on null user',
-  url: 'https://github.com/linku/demo/issues/1', body: 'TypeError: user is null', projectKey: 'linku/demo',
+  url: 'https://github.com/linku/demo/issues/1', body: 'TypeError: user is null', projectKey: 'linku/demo', statusName: null, statusCategory: null,
 };
 
 describe('isAnalysis', () => {

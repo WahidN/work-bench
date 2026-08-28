@@ -26,6 +26,53 @@ describe('openDb', () => {
     db.close();
   });
 
+  it('gives todos a nullable status and status category on a fresh file', () => {
+    dir = mkdtempSync(join(tmpdir(), 'workbench-db-'));
+    const db = openDb(join(dir, 'test.db'));
+    const columns = db.prepare('PRAGMA table_info(todos)').all() as any[];
+
+    const status = columns.find((column) => column.name === 'status');
+    const category = columns.find((column) => column.name === 'status_category');
+    expect(status).toBeTruthy();
+    expect(category).toBeTruthy();
+    // Nullable on purpose: a manual todo has no Jira status, and an empty string
+    // would be indistinguishable from a status the engine failed to read.
+    expect(status.notnull).toBe(0);
+    expect(category.notnull).toBe(0);
+    expect(status.dflt_value).toBeNull();
+    expect(category.dflt_value).toBeNull();
+    db.close();
+  });
+
+  it('adds the todo status columns to a database that predates them, keeping its rows', () => {
+    dir = mkdtempSync(join(tmpdir(), 'workbench-db-'));
+    const file = join(dir, 'test.db');
+
+    // A database at migration 6, before the status columns existed.
+    const first = openDb(file);
+    first.exec(`INSERT INTO projects (name, repo_path, default_branch) VALUES ('demo', '/repos/demo', 'main')`);
+    first.exec(
+      `INSERT INTO todos (source, source_id, text, body, created_at)
+       VALUES ('jira', 'JIRA-DEMO-1', '[DEMO-1] Old issue', 'b', 'now')`
+    );
+    first.exec('ALTER TABLE todos DROP COLUMN status');
+    first.exec('ALTER TABLE todos DROP COLUMN status_category');
+    first.pragma('user_version = 6');
+    first.close();
+
+    const db = openDb(file);
+
+    const columns = (db.prepare('PRAGMA table_info(todos)').all() as any[]).map((column) => column.name);
+    expect(columns).toContain('status');
+    expect(columns).toContain('status_category');
+    expect(db.pragma('user_version', { simple: true })).toBe(7);
+    // The existing row survives with a null status until the next poll rewrites it.
+    expect(db.prepare(`SELECT text, status, status_category FROM todos`).get()).toEqual({
+      text: '[DEMO-1] Old issue', status: null, status_category: null,
+    });
+    db.close();
+  });
+
   it('adds todo_messages to a database that predates it, without a migration', () => {
     dir = mkdtempSync(join(tmpdir(), 'workbench-db-'));
     const path = join(dir, 'test.db');
@@ -38,7 +85,7 @@ describe('openDb', () => {
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='todo_messages'")
       .get();
     expect(row).toBeTruthy();
-    expect(second.pragma('user_version', { simple: true })).toBe(6);
+    expect(second.pragma('user_version', { simple: true })).toBe(7);
     second.close();
   });
 
@@ -63,7 +110,7 @@ describe('openDb', () => {
   it('stamps a fresh database as already migrated', () => {
     dir = mkdtempSync(join(tmpdir(), 'workbench-db-'));
     const db = openDb(join(dir, 'test.db'));
-    expect(db.pragma('user_version', { simple: true })).toBe(6);
+    expect(db.pragma('user_version', { simple: true })).toBe(7);
     db.close();
   });
 
@@ -135,7 +182,7 @@ describe('openDb', () => {
     expect(db.prepare('SELECT pinned FROM tickets').get()).toEqual({ pinned: 0 });
     expect(db.prepare('SELECT pinned FROM prs').get()).toEqual({ pinned: 0 });
     expect(db.prepare('SELECT status, blurb, notes FROM projects').get()).toEqual({ status: 'active', blurb: '', notes: '' });
-    expect(db.pragma('user_version', { simple: true })).toBe(6);
+    expect(db.pragma('user_version', { simple: true })).toBe(7);
     db.close();
 
     // Reopening an already-migrated file must be a no-op: no throw, version unchanged.
@@ -144,7 +191,7 @@ describe('openDb', () => {
     // at 0, so the next open replayed the ALTER TABLE and threw on the duplicate column.
     const reopened = openDb(path);
     expect(columns(reopened, 'todos')).toContain('priority');
-    expect(reopened.pragma('user_version', { simple: true })).toBe(6);
+    expect(reopened.pragma('user_version', { simple: true })).toBe(7);
     reopened.close();
   });
 
@@ -282,7 +329,7 @@ describe('openDb', () => {
 
     const db = openDb(file);
 
-    expect(db.pragma('user_version', { simple: true })).toBe(6);
+    expect(db.pragma('user_version', { simple: true })).toBe(7);
     expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
     expect(db.pragma('foreign_key_check')).toEqual([]);
     expect(db.prepare('SELECT ticket_id FROM prs').get()).toEqual({ ticket_id: 1 });
@@ -320,6 +367,28 @@ describe('openDb', () => {
         analysis_json TEXT,
         status TEXT NOT NULL DEFAULT 'new',
         pr_id INTEGER REFERENCES "prs_old"(id),
+        pinned INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        UNIQUE(source, source_id)
+      );
+      -- Present so that migrations targeting todos have something to alter. Without
+      -- it, openDb's SCHEMA pass creates todos already carrying the newest columns
+      -- and the migration then collides with itself on "duplicate column name".
+      -- Shaped as a version-4 database: migrations 1 to 4 applied, nothing later.
+      CREATE TABLE todos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        source_id TEXT,
+        text TEXT NOT NULL,
+        body TEXT NOT NULL DEFAULT '',
+        url TEXT,
+        project_id INTEGER REFERENCES projects(id),
+        can_promote INTEGER NOT NULL DEFAULT 0,
+        done INTEGER NOT NULL DEFAULT 0,
+        promoted_ticket_id INTEGER REFERENCES tickets(id),
+        priority TEXT NOT NULL DEFAULT 'med',
+        due_at TEXT,
+        done_at TEXT,
         pinned INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         UNIQUE(source, source_id)

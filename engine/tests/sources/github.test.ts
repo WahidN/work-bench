@@ -11,6 +11,7 @@ describe('mapGithubIssue', () => {
     expect(mapGithubIssue(raw, 'linku/demo')).toEqual({
       source: 'github', sourceId: 'GH-linku/demo#42', title: 'Crash on save',
       url: 'https://github.com/linku/demo/issues/42', body: 'Steps to reproduce...', projectKey: 'linku/demo',
+      statusName: null, statusCategory: null,
     });
   });
 
@@ -30,7 +31,10 @@ describe('fetchGithubIssues', () => {
       'search', 'issues', '--assignee=@me', '--state=open', '--repo', 'linku/demo',
       '--json', 'number,title,body,url',
     ]);
-    expect(issues).toEqual([{ source: 'github', sourceId: 'GH-linku/demo#1', title: 't', url: 'u', body: 'b', projectKey: 'linku/demo' }]);
+    expect(issues).toEqual([{
+      source: 'github', sourceId: 'GH-linku/demo#1', title: 't', url: 'u', body: 'b',
+      projectKey: 'linku/demo', statusName: null, statusCategory: null,
+    }]);
   });
 
   it('passes owner/name to gh when the project stores the full repository URL', async () => {

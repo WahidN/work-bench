@@ -32,6 +32,10 @@ export interface Todo {
   dueAt: string | null;
   doneAt: string | null;
   pinned: boolean;
+  /// The Jira workflow status and its category. Null for a manual todo, and null for
+  /// a mirrored issue stored before statuses were recorded, until the next poll.
+  statusName: string | null;
+  statusCategory: JiraStatusCategory | null;
   createdAt: string;
 }
 
@@ -140,6 +144,10 @@ export interface ReviewScore {
   findings: string[];
 }
 
+/// The three Atlassian status categories, as stable tokens rather than Atlassian's
+/// own keys: `new` reads as nothing useful at a call site, `todo` does.
+export type JiraStatusCategory = 'todo' | 'in_progress' | 'done';
+
 export interface SourceIssue {
   source: TicketSource;
   sourceId: string;
@@ -147,6 +155,12 @@ export interface SourceIssue {
   url: string;
   body: string;
   projectKey: string;
+  /// The workflow status exactly as the source names it. Null when the source sends
+  /// none, which is every non-Jira source.
+  statusName: string | null;
+  /// Null when there is no status, and also when the category is one this code does
+  /// not recognise: guessing would mis-file the group as active work.
+  statusCategory: JiraStatusCategory | null;
 }
 
 export interface PrDetailFile {

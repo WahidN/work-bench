@@ -1,6 +1,6 @@
 import { getSecret } from '../keychain.js';
 import { getConnection, getAccessToken } from './jiraAuth.js';
-import type { SourceIssue } from '../types.js';
+import type { SourceIssue, JiraStatusCategory } from '../types.js';
 
 export function adfToText(node: any): string {
   if (!node) return '';
@@ -10,6 +10,15 @@ export function adfToText(node: any): string {
   if (['paragraph', 'heading', 'listItem', 'codeBlock', 'blockquote'].includes(node.type)) out += '\n';
   return out;
 }
+
+/// Atlassian's documented category keys, confirmed against a real response from this
+/// instance. An unrecognised key yields null rather than a guess: a wrong category
+/// would file the group under active work, which is worse than filing it last.
+const STATUS_CATEGORIES: Record<string, JiraStatusCategory> = {
+  new: 'todo',
+  indeterminate: 'in_progress',
+  done: 'done',
+};
 
 /// `siteUrl` is the Jira site's own host, not the API host. Under OAuth the API lives
 /// at api.atlassian.com while browse links must point at the site itself.
@@ -23,6 +32,8 @@ export function mapJiraIssue(raw: any, siteUrl: string): SourceIssue {
     url: `${siteUrl}/browse/${raw.key}`,
     body,
     projectKey: raw.fields.project.key,
+    statusName: raw.fields.status?.name ?? null,
+    statusCategory: STATUS_CATEGORIES[raw.fields.status?.statusCategory?.key] ?? null,
   };
 }
 
@@ -48,7 +59,7 @@ export async function fetchAssignedJiraIssues(): Promise<SourceIssue[]> {
   const issues: any[] = [];
   let nextPageToken: string | undefined;
   do {
-    const params = new URLSearchParams({ jql, fields: 'summary,description,project', maxResults: '100' });
+    const params = new URLSearchParams({ jql, fields: 'summary,description,project,status', maxResults: '100' });
     if (nextPageToken) params.set('nextPageToken', nextPageToken);
     const res = await fetch(`${apiBase}/rest/api/3/search/jql?${params}`, {
       headers: { Authorization: `Bearer ${accessToken}` },

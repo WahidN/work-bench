@@ -15,7 +15,7 @@ const issue = {
   title: '[DEMO-1] Logout redirects in a loop',
   url: 'https://x/browse/DEMO-1',
   body: 'Signing out bounces between /logout and /login.',
-  projectKey: 'DEMO',
+  projectKey: 'DEMO', statusName: null, statusCategory: null,
 };
 
 let db: Database.Database;

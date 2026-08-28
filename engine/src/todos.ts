@@ -10,7 +10,9 @@ function rowToTodo(row: any): Todo {
     id: row.id, source: row.source, sourceId: row.source_id, text: row.text, body: row.body, url: row.url,
     projectId: row.project_id, canPromote: !!row.can_promote, done: !!row.done,
     promotedTicketId: row.promoted_ticket_id, priority: row.priority, dueAt: row.due_at,
-    doneAt: row.done_at, pinned: !!row.pinned, createdAt: row.created_at,
+    doneAt: row.done_at, pinned: !!row.pinned,
+    statusName: row.status, statusCategory: row.status_category,
+    createdAt: row.created_at,
   };
 }
 
@@ -103,9 +105,9 @@ export function setTodoPinned(db: Database.Database, id: number, pinned: boolean
 
 export function upsertJiraTodo(db: Database.Database, issue: SourceIssue, project: Project | null): void {
   db.prepare(
-    `INSERT INTO todos (source, source_id, text, body, url, project_id, can_promote, done, created_at)
-     VALUES ('jira', @sourceId, @text, @body, @url, @projectId, @canPromote, 0, @createdAt)
-     ON CONFLICT(source, source_id) DO UPDATE SET text = @text, body = @body, url = @url, project_id = @projectId, can_promote = @canPromote`
+    `INSERT INTO todos (source, source_id, text, body, url, project_id, can_promote, done, status, status_category, created_at)
+     VALUES ('jira', @sourceId, @text, @body, @url, @projectId, @canPromote, 0, @statusName, @statusCategory, @createdAt)
+     ON CONFLICT(source, source_id) DO UPDATE SET text = @text, body = @body, url = @url, project_id = @projectId, can_promote = @canPromote, status = @statusName, status_category = @statusCategory`
   ).run({
     sourceId: issue.sourceId,
     text: issue.title,
@@ -113,6 +115,10 @@ export function upsertJiraTodo(db: Database.Database, issue: SourceIssue, projec
     url: issue.url,
     projectId: project ? project.id : null,
     canPromote: project ? 1 : 0,
+    // Overwritten on every poll, not just on insert: an issue transitioned in Jira
+    // has to move group, which is the whole point of storing this.
+    statusName: issue.statusName,
+    statusCategory: issue.statusCategory,
     createdAt: new Date().toISOString(),
   });
 }
@@ -132,6 +138,9 @@ export async function promoteTodo(db: Database.Database, todoId: number): Promis
   const issue: SourceIssue = {
     source: 'jira', sourceId: todo.sourceId, title: todo.text, url: todo.url ?? '',
     body: todo.body, projectKey: project.jiraProjectKey ?? '',
+    // Carried through from what the last poll stored, so the analysis prompt sees the
+    // same status the user sees rather than a blank.
+    statusName: todo.statusName, statusCategory: todo.statusCategory,
   };
   const analysis = await analyzeIssue(issue, project);
   const ticket = createTicket(db, {

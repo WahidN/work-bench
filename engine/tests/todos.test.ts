@@ -70,7 +70,7 @@ describe('listTodayTodos', () => {
     expect(listTodayTodos(db).map((t) => t.id)).toEqual([open.id, doneToday.id]);
   });
 
-  const jiraIssue = { source: 'jira' as const, sourceId: 'JIRA-DEMO-1', title: '[DEMO-1] Update env vars', url: 'https://x/browse/DEMO-1', body: 'Redirect loop on logout.', projectKey: 'DEMO' };
+  const jiraIssue = { source: 'jira' as const, sourceId: 'JIRA-DEMO-1', title: '[DEMO-1] Update env vars', url: 'https://x/browse/DEMO-1', body: 'Redirect loop on logout.', projectKey: 'DEMO', statusName: null, statusCategory: null };
 
   it('excludes a mirrored jira todo even though it is open', () => {
     const open = createManualTodo(db, 'still open');
@@ -96,7 +96,7 @@ describe('listTodayTodos', () => {
   });
 
   it('includes a pinned jira todo', () => {
-    upsertJiraTodo(db, { source: 'jira', sourceId: 'JIRA-MR-1', title: '[MR-1] Fix the importer', url: 'https://x/browse/MR-1', body: '', projectKey: 'MR' }, null);
+    upsertJiraTodo(db, { source: 'jira', sourceId: 'JIRA-MR-1', title: '[MR-1] Fix the importer', url: 'https://x/browse/MR-1', body: '', projectKey: 'MR', statusName: null, statusCategory: null }, null);
     const [jira] = listTodos(db).filter((t) => t.source === 'jira');
     setTodoPinned(db, jira.id, true);
 
@@ -104,7 +104,7 @@ describe('listTodayTodos', () => {
   });
 
   it('still excludes an unpinned jira todo', () => {
-    upsertJiraTodo(db, { source: 'jira', sourceId: 'JIRA-MR-2', title: '[MR-2] Rotate the keys', url: 'https://x/browse/MR-2', body: '', projectKey: 'MR' }, null);
+    upsertJiraTodo(db, { source: 'jira', sourceId: 'JIRA-MR-2', title: '[MR-2] Rotate the keys', url: 'https://x/browse/MR-2', body: '', projectKey: 'MR', statusName: null, statusCategory: null }, null);
 
     expect(listTodayTodos(db)).toEqual([]);
   });
@@ -120,7 +120,7 @@ describe('listTodayTodos', () => {
 });
 
 describe('upsertJiraTodo / reconcileJiraTodos', () => {
-  const issue = { source: 'jira' as const, sourceId: 'JIRA-DEMO-1', title: '[DEMO-1] Update env vars', url: 'https://x/browse/DEMO-1', body: 'Redirect loop on logout.', projectKey: 'DEMO' };
+  const issue = { source: 'jira' as const, sourceId: 'JIRA-DEMO-1', title: '[DEMO-1] Update env vars', url: 'https://x/browse/DEMO-1', body: 'Redirect loop on logout.', projectKey: 'DEMO', statusName: null, statusCategory: null };
 
   it('inserts a new jira todo with canPromote true and its body stored, when a project maps to it', () => {
     const project = createProject(db, {
@@ -200,7 +200,7 @@ describe('upsertJiraTodo / reconcileJiraTodos', () => {
 });
 
 describe('promoteTodo', () => {
-  const issue = { source: 'jira' as const, sourceId: 'JIRA-DEMO-1', title: '[DEMO-1] Update env vars', url: 'https://x/browse/DEMO-1', body: 'Redirect loop on logout.', projectKey: 'DEMO' };
+  const issue = { source: 'jira' as const, sourceId: 'JIRA-DEMO-1', title: '[DEMO-1] Update env vars', url: 'https://x/browse/DEMO-1', body: 'Redirect loop on logout.', projectKey: 'DEMO', statusName: null, statusCategory: null };
 
   it('analyzes the issue, creates a ticket, and links the todo to it', async () => {
     const project = createProject(db, {
@@ -367,6 +367,47 @@ describe('createManualTodo with a project', () => {
 
   it('still stores null when no project is given, which is what Today does', () => {
     expect(createManualTodo(db, 'Fix the header').projectId).toBeNull();
+  });
+});
+
+describe('jira todo status', () => {
+  const withStatus = (statusName: string | null, statusCategory: any) => ({
+    source: 'jira' as const, sourceId: 'JIRA-DEMO-1', title: '[DEMO-1] Update env vars',
+    url: 'https://x/browse/DEMO-1', body: 'Redirect loop on logout.', projectKey: 'DEMO',
+    statusName, statusCategory,
+  });
+
+  it('stores the status name and category, and reads them back', () => {
+    upsertJiraTodo(db, withStatus('In Review', 'in_progress'), null);
+
+    const [todo] = listTodos(db);
+    expect(todo.statusName).toBe('In Review');
+    expect(todo.statusCategory).toBe('in_progress');
+  });
+
+  it('overwrites both when the status changed in Jira', () => {
+    upsertJiraTodo(db, withStatus('To Do', 'todo'), null);
+    upsertJiraTodo(db, withStatus('Done', 'done'), null);
+
+    const [todo] = listTodos(db);
+    expect(todo.statusName).toBe('Done');
+    expect(todo.statusCategory).toBe('done');
+    expect(listTodos(db)).toHaveLength(1);
+  });
+
+  it('stores nulls when the issue has no status', () => {
+    upsertJiraTodo(db, withStatus(null, null), null);
+
+    const [todo] = listTodos(db);
+    expect(todo.statusName).toBeNull();
+    expect(todo.statusCategory).toBeNull();
+  });
+
+  it('leaves a manual todo with no status at all', () => {
+    const manual = createManualTodo(db, 'renew SSL cert');
+
+    expect(getTodo(db, manual.id)!.statusName).toBeNull();
+    expect(getTodo(db, manual.id)!.statusCategory).toBeNull();
   });
 });
 
