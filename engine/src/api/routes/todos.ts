@@ -1,6 +1,6 @@
 import type { Express } from 'express';
 import type Database from 'better-sqlite3';
-import { listTodos, createManualTodo, setTodoDone, setTodoPriority, getTodo, promoteTodo, setTodoPinned, listTodoMessages } from '../../todos.js';
+import { listTodos, createManualTodo, setTodoDone, setTodoPriority, getTodo, promoteTodo, setTodoPinned, listTodoMessages, deleteTodo } from '../../todos.js';
 import { getProject } from '../../projects.js';
 import { acquireJob, finishJob } from '../../jobs.js';
 import { sendTodoMessage } from '../../todoChat.js';
@@ -61,6 +61,21 @@ export function registerTodosRoutes(app: Express, db: Database.Database): void {
     if (done !== undefined) todo = setTodoDone(db, id, done);
     if (priority !== undefined) todo = setTodoPriority(db, id, priority);
     res.json(todo);
+  });
+
+  app.delete('/todos/:id', (req, res) => {
+    try {
+      deleteTodo(db, Number(req.params.id));
+    } catch (err) {
+      // deleteTodo owns both refusals so the rule holds for any caller, not just the
+      // app; the route only decides which status each one deserves.
+      const message = String(err);
+      if (message.includes('not found')) res.status(404).json({ error: message });
+      else if (message.includes('cannot be deleted')) res.status(400).json({ error: message });
+      else throw err;
+      return;
+    }
+    res.status(204).end();
   });
 
   app.post('/todos/:id/promote', async (req, res) => {
