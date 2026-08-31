@@ -6,6 +6,7 @@ struct TaskRow: View {
     let onCyclePriority: (Todo) -> Void
     let onPromote: (Todo) -> Void
     let onChat: (Todo) -> Void
+    let onDelete: (Todo) -> Void
     @State private var isHovered = false
     @State private var isCheckboxHovered = false
 
@@ -69,6 +70,11 @@ struct TaskRow: View {
             }
             if let todo, todo.canPromote {
                 Button("Start fixing this") { onPromote(todo) }
+            }
+            // Absent rather than disabled for a mirrored issue: the next poll would
+            // recreate it, and a greyed item invites a question the menu cannot answer.
+            if let todo, todo.source == .manual {
+                Button("Delete task") { onDelete(todo) }
             }
         }
     }

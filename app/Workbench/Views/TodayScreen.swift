@@ -12,6 +12,7 @@ struct TodayScreen: View {
     let onDidPromote: () -> Void
     let onTogglePinTodo: (Todo) -> Void
     let onChatTodo: (Todo) -> Void
+    let onDeleteTodo: (Todo) -> Void
 
     @State private var draft = ""
 
@@ -40,7 +41,8 @@ struct TodayScreen: View {
                                 await viewModel.promote(todo)
                                 onDidPromote()
                             } },
-                            onChatTodo: onChatTodo
+                            onChatTodo: onChatTodo,
+                            onDeleteTodo: onDeleteTodo
                         )
                     }
                 }
@@ -127,6 +129,7 @@ private struct TaskSectionView: View {
     let onCyclePriority: (Todo) -> Void
     let onPromote: (Todo) -> Void
     let onChatTodo: (Todo) -> Void
+    let onDeleteTodo: (Todo) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -145,7 +148,7 @@ private struct TaskSectionView: View {
 
             ForEach(section.rows) { row in
                 TaskRow(row: row, onToggle: { onToggle(row) }, onCyclePriority: onCyclePriority,
-                        onPromote: onPromote, onChat: onChatTodo)
+                        onPromote: onPromote, onChat: onChatTodo, onDelete: onDeleteTodo)
             }
         }
     }
