@@ -40,11 +40,23 @@ final class MockEngineProbe: EngineProbe {
     }
 }
 
+/// Isolated on both counts: a fake environment so nothing can install a real agent,
+/// and a throwaway defaults suite so a test can never write into the user's own
+/// preferences.
+@MainActor
+private func testViewModel(_ probe: MockEngineProbe) -> EngineViewModel {
+    EngineViewModel(
+        probe: probe,
+        installer: EngineAgentInstaller(environment: FakeAgentEnvironment()),
+        defaults: UserDefaults(suiteName: "workbench-tests-\(UUID().uuidString)")!
+    )
+}
+
 @MainActor
 @Suite
-struct EngineStatusViewModelTests {
+struct EngineViewModelTests {
     @Test func startsOutUnknown() {
-        let viewModel = EngineStatusViewModel(probe: MockEngineProbe())
+        let viewModel = EngineViewModel(probe: MockEngineProbe())
 
         #expect(viewModel.state == .unknown)
         #expect(viewModel.isDown == false)
@@ -53,7 +65,7 @@ struct EngineStatusViewModelTests {
     @Test func becomesReachableAfterASuccessfulPing() async {
         let probe = MockEngineProbe()
         probe.results = [.success(())]
-        let viewModel = EngineStatusViewModel(probe: probe)
+        let viewModel = testViewModel(probe)
 
         await viewModel.check()
 
@@ -64,7 +76,7 @@ struct EngineStatusViewModelTests {
     @Test func becomesUnreachableAfterATransportFailure() async {
         let probe = MockEngineProbe()
         probe.results = [.failure(APIError.transportFailed("refused"))]
-        let viewModel = EngineStatusViewModel(probe: probe)
+        let viewModel = testViewModel(probe)
 
         await viewModel.check()
 
@@ -78,7 +90,7 @@ struct EngineStatusViewModelTests {
     @Test func staysReachableWhenTheEngineAnswersWithAnError() async {
         let probe = MockEngineProbe()
         probe.results = [.failure(APIError.serverError("claude exploded"))]
-        let viewModel = EngineStatusViewModel(probe: probe)
+        let viewModel = testViewModel(probe)
 
         await viewModel.check()
 
@@ -89,7 +101,7 @@ struct EngineStatusViewModelTests {
     @Test func recoversOnItsOwnWhenTheEngineComesBack() async {
         let probe = MockEngineProbe()
         probe.results = [.failure(APIError.transportFailed("refused")), .success(())]
-        let viewModel = EngineStatusViewModel(probe: probe)
+        let viewModel = testViewModel(probe)
 
         await viewModel.check()
         #expect(viewModel.isDown)
@@ -105,7 +117,7 @@ struct EngineStatusViewModelTests {
     @Test func pollingStopsWhenAskedMidFlight() async {
         let probe = MockEngineProbe()
         probe.results = [.success(())]
-        let viewModel = EngineStatusViewModel(probe: probe)
+        let viewModel = testViewModel(probe)
         probe.onPing = { [weak viewModel] in viewModel?.stopPolling() }
 
         await viewModel.poll(every: .zero, attempts: 5)
@@ -116,7 +128,7 @@ struct EngineStatusViewModelTests {
     @Test func anEarlierStopDoesNotDisableALaterPoll() async {
         let probe = MockEngineProbe()
         probe.results = [.success(())]
-        let viewModel = EngineStatusViewModel(probe: probe)
+        let viewModel = testViewModel(probe)
 
         viewModel.stopPolling()
         await viewModel.poll(every: .zero, attempts: 2)
@@ -127,7 +139,7 @@ struct EngineStatusViewModelTests {
     @Test func pollingKeepsCheckingWhileItRuns() async {
         let probe = MockEngineProbe()
         probe.results = [.success(())]
-        let viewModel = EngineStatusViewModel(probe: probe)
+        let viewModel = testViewModel(probe)
 
         await viewModel.poll(every: .zero, attempts: 3)
 

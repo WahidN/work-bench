@@ -31,6 +31,7 @@ struct ContentView: View {
     @State private var agentChatViewModel = AgentChatViewModel()
     @State private var refreshViewModel = RefreshViewModel()
     @State private var settingsViewModel = SettingsViewModel()
+    @State private var engineViewModel = EngineViewModel()
     @State private var isSettingsOpen = false
     @State private var jiraViewModel = JiraViewModel()
     @State private var projectSheet: ProjectSheetMode?
@@ -66,6 +67,16 @@ struct ContentView: View {
                     isRefreshing: refreshViewModel.isRefreshing,
                     onRefresh: refresh
                 )
+                // Between the header and the content, so it is visible on every screen.
+                // An unreachable engine used to look exactly like a screen with no data
+                // in it, which is the confusion this exists to end.
+                if engineViewModel.isDown {
+                    EngineDownBanner(
+                        isAgentInstalled: engineViewModel.isAgentInstalled,
+                        onStart: { Task { await engineViewModel.install() } },
+                        onOpenSettings: { isSettingsOpen = true }
+                    )
+                }
                 content
             }
             .overlay(alignment: .trailing) {
@@ -115,11 +126,14 @@ struct ContentView: View {
             .sheet(isPresented: $isSettingsOpen) {
                 // Closing stops the polling, so an unanswered browser trip does not
                 // keep asking the engine in the background.
-                SettingsSheet(viewModel: settingsViewModel, onClose: {
+                SettingsSheet(viewModel: settingsViewModel, engine: engineViewModel, onClose: {
                     settingsViewModel.stopPolling()
                     isSettingsOpen = false
                 })
             }
+            // Runs for the life of the window and stops with it, which is what the
+            // spec's "within one minute" bound needs.
+            .task { await engineViewModel.poll() }
             .sheet(item: $projectSheet) { mode in
                 let canDelete: Bool = {
                     if case .edit = mode { return true }

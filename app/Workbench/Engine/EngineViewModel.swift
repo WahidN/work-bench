@@ -39,20 +39,70 @@ enum EngineState: Equatable {
     case unreachable
 }
 
+/// Owns everything about the engine: whether it answers, where its source lives, and
+/// whether the managed agent is installed. One type on purpose, so the Settings sheet
+/// and the unreachable banner cannot disagree about whether the engine is up.
 @Observable
 @MainActor
-final class EngineStatusViewModel {
+final class EngineViewModel {
     private(set) var state: EngineState = .unknown
+    private(set) var isAgentInstalled = false
+    var errorMessage: String?
+
+    /// Persisted, because the app is built into DerivedData and has no reliable path
+    /// back to the checkout it came from.
+    var engineDirectory: String {
+        didSet { defaults.set(engineDirectory, forKey: Self.directoryKey) }
+    }
 
     /// Deliberately false while unknown: a banner must not flash on launch before the
     /// first ping has had a chance to answer.
     var isDown: Bool { state == .unreachable }
 
+    var isDirectoryValid: Bool { EngineAgent.isEngineDirectory(engineDirectory) }
+    var logPath: String { EngineAgent.defaultLogPath }
+
+    private static let directoryKey = "engineDirectory"
+
     private let probe: any EngineProbe
+    private let installer: EngineAgentInstaller
+    private let defaults: UserDefaults
     private var isPolling = false
 
-    init(probe: any EngineProbe = APIEngineProbe()) {
+    init(
+        probe: any EngineProbe = APIEngineProbe(),
+        installer: EngineAgentInstaller = EngineAgentInstaller(),
+        defaults: UserDefaults = .standard
+    ) {
         self.probe = probe
+        self.installer = installer
+        self.defaults = defaults
+        self.engineDirectory = defaults.string(forKey: Self.directoryKey) ?? ""
+        self.isAgentInstalled = installer.isInstalled()
+    }
+
+    func install() async {
+        errorMessage = nil
+        do {
+            try installer.install(engineDirectory: engineDirectory)
+            isAgentInstalled = installer.isInstalled()
+            // launchd needs a moment to start the process before a ping can succeed.
+            try? await Task.sleep(for: .seconds(2))
+            await check()
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    func remove() async {
+        errorMessage = nil
+        do {
+            try installer.remove()
+            isAgentInstalled = installer.isInstalled()
+            await check()
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
     }
 
     func check() async {

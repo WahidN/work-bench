@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SettingsSheet: View {
     @Bindable var viewModel: SettingsViewModel
+    @Bindable var engine: EngineViewModel
     let onClose: () -> Void
 
     @State private var clientId = ""
@@ -13,6 +14,10 @@ struct SettingsSheet: View {
             Text("Settings")
                 .font(Theme.heading(Theme.FontSize.cardTitle))
                 .foregroundStyle(Theme.nocturneText)
+
+            engineSection
+
+            Rectangle().fill(Theme.Neutral.n900).frame(height: 1)
 
             jiraSection
 
@@ -32,6 +37,82 @@ struct SettingsSheet: View {
         .frame(width: 460)
         .background(Theme.nocturneBg)
         .task { await viewModel.load() }
+    }
+
+    private var engineSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.s3) {
+            HStack(spacing: Theme.Space.s3) {
+                Text("ENGINE")
+                    .font(.system(size: Theme.FontSize.label))
+                    .tracking(0.8)
+                    .foregroundStyle(Theme.Neutral.n600)
+                Circle()
+                    .fill(engine.isDown ? Theme.negative : Theme.Status.approved)
+                    .frame(width: 6, height: 6)
+                Text(engine.isDown ? "Not reachable" : "Running")
+                    .font(.system(size: Theme.FontSize.tableMeta))
+                    .foregroundStyle(Theme.Neutral.n500)
+            }
+
+            HStack(spacing: Theme.Space.s2) {
+                Text(engine.engineDirectory.isEmpty ? "No folder chosen" : engine.engineDirectory)
+                    .font(.system(size: Theme.FontSize.tableMeta, design: .monospaced))
+                    .foregroundStyle(engine.engineDirectory.isEmpty ? Theme.Neutral.n600 : Theme.nocturneText)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                Button("Choose…", action: chooseEngineDirectory)
+            }
+
+            if !engine.engineDirectory.isEmpty && !engine.isDirectoryValid {
+                Text("That folder has no package.json, so it is not the engine.")
+                    .font(.system(size: Theme.FontSize.tableMeta))
+                    .foregroundStyle(Theme.negative)
+            }
+
+            HStack(spacing: Theme.Space.s3) {
+                if engine.isAgentInstalled {
+                    Button("Remove from login") { Task { await engine.remove() } }
+                    Text("Starts at login and restarts if it stops.")
+                        .font(.system(size: Theme.FontSize.tableMeta))
+                        .foregroundStyle(Theme.Neutral.n600)
+                } else {
+                    Button("Start at login") { Task { await engine.install() } }
+                        .disabled(!engine.isDirectoryValid)
+                    Text("Keeps the engine running so you never start it by hand.")
+                        .font(.system(size: Theme.FontSize.tableMeta))
+                        .foregroundStyle(Theme.Neutral.n600)
+                }
+            }
+
+            // Shown always, not only on failure: when a managed engine will not start,
+            // this file is the only place that says why.
+            Text("Log: \(engine.logPath)")
+                .font(.system(size: Theme.FontSize.label, design: .monospaced))
+                .foregroundStyle(Theme.Neutral.n700)
+                .lineLimit(1)
+                .truncationMode(.head)
+
+            if let engineError = engine.errorMessage {
+                Text(engineError)
+                    .font(.system(size: Theme.FontSize.tableMeta))
+                    .foregroundStyle(Theme.negative)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func chooseEngineDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose"
+        let trimmed = engine.engineDirectory.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: (trimmed as NSString).expandingTildeInPath)
+        }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        engine.engineDirectory = url.path
     }
 
     @ViewBuilder
