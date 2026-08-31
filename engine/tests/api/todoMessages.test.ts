@@ -86,7 +86,7 @@ describe('POST /todos/:id/messages', () => {
     });
     upsertJiraTodo(db, {
       source: 'jira', sourceId: 'JIRA-DEMO-1', title: '[DEMO-1] t',
-      url: 'u', body: 'b', projectKey: 'DEMO',
+      url: 'u', body: 'b', projectKey: 'DEMO', statusName: null, statusCategory: null,
     }, project);
     const jiraTodo = listTodos(db).find((t) => t.source === 'jira')!;
     const ticket = createTicket(db, {

@@ -29,6 +29,115 @@ private func jiraTodo(
     return todo
 }
 
+/// A row carrying a status, built the same way the screen builds rows.
+private func statusRow(
+    _ number: Int,
+    _ statusName: String?,
+    _ statusCategory: String?
+) -> JiraRow {
+    var todo = jiraTodo(id: number, number: number)
+    todo.statusName = statusName
+    todo.statusCategory = statusCategory
+    return JiraLogic.rows(todos: [todo], key: "MR", tickets: [])[0]
+}
+
+@Test func statusGroupsOrderInProgressAboveToDoAboveDone() {
+    let groups = JiraLogic.statusGroups(rows: [
+        statusRow(1, "Done", "done"),
+        statusRow(2, "To Do", "todo"),
+        statusRow(3, "In Progress", "in_progress"),
+    ])
+
+    #expect(groups.map(\.label) == ["In Progress", "To Do", "Done"])
+    #expect(groups.map(\.count) == [1, 1, 1])
+}
+
+@Test func statusGroupsOrderWithinACategoryByDescendingCount() {
+    let groups = JiraLogic.statusGroups(rows: [
+        statusRow(1, "In Review", "in_progress"),
+        statusRow(2, "Blocked", "in_progress"),
+        statusRow(3, "Blocked", "in_progress"),
+        statusRow(4, "To Do", "todo"),
+    ])
+
+    #expect(groups.map(\.label) == ["Blocked", "In Review", "To Do"])
+    #expect(groups.map(\.count) == [2, 1, 1])
+}
+
+@Test func statusGroupsBreakACountTieAlphabetically() {
+    let groups = JiraLogic.statusGroups(rows: [
+        statusRow(1, "Ready for test", "in_progress"),
+        statusRow(2, "Blocked", "in_progress"),
+    ])
+
+    #expect(groups.map(\.label) == ["Blocked", "Ready for test"])
+}
+
+@Test func statusGroupsCollapseToOneWhenEveryIssueSharesAStatus() {
+    let groups = JiraLogic.statusGroups(rows: [
+        statusRow(1, "Done", "done"),
+        statusRow(2, "Done", "done"),
+        statusRow(3, "Done", "done"),
+    ])
+
+    #expect(groups.count == 1)
+    #expect(groups[0].label == "Done")
+    #expect(groups[0].count == 3)
+    #expect(groups[0].rows.count == 3)
+}
+
+@Test func statusGroupsAreEmptyWithoutRows() {
+    #expect(JiraLogic.statusGroups(rows: []).isEmpty)
+}
+
+// Every issue mirrored before statuses were recorded has none until the next poll.
+// Dropping those rows would hide the entire screen's contents.
+@Test func statusGroupsKeepIssuesWhoseStatusIsUnknown() {
+    let groups = JiraLogic.statusGroups(rows: [
+        statusRow(1, nil, nil),
+        statusRow(2, nil, nil),
+    ])
+
+    #expect(groups.count == 1)
+    #expect(groups[0].label == JiraLogic.unknownStatusLabel)
+    #expect(groups[0].count == 2)
+}
+
+@Test func statusGroupsPutTheUnknownGroupLast() {
+    let groups = JiraLogic.statusGroups(rows: [
+        statusRow(1, nil, nil),
+        statusRow(2, "Done", "done"),
+        statusRow(3, "In Progress", "in_progress"),
+    ])
+
+    #expect(groups.map(\.label) == ["In Progress", "Done", JiraLogic.unknownStatusLabel])
+}
+
+// A named status whose category is not one of the three known tokens keeps its name
+// but sorts after done, rather than being guessed into the active bucket.
+@Test func statusGroupsSortAnUnrecognisedCategoryAfterDone() {
+    let groups = JiraLogic.statusGroups(rows: [
+        statusRow(1, "Odd", "something-else"),
+        statusRow(2, "Done", "done"),
+    ])
+
+    #expect(groups.map(\.label) == ["Done", "Odd"])
+}
+
+@Test func statusGroupsKeepEveryRowExactlyOnce() {
+    let rows = [
+        statusRow(1, "In Progress", "in_progress"),
+        statusRow(2, "Done", "done"),
+        statusRow(3, nil, nil),
+        statusRow(4, "In Progress", "in_progress"),
+    ]
+
+    let groups = JiraLogic.statusGroups(rows: rows)
+
+    #expect(groups.reduce(0) { $0 + $1.count } == rows.count)
+    #expect(Set(groups.flatMap { $0.rows.map(\.id) }) == Set(rows.map(\.id)))
+}
+
 private func manualTodo(id: Int) -> Todo {
     Todo(id: id, source: .manual, sourceId: nil, text: "cut the release branch", body: "",
          url: nil, projectId: nil, canPromote: false, done: false, promotedTicketId: nil,

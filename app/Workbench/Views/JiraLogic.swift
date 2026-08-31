@@ -24,8 +24,62 @@ struct JiraRow: Identifiable, Equatable {
     let url: String?
 }
 
+struct JiraStatusGroup: Identifiable, Equatable {
+    /// The status name, or a sentinel for the issues whose status is not known.
+    let id: String
+    let label: String
+    let count: Int
+    let rows: [JiraRow]
+}
+
 enum JiraLogic {
     static let emptyStateText = "No Jira issues in this project."
+    static let unknownStatusLabel = "Status not known yet"
+
+    /// Category order: active work first, then waiting, then finished, then anything
+    /// this code does not recognise. An unrecognised category sorts last rather than
+    /// being guessed into a bucket, because filing closed work as active is worse than
+    /// filing it at the bottom.
+    private static func categoryRank(_ category: String?) -> Int {
+        switch category {
+        case "in_progress": 0
+        case "todo": 1
+        case "done": 2
+        default: 3
+        }
+    }
+
+    /// Splits one project's rows into a group per distinct status name. Every row comes
+    /// out exactly once: an issue with no status lands in a single trailing group rather
+    /// than being dropped, which matters because every issue mirrored before statuses
+    /// were recorded has none until the next poll.
+    static func statusGroups(rows: [JiraRow]) -> [JiraStatusGroup] {
+        guard !rows.isEmpty else { return [] }
+
+        // Keyed by status name so two issues in "Blocked" share a group. Nil name is
+        // its own key, and its category is nil too, so it ranks last.
+        var buckets: [String: [JiraRow]] = [:]
+        for row in rows {
+            buckets[row.todo.statusName ?? unknownStatusLabel, default: []].append(row)
+        }
+
+        return buckets
+            .map { name, grouped in
+                JiraStatusGroup(
+                    id: name,
+                    label: name,
+                    count: grouped.count,
+                    rows: grouped
+                )
+            }
+            .sorted { left, right in
+                let leftRank = categoryRank(left.rows.first?.todo.statusCategory)
+                let rightRank = categoryRank(right.rows.first?.todo.statusCategory)
+                if leftRank != rightRank { return leftRank < rightRank }
+                if left.count != right.count { return left.count > right.count }
+                return left.label < right.label
+            }
+    }
 
     /// "JIRA-MR-123" becomes "MR". Nil for a manual task, or a reference without a
     /// project prefix, so callers can skip anything that is not a mirrored issue.

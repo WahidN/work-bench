@@ -29,6 +29,10 @@ struct ContentView: View {
     @State private var prsViewModel = PRsViewModel()
     @State private var projectsViewModel = ProjectsViewModel()
     @State private var agentChatViewModel = AgentChatViewModel()
+    @State private var refreshViewModel = RefreshViewModel()
+    @State private var settingsViewModel = SettingsViewModel()
+    @State private var engineViewModel = EngineViewModel()
+    @State private var isSettingsOpen = false
     @State private var jiraViewModel = JiraViewModel()
     @State private var projectSheet: ProjectSheetMode?
     @State private var selectedPr: PullRequest?
@@ -49,7 +53,8 @@ struct ContentView: View {
                 selectedProject: projectsViewModel.selectedProject,
                 onSelect: { section in navigate(to: section) },
                 onSelectProject: { project in openProject(project) },
-                onOpenPalette: openPalette
+                onOpenPalette: openPalette,
+                onOpenSettings: { isSettingsOpen = true }
             )
             VStack(spacing: 0) {
                 AppHeader(
@@ -58,8 +63,22 @@ struct ContentView: View {
                     kickerOverride: prHeaderKicker ?? projectHeaderKicker,
                     headingOverride: prHeaderHeading ?? projectHeaderHeading,
                     onOpenAgent: openProjectChat,
-                    onAddProject: { projectSheet = .create }
+                    onAddProject: { projectSheet = .create },
+                    isRefreshing: refreshViewModel.isRefreshing,
+                    onRefresh: refresh
                 )
+                // Between the header and the content, so it is visible on every screen.
+                // An unreachable engine used to look exactly like a screen with no data
+                // in it, which is the confusion this exists to end.
+                if engineViewModel.isDown {
+                    EngineDownBanner(
+                        isAgentInstalled: engineViewModel.isAgentInstalled,
+                        errorMessage: engineViewModel.errorMessage,
+                        isBusy: engineViewModel.isBusy,
+                        onStart: { Task { await engineViewModel.start() } },
+                        onOpenSettings: { isSettingsOpen = true }
+                    )
+                }
                 content
             }
             .overlay(alignment: .trailing) {
@@ -106,6 +125,17 @@ struct ContentView: View {
             // Resetting the selection is what makes Enter right after typing hit the
             // add-task row rather than whatever the arrows last landed on.
             .onChange(of: paletteQuery) { paletteSelection = 0 }
+            .sheet(isPresented: $isSettingsOpen) {
+                // Closing stops the polling, so an unanswered browser trip does not
+                // keep asking the engine in the background.
+                SettingsSheet(viewModel: settingsViewModel, engine: engineViewModel, onClose: {
+                    settingsViewModel.stopPolling()
+                    isSettingsOpen = false
+                })
+            }
+            // Runs for the life of the window and stops with it, which is what the
+            // spec's "within one minute" bound needs.
+            .task { await engineViewModel.poll() }
             .sheet(item: $projectSheet) { mode in
                 let canDelete: Bool = {
                     if case .edit = mode { return true }
@@ -191,6 +221,19 @@ struct ContentView: View {
             navigate: navigate(to:),
             askAgent: openProjectChat
         ))
+        // A poll can fail per source, so this is also where an expired Jira token
+        // finally becomes visible instead of only reaching the engine's console.
+        .alert(
+            "Refresh",
+            isPresented: Binding(
+                get: { refreshViewModel.errorMessage != nil },
+                set: { if !$0 { refreshViewModel.errorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(refreshViewModel.errorMessage ?? "")
+        }
     }
 
     @ViewBuilder
@@ -322,6 +365,20 @@ struct ContentView: View {
 
     private func openAgent(_ target: AgentChatTarget) {
         Task { await agentChatViewModel.open(target) }
+    }
+
+    /// Asks the engine to fetch Jira and pull requests now, then reloads every list
+    /// that could have changed. The view model owns the busy guard, so a second
+    /// click while one is in flight is a no-op rather than a second poll.
+    private func refresh() {
+        Task {
+            guard await refreshViewModel.refresh() else { return }
+            await todayViewModel.load()
+            await ticketsViewModel.load()
+            await prsViewModel.load()
+            await jiraViewModel.load()
+            await projectsViewModel.load()
+        }
     }
 
     private func openTodoChat(_ todo: Todo) {

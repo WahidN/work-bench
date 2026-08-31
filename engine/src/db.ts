@@ -34,6 +34,11 @@ CREATE TABLE IF NOT EXISTS todos (
   due_at TEXT,
   done_at TEXT,
   pinned INTEGER NOT NULL DEFAULT 0,
+  -- The Jira workflow status, exactly as Jira names it, and the Atlassian status
+  -- category it belongs to. Both nullable: a manual todo has no Jira status, and an
+  -- empty string would be indistinguishable from one the engine failed to read.
+  status TEXT,
+  status_category TEXT,
   created_at TEXT NOT NULL,
   UNIQUE(source, source_id)
 );
@@ -184,6 +189,12 @@ const MIGRATIONS: string[] = [
    ALTER TABLE tickets_rebuilt RENAME TO tickets;`,
   // 6: Project detail. Free-form per-project notes, autosaved from the Notes tab.
   `ALTER TABLE projects ADD COLUMN notes TEXT NOT NULL DEFAULT '';`,
+  // 7: Split the Jira screen by status. The workflow status name as Jira reports it,
+  // plus its Atlassian category, which is what makes ordering possible: the name
+  // alone cannot say whether "Blocked" is active work. Nullable, no default, so an
+  // unknown status stays distinguishable from a real one.
+  `ALTER TABLE todos ADD COLUMN status TEXT;
+   ALTER TABLE todos ADD COLUMN status_category TEXT;`,
 ];
 
 function isEmptyDatabase(db: Database.Database): boolean {

@@ -9,6 +9,10 @@ export function mapGithubIssue(raw: any, repo: string): SourceIssue {
     url: raw.url,
     body: raw.body ?? '',
     projectKey: repo,
+    // A GitHub issue has no Jira workflow status. Null rather than optional, so every
+    // producer has to say so out loud instead of leaving the field undefined.
+    statusName: null,
+    statusCategory: null,
   };
 }
 

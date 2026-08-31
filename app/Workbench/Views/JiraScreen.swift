@@ -75,15 +75,18 @@ struct JiraScreen: View {
                         .foregroundStyle(Theme.Neutral.n600)
                         .padding(.vertical, Theme.Space.s6)
                 } else {
-                    ForEach(rows) { row in
-                        JiraIssueRow(
-                            row: row,
-                            isBusy: viewModel.busyTodoId == row.id,
-                            onPromote: { Task { await viewModel.promote(row); onDidMutate() } },
-                            onTogglePin: { Task { await viewModel.togglePin(row) } },
-                            onCreatePr: { Task { await viewModel.createPr(row); onDidMutate() } },
-                            onChat: { onChat(row) }
-                        )
+                    ForEach(JiraLogic.statusGroups(rows: rows)) { group in
+                        statusHeader(group)
+                        ForEach(group.rows) { row in
+                            JiraIssueRow(
+                                row: row,
+                                isBusy: viewModel.busyTodoId == row.id,
+                                onPromote: { Task { await viewModel.promote(row); onDidMutate() } },
+                                onTogglePin: { Task { await viewModel.togglePin(row) } },
+                                onCreatePr: { Task { await viewModel.createPr(row); onDidMutate() } },
+                                onChat: { onChat(row) }
+                            )
+                        }
                     }
                 }
             }
@@ -91,6 +94,25 @@ struct JiraScreen: View {
             .padding(.vertical, Theme.Space.s8)
             .padding(.trailing, Theme.Space.s8)
         }
+    }
+
+    private func statusHeader(_ group: JiraStatusGroup) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s3) {
+            Text(group.label)
+                .font(.system(size: Theme.FontSize.label))
+                .tracking(1.04)
+                .textCase(.uppercase)
+                .foregroundStyle(Theme.Neutral.n500)
+                .lineLimit(1)
+            Text("\(group.count)")
+                .font(.system(size: Theme.FontSize.label))
+                .foregroundStyle(Theme.Neutral.n700)
+                .monospacedDigit()
+            Spacer()
+        }
+        .padding(.horizontal, Theme.Space.s4)
+        .padding(.top, Theme.Space.s6)
+        .padding(.bottom, Theme.Space.s2)
     }
 }
 

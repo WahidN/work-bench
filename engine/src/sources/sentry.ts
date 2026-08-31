@@ -14,6 +14,9 @@ export function mapSentryIssue(raw: any, projectKey: string, stack: string): Sou
     url: raw.permalink,
     body,
     projectKey,
+    // A Sentry issue has no Jira workflow status.
+    statusName: null,
+    statusCategory: null,
   };
 }
 

@@ -51,6 +51,8 @@ struct AppHeader: View {
     var headingOverride: String? = nil
     let onOpenAgent: () -> Void
     let onAddProject: () -> Void
+    let isRefreshing: Bool
+    let onRefresh: () -> Void
 
     var body: some View {
         HStack(alignment: .center, spacing: Theme.Space.s4) {
@@ -71,10 +73,21 @@ struct AppHeader: View {
                     .foregroundStyle(Theme.nocturneText)
             }
             Spacer()
+            HeaderActionButton(
+                title: isRefreshing ? "Refreshing" : "Refresh",
+                symbol: "arrow.clockwise",
+                help: "Fetch new Jira issues and pull requests now",
+                isBusy: isRefreshing,
+                action: onRefresh
+            )
             if section == .projects {
-                HeaderActionButton(title: "Add project", symbol: "plus", action: onAddProject)
+                HeaderActionButton(
+                    title: "Add project", symbol: "plus", help: "Add a project", action: onAddProject
+                )
             } else {
-                HeaderActionButton(title: "Agent", symbol: "sparkles", action: onOpenAgent)
+                HeaderActionButton(
+                    title: "Agent", symbol: "sparkles", help: "Open the agent panel", action: onOpenAgent
+                )
             }
         }
         .padding(.vertical, Theme.Space.s6)
@@ -88,13 +101,23 @@ struct AppHeader: View {
 private struct HeaderActionButton: View {
     let title: String
     let symbol: String
+    /// Passed in rather than derived from the title, which stopped being possible
+    /// the moment there was a third button.
+    let help: String
+    var isBusy: Bool = false
     let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: Theme.Space.s2) {
-                Image(systemName: symbol)
+                if isBusy {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 13, height: 13)
+                } else {
+                    Image(systemName: symbol)
+                }
                 Text(title)
                     .font(Theme.heading(14))
             }
@@ -102,14 +125,15 @@ private struct HeaderActionButton: View {
             .padding(.horizontal, 10.08)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(Theme.nocturneAccent)
-        .background(isHovered ? Theme.nocturneAccent.opacity(0.12) : Color.clear)
+        .disabled(isBusy)
+        .foregroundStyle(isBusy ? Theme.Neutral.n600 : Theme.nocturneAccent)
+        .background(isHovered && !isBusy ? Theme.nocturneAccent.opacity(0.12) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .strokeBorder(Theme.nocturneAccent, lineWidth: 1)
+                .strokeBorder(isBusy ? Theme.Neutral.n800 : Theme.nocturneAccent, lineWidth: 1)
         )
         .onHover { isHovered = $0 }
-        .help(title == "Agent" ? "Open the agent panel" : "Add a project")
+        .help(help)
     }
 }

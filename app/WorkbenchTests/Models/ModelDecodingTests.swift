@@ -265,6 +265,61 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     #expect(try decode(PrReviewThread.self, json).diffSide == "LEFT")
 }
 
+@Test func todoDecodesItsJiraStatus() throws {
+    let json = """
+    {"id":1,"source":"jira","sourceId":"JIRA-MR-1","text":"[MR-1] Fix it","body":"","url":null,
+     "projectId":null,"canPromote":true,"done":false,"promotedTicketId":null,"priority":"med",
+     "pinned":false,"statusName":"In Review","statusCategory":"in_progress",
+     "createdAt":"2026-08-27T00:00:00.000Z"}
+    """
+    let todo = try decode(Todo.self, json)
+
+    #expect(todo.statusName == "In Review")
+    #expect(todo.statusCategory == "in_progress")
+}
+
+// Every payload written before this change omits both keys. Optionals decode to nil
+// when a key is absent, which a non-optional field would not: Swift's synthesized
+// Decodable ignores property defaults, so a default would not save it.
+@Test func todoDecodesWithNoStatusKeysAtAll() throws {
+    let json = """
+    {"id":2,"source":"manual","sourceId":null,"text":"renew SSL cert","body":"","url":null,
+     "projectId":null,"canPromote":false,"done":false,"promotedTicketId":null,"priority":"med",
+     "pinned":false,"createdAt":"2026-08-27T00:00:00.000Z"}
+    """
+    let todo = try decode(Todo.self, json)
+
+    #expect(todo.statusName == nil)
+    #expect(todo.statusCategory == nil)
+}
+
+@Test func jiraConnectionDecodesAConnectedSite() throws {
+    let json = """
+    {"hasClientCredentials":true,"connected":true,"siteUrl":"https://demo.atlassian.net",
+     "siteName":"Demo","availableSites":[],"callbackUrl":"http://localhost:4173/oauth/jira/callback"}
+    """
+    let connection = try decode(JiraConnection.self, json)
+
+    #expect(connection.connected)
+    #expect(connection.siteName == "Demo")
+    #expect(connection.availableSites.isEmpty)
+    #expect(connection.callbackUrl == "http://localhost:4173/oauth/jira/callback")
+}
+
+@Test func jiraConnectionDecodesSeveralSitesAwaitingAChoice() throws {
+    let json = """
+    {"hasClientCredentials":true,"connected":false,"siteUrl":null,"siteName":null,
+     "availableSites":[{"id":"cloud-1","url":"https://one.atlassian.net","name":"One"},
+                       {"id":"cloud-2","url":"https://two.atlassian.net","name":"Two"}],
+     "callbackUrl":"http://localhost:4173/oauth/jira/callback"}
+    """
+    let connection = try decode(JiraConnection.self, json)
+
+    #expect(connection.connected == false)
+    #expect(connection.siteUrl == nil)
+    #expect(connection.availableSites.map(\.name) == ["One", "Two"])
+}
+
 @Test func todoMessageDecodesTheEnginePayload() throws {
     let json = """
     {"id":7,"todoId":12,"role":"assistant","content":"A redirect loop.","createdAt":"2026-08-26T00:00:00.000Z"}
