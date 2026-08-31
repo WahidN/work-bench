@@ -2,12 +2,12 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { openDb } from '../src/db.js';
 import { createProject } from '../src/projects.js';
-import { createTicket, updateTicketStatus, findTicketBySource, listTicketMessages } from '../src/tickets.js';
+import { createTicket, getTicket, updateTicketStatus, findTicketBySource, listTicketMessages, addTicketMessage } from '../src/tickets.js';
 import { recordPr } from '../src/prs.js';
 import * as analyze from '../src/analyze.js';
 import {
   listTodos, getTodo, createManualTodo, setTodoDone, upsertJiraTodo, reconcileJiraTodos, promoteTodo, getTodayView,
-  setTodoPriority, setTodoPinned, listTodayTodos, localDate, listTodoMessages, addTodoMessage,
+  setTodoPriority, setTodoPinned, listTodayTodos, localDate, listTodoMessages, addTodoMessage, deleteTodo,
 } from '../src/todos.js';
 
 vi.mock('../src/analyze.js');
@@ -440,5 +440,81 @@ describe('todo messages', () => {
     addTodoMessage(db, first.id, 'user', 'about the first');
 
     expect(listTodoMessages(db, second.id)).toEqual([]);
+  });
+});
+
+describe('deleteTodo', () => {
+  const issue = { source: 'jira' as const, sourceId: 'JIRA-DEMO-1', title: '[DEMO-1] Update env vars', url: 'https://x/browse/DEMO-1', body: 'Redirect loop on logout.', projectKey: 'DEMO', statusName: null, statusCategory: null };
+
+  it('removes a manual todo', () => {
+    const todo = createManualTodo(db, 'added by mistake');
+
+    deleteTodo(db, todo.id);
+
+    expect(getTodo(db, todo.id)).toBeNull();
+  });
+
+  it('removes a manual todo that has a thread, instead of failing on the foreign key', () => {
+    const todo = createManualTodo(db, 'discussed then abandoned');
+    addTodoMessage(db, todo.id, 'user', 'is this worth doing?');
+    addTodoMessage(db, todo.id, 'assistant', 'Probably not.');
+
+    deleteTodo(db, todo.id);
+
+    expect(getTodo(db, todo.id)).toBeNull();
+    expect(listTodoMessages(db, todo.id)).toEqual([]);
+  });
+
+  it('leaves the other todos and their threads exactly as they were', () => {
+    const kept = createManualTodo(db, 'still wanted', { priority: 'high', dueAt: '2026-09-01' });
+    const doomed = createManualTodo(db, 'added by mistake');
+    addTodoMessage(db, kept.id, 'user', 'about the kept one');
+    addTodoMessage(db, doomed.id, 'user', 'about the doomed one');
+    setTodoDone(db, kept.id, true);
+
+    deleteTodo(db, doomed.id);
+
+    expect(getTodo(db, kept.id)).toMatchObject({
+      text: 'still wanted', priority: 'high', dueAt: '2026-09-01', done: true,
+    });
+    expect(listTodoMessages(db, kept.id).map((m) => m.content)).toEqual(['about the kept one']);
+  });
+
+  it('refuses a mirrored jira todo and leaves it in place', () => {
+    upsertJiraTodo(db, issue, null);
+    const jira = listTodos(db)[0];
+    addTodoMessage(db, jira.id, 'user', 'about the issue');
+
+    expect(() => deleteTodo(db, jira.id)).toThrow('cannot be deleted');
+    expect(getTodo(db, jira.id)).not.toBeNull();
+    expect(listTodoMessages(db, jira.id)).toHaveLength(1);
+  });
+
+  it('reports not found for an id that does not exist', () => {
+    expect(() => deleteTodo(db, 999)).toThrow('not found');
+  });
+
+  it('leaves the ticket a todo was promoted into alone, with its own thread', () => {
+    // promoteTodo only ever runs on a mirrored issue, so a manual todo pointing at a
+    // ticket cannot be reached through the API. Stamped by hand because the point is
+    // to pin that deleteTodo touches neither tickets nor ticket_messages: the
+    // reference runs from the todo to the ticket, so nothing protects them but this.
+    const project = createProject(db, {
+      name: 'demo', repoPath: '/repos/demo', defaultBranch: 'main',
+      githubRepo: null, jiraProjectKey: 'DEMO', sentryProjectSlug: null,
+    });
+    const ticket = createTicket(db, {
+      source: 'jira', sourceId: 'JIRA-DEMO-1', projectId: project.id,
+      title: '[DEMO-1] Update env vars', body: 'b', url: 'u', analysis: null,
+    });
+    addTicketMessage(db, ticket.id, 'user', 'how should we fix this?');
+    const todo = createManualTodo(db, 'the task it came from');
+    db.prepare('UPDATE todos SET promoted_ticket_id = ? WHERE id = ?').run(ticket.id, todo.id);
+
+    deleteTodo(db, todo.id);
+
+    expect(getTodo(db, todo.id)).toBeNull();
+    expect(getTicket(db, ticket.id)).not.toBeNull();
+    expect(listTicketMessages(db, ticket.id).map((m) => m.content)).toEqual(['how should we fix this?']);
   });
 });

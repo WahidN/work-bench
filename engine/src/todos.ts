@@ -103,6 +103,23 @@ export function setTodoPinned(db: Database.Database, id: number, pinned: boolean
   return getTodo(db, id);
 }
 
+// todo_messages references todos(id) and foreign keys are enforced at runtime, so the
+// thread has to go before the row it hangs off, the same order reconcileJiraTodos needs.
+// One transaction because a failure between the two statements would leave a task whose
+// thread had been destroyed, which is worse than either outcome on its own.
+export function deleteTodo(db: Database.Database, id: number): void {
+  const todo = getTodo(db, id);
+  if (!todo) throw new Error(`Todo ${id} not found`);
+  // The interface never offers this for a mirrored issue, but "the UI does not offer it"
+  // is not a guarantee about an HTTP API, and the next poll would recreate the row anyway.
+  if (todo.source !== 'manual') throw new Error(`Todo ${id} cannot be deleted (not a manual task)`);
+
+  db.transaction(() => {
+    db.prepare('DELETE FROM todo_messages WHERE todo_id = ?').run(id);
+    db.prepare('DELETE FROM todos WHERE id = ?').run(id);
+  })();
+}
+
 export function upsertJiraTodo(db: Database.Database, issue: SourceIssue, project: Project | null): void {
   db.prepare(
     `INSERT INTO todos (source, source_id, text, body, url, project_id, can_promote, done, status, status_category, created_at)
