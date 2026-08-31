@@ -73,7 +73,9 @@ struct ContentView: View {
                 if engineViewModel.isDown {
                     EngineDownBanner(
                         isAgentInstalled: engineViewModel.isAgentInstalled,
-                        onStart: { Task { await engineViewModel.install() } },
+                        errorMessage: engineViewModel.errorMessage,
+                        isBusy: engineViewModel.isBusy,
+                        onStart: { Task { await engineViewModel.start() } },
                         onOpenSettings: { isSettingsOpen = true }
                     )
                 }

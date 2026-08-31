@@ -4,10 +4,13 @@ enum EngineAgentError: Error, Equatable, LocalizedError {
     case noDirectoryChosen
     case notAnEngineDirectory
     case portAlreadyInUse
+    case notInstalled
     case commandFailed(String)
 
     var errorDescription: String? {
         switch self {
+        case .notInstalled:
+            return "The engine is not set up to start automatically yet. Choose the engine folder in Settings."
         case .noDirectoryChosen:
             return "Choose the engine folder first."
         case .notAnEngineDirectory:
@@ -56,6 +59,16 @@ struct EngineAgentInstaller {
         )
         try environment.writePlist(plist, to: EngineAgent.plistPath)
         _ = try environment.run(["launchctl", "bootstrap", "gui/\(getuid())", EngineAgent.plistPath])
+    }
+
+    /// Starts an agent that is installed but not running.
+    ///
+    /// A kickstart, not a second bootstrap: launchctl refuses to bootstrap a label it
+    /// already knows, so reusing install() here made the Start button appear to do
+    /// nothing at all. `-k` restarts it if a process is somehow already up.
+    func start() throws {
+        guard environment.plistFileExists() else { throw EngineAgentError.notInstalled }
+        _ = try environment.run(["launchctl", "kickstart", "-k", "gui/\(getuid())/\(EngineAgent.label)"])
     }
 
     func remove() throws {

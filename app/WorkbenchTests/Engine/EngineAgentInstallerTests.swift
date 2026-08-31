@@ -139,6 +139,42 @@ struct EngineAgentInstallerTests {
         #expect(environment.deleted.isEmpty)
     }
 
+    // Starting an agent that is already bootstrapped is a kickstart, not a second
+    // bootstrap: launchctl refuses to bootstrap a label it already knows, so using
+    // install() for the banner's Start button made the button silently do nothing.
+    @Test func startKickstartsAnAlreadyInstalledAgent() throws {
+        let environment = FakeAgentEnvironment()
+        environment.plistExists = true
+
+        try installer(environment).start()
+
+        #expect(environment.commands.count == 1)
+        #expect(environment.commands[0].contains("kickstart"))
+        #expect(environment.commands[0].contains("-k"))
+        #expect(environment.commands[0].contains("gui/\(getuid())/\(EngineAgent.label)"))
+        #expect(environment.written.isEmpty, "starting must not rewrite the plist")
+    }
+
+    @Test func startRefusesWhenNothingIsInstalled() {
+        let environment = FakeAgentEnvironment()
+        environment.plistExists = false
+
+        #expect(throws: EngineAgentError.notInstalled) {
+            try installer(environment).start()
+        }
+        #expect(environment.commands.isEmpty)
+    }
+
+    @Test func startSurfacesAKickstartFailure() {
+        let environment = FakeAgentEnvironment()
+        environment.plistExists = true
+        environment.runResults["launchctl"] = .failure(EngineAgentError.commandFailed("No such process"))
+
+        #expect(throws: EngineAgentError.commandFailed("No such process")) {
+            try installer(environment).start()
+        }
+    }
+
     @Test func isInstalledReflectsThePlistOnDisk() {
         let environment = FakeAgentEnvironment()
 

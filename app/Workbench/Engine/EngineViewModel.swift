@@ -47,6 +47,7 @@ enum EngineState: Equatable {
 final class EngineViewModel {
     private(set) var state: EngineState = .unknown
     private(set) var isAgentInstalled = false
+    private(set) var isBusy = false
     var errorMessage: String?
 
     /// Persisted, because the app is built into DerivedData and has no reliable path
@@ -82,6 +83,8 @@ final class EngineViewModel {
     }
 
     func install() async {
+        isBusy = true
+        defer { isBusy = false }
         errorMessage = nil
         do {
             try installer.install(engineDirectory: engineDirectory)
@@ -94,7 +97,29 @@ final class EngineViewModel {
         }
     }
 
+    /// What the banner's Start button calls. Distinct from install(): the agent is
+    /// already there, it just is not running.
+    func start() async {
+        isBusy = true
+        defer { isBusy = false }
+        errorMessage = nil
+        do {
+            try installer.start()
+            try? await Task.sleep(for: .seconds(2))
+            await check()
+            // launchd will have tried and given up if the engine cannot boot, so say so
+            // rather than leaving the banner sitting there as if nothing was clicked.
+            if state == .unreachable {
+                errorMessage = "The engine was started but is not answering. See the log: \(logPath)"
+            }
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
     func remove() async {
+        isBusy = true
+        defer { isBusy = false }
         errorMessage = nil
         do {
             try installer.remove()
