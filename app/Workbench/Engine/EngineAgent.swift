@@ -1,5 +1,30 @@
 import Foundation
 
+/// Where the engine's toolchain actually lives: a real node binary and the pnpm
+/// script it should run.
+///
+/// `nodePath` must be a real executable, never a version-manager shim. On this
+/// machine `~/.vite-plus/bin/node` is a symlink to a single multiplexed `vp`
+/// binary, and under launchd that shim hangs forever on a unix socket waiting for
+/// a service that is not there: the job reports "running" while nothing ever
+/// listens and nothing is ever logged. `EngineToolchain` exists to make the
+/// distinction between a shim and the binary behind it explicit.
+struct EngineToolchain: Equatable {
+    let nodePath: String
+    let pnpmPath: String
+
+    /// The directory holding the real node, put first on the agent's PATH so that
+    /// pnpm's `#!/usr/bin/env node` shebang and every child process it spawns
+    /// resolve the same node that compiled the engine's native modules.
+    var nodeDirectory: String {
+        URL(fileURLWithPath: nodePath).deletingLastPathComponent().path
+    }
+
+    var pnpmDirectory: String {
+        URL(fileURLWithPath: pnpmPath).deletingLastPathComponent().path
+    }
+}
+
 /// The launchd agent that keeps the engine running: what it is called, what its
 /// plist says, and whether a directory actually holds the engine.
 ///
@@ -9,29 +34,54 @@ import Foundation
 enum EngineAgent {
     static let label = "nl.linku.workbench.engine"
 
-    /// The engine is started the same way a person starts it, through their own shell.
+    /// Runs the engine with no shell at all: launchd executes the real node binary
+    /// directly on the pnpm script.
     ///
-    /// `-i`, not `-l`. This was originally `-l` on the assumption that a login shell
-    /// gives what the user's terminal gives. It does not, at least here: a login shell
-    /// resolved Homebrew's node v26 while the interactive shell resolves the version
-    /// manager's v24, and v24 is the one that compiled better-sqlite3. The login shell
-    /// therefore started the engine with a node that could not load its own native
-    /// module, failing with ERR_DLOPEN_FAILED on every retry.
+    /// Two shell wrappers were tried first and both failed, for opposite reasons.
+    /// A login shell (`-lc`) sources `.zprofile`, which supplies Homebrew's pnpm but
+    /// also Homebrew's node v26, and v26 cannot load the `better-sqlite3` that node
+    /// v24 compiled: `ERR_DLOPEN_FAILED` on every KeepAlive retry. An interactive
+    /// shell (`-ic`) sources `.zshrc`, which supplies node v24 but not Homebrew, so
+    /// the job died with `command not found: pnpm` and exit code 127.
     ///
-    /// Not by baking absolute paths in either: node resolves through a version-manager
-    /// shim, so a captured path goes stale the moment the user switches versions.
+    /// The deeper problem is that a shell wrapper makes the engine depend on the
+    /// user's shell configuration surviving launchd's near-empty environment, and
+    /// here it does not: `.zshrc` failed partway through, on `pyenv` not being
+    /// found, before it finished building PATH. Sourcing both configurations
+    /// (`-lic`) does resolve both tools, but it still lands on the version-manager
+    /// shim described in `EngineToolchain`, which hangs headless.
     ///
-    /// `exec` is load-bearing. Without it zsh stays alive as the parent, launchd
-    /// supervises the shell instead of the engine, and KeepAlive never sees a crash.
-    static func plist(engineDirectory: String, logPath: String) -> [String: Any] {
-        let command = "cd '\(engineDirectory)' && exec pnpm start"
+    /// So the shell is used once, at install time, to ask the toolchain where it
+    /// really lives, and never again at launch time. What launchd runs is fixed,
+    /// explicit and independent of any dotfile.
+    ///
+    /// `WorkingDirectory` replaces the old `cd '<dir>' && exec ...`, which removes
+    /// the shell quoting question entirely, and there is no wrapper process left
+    /// for launchd to supervise instead of the engine, so `exec` is no longer needed.
+    static func plist(engineDirectory: String, toolchain: EngineToolchain, logPath: String) -> [String: Any] {
+        let path = [
+            toolchain.nodeDirectory,
+            toolchain.pnpmDirectory,
+            "/usr/bin", "/bin", "/usr/sbin", "/sbin",
+        ].joined(separator: ":")
+
         return [
             "Label": label,
-            "ProgramArguments": ["/bin/zsh", "-ic", command],
+            "ProgramArguments": [toolchain.nodePath, toolchain.pnpmPath, "start"],
+            "WorkingDirectory": engineDirectory,
+            "EnvironmentVariables": ["PATH": path],
             "RunAtLoad": true,
-            // A dictionary rather than `true`: blanket KeepAlive races against removal
-            // and revives an engine that exited deliberately. Restart only on a crash.
-            "KeepAlive": ["SuccessfulExit": false],
+            // Blanket `true`, not `["SuccessfulExit": false]`. That narrower form was
+            // tried first, to restart on a crash while respecting a deliberate exit,
+            // and it never restarted anything: the supervised process is pnpm, which
+            // traps SIGTERM and exits 0, so launchd recorded `last exit code = 0` and
+            // correctly declined to revive what looked like a clean shutdown. Every
+            // engine death arrives through that wrapper, so the distinction the key
+            // depends on is not observable here.
+            //
+            // Removal does not race with this: `remove()` boots the job out of the
+            // domain, and a job launchd no longer knows cannot be restarted.
+            "KeepAlive": true,
             "StandardOutPath": logPath,
             "StandardErrorPath": logPath,
         ]

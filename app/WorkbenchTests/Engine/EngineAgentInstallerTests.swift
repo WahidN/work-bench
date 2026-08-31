@@ -11,6 +11,9 @@ final class FakeAgentEnvironment: AgentEnvironment {
     var plistExists = false
     var agentLoaded = false
     var runResults: [String: Result<String, Error>] = [:]
+    var toolchain: Result<EngineToolchain, Error> = .success(
+        EngineToolchain(nodePath: "/opt/runtimes/node/24.20.0/bin/node", pnpmPath: "/opt/homebrew/bin/pnpm")
+    )
 
     private(set) var written: [(path: String, plist: [String: Any])] = []
     private(set) var deleted: [String] = []
@@ -18,6 +21,11 @@ final class FakeAgentEnvironment: AgentEnvironment {
 
     func isEngineDirectory(_ path: String) -> Bool { validDirectories.contains(path) }
     func isPortInUse() -> Bool { portInUse }
+
+    func resolveToolchain() throws -> EngineToolchain {
+        try toolchain.get()
+    }
+
     func plistFileExists() -> Bool { plistExists }
     func isAgentLoaded() -> Bool { agentLoaded }
 
@@ -93,6 +101,34 @@ struct EngineAgentInstallerTests {
         }
         #expect(environment.written.isEmpty, "no plist may be written when the port is taken")
         #expect(environment.commands.isEmpty, "launchctl must not be run when the port is taken")
+    }
+
+    // Without a resolvable toolchain the plist would name a program that does not
+    // exist, and the failure would only show up as a launchd job that never listens.
+    @Test func installRefusesWhenTheToolchainCannotBeFoundAndTouchesNothing() {
+        let environment = FakeAgentEnvironment()
+        environment.validDirectories = [engineDir]
+        environment.toolchain = .failure(EngineAgentError.toolchainNotFound("pnpm"))
+
+        #expect(throws: EngineAgentError.toolchainNotFound("pnpm")) {
+            try installer(environment).install(engineDirectory: engineDir)
+        }
+        #expect(environment.written.isEmpty, "no plist may be written without a toolchain")
+        #expect(environment.commands.isEmpty, "launchctl must not be run without a toolchain")
+    }
+
+    @Test func installBakesTheResolvedToolchainIntoThePlist() throws {
+        let environment = FakeAgentEnvironment()
+        environment.validDirectories = [engineDir]
+        environment.toolchain = .success(
+            EngineToolchain(nodePath: "/opt/runtimes/node/24.20.0/bin/node", pnpmPath: "/opt/homebrew/bin/pnpm")
+        )
+
+        try installer(environment).install(engineDirectory: engineDir)
+
+        let arguments = environment.written[0].plist["ProgramArguments"] as? [String]
+        #expect(arguments?.first == "/opt/runtimes/node/24.20.0/bin/node")
+        #expect(arguments?.contains("/opt/homebrew/bin/pnpm") == true)
     }
 
     @Test func installSurfacesALaunchctlFailureRatherThanSwallowingIt() {

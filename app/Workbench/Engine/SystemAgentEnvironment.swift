@@ -38,6 +38,55 @@ struct SystemAgentEnvironment: AgentEnvironment {
         (try? run(["launchctl", "print", "gui/\(getuid())/\(EngineAgent.label)"])) != nil
     }
 
+    /// Asks the user's own shell where its toolchain really lives, once, at install
+    /// time.
+    ///
+    /// `-lic` is both flags on purpose: `.zprofile` (login) is what puts Homebrew's
+    /// pnpm on PATH, and `.zshrc` (interactive) is what puts the version manager's
+    /// node there. Measured with a deliberately minimal PATH, neither one alone
+    /// yields both, which is exactly how the two earlier single-flag attempts failed.
+    ///
+    /// `process.execPath` is the load-bearing trick: asking node to print its own
+    /// binary makes a version-manager shim resolve to the real executable behind it,
+    /// and only the real executable survives launchd.
+    func resolveToolchain() throws -> EngineToolchain {
+        let node = try capture("node -e 'process.stdout.write(process.execPath)'")
+        let pnpm = try capture("command -v pnpm")
+
+        let manager = FileManager.default
+        guard !node.isEmpty, manager.isExecutableFile(atPath: node) else {
+            throw EngineAgentError.toolchainNotFound("node")
+        }
+        guard !pnpm.isEmpty, manager.isExecutableFile(atPath: pnpm) else {
+            throw EngineAgentError.toolchainNotFound("pnpm")
+        }
+        return EngineToolchain(nodePath: node, pnpmPath: pnpm)
+    }
+
+    /// stdout only, unlike `run`. A login-interactive shell prints its own noise on
+    /// stderr here (a failed `pyenv`, an unreadable Java home), and merging that into
+    /// the output would corrupt the path being captured.
+    private func capture(_ shellCommand: String) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-lic", shellCommand]
+
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+
+        try process.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+
+        let text = String(data: data, encoding: .utf8) ?? ""
+        // The last non-empty line, in case a dotfile prints a banner on stdout.
+        return text
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .last { !$0.isEmpty } ?? ""
+    }
+
     func writePlist(_ plist: [String: Any], to path: String) throws {
         let directory = URL(fileURLWithPath: path).deletingLastPathComponent()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

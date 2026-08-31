@@ -5,9 +5,17 @@ import Foundation
 @Suite
 struct EngineAgentPlistTests {
     private let engineDir = "/Users/someone/Projecten/workbench/engine"
+    private let toolchain = EngineToolchain(
+        nodePath: "/Users/someone/.vite-plus/js_runtime/node/24.20.0/bin/node",
+        pnpmPath: "/opt/homebrew/bin/pnpm"
+    )
 
     private func plist() -> [String: Any] {
-        EngineAgent.plist(engineDirectory: engineDir, logPath: "/Users/someone/Library/Logs/workbench-engine.log")
+        EngineAgent.plist(
+            engineDirectory: engineDir,
+            toolchain: toolchain,
+            logPath: "/Users/someone/Library/Logs/workbench-engine.log"
+        )
     }
 
     @Test func labelIsTheReverseDnsIdentifier() {
@@ -15,38 +23,50 @@ struct EngineAgentPlistTests {
         #expect(plist()["Label"] as? String == EngineAgent.label)
     }
 
-    @Test func programRunsALoginShell() {
+    // No shell, in any form. Both wrappers that were tried failed under launchd: a
+    // login shell gave Homebrew's node v26, which cannot load the better-sqlite3 that
+    // v24 compiled, and an interactive shell gave v24 but no pnpm, so the job died
+    // with exit code 127. Sourcing both still landed on a version-manager shim that
+    // hangs headless. The regression guard is that /bin/zsh never appears here again.
+    @Test func programRunsTheRealNodeBinaryWithNoShell() {
         let arguments = plist()["ProgramArguments"] as? [String]
 
-        #expect(arguments?.first == "/bin/zsh")
-        // -i, not -l. Measured on this machine: a login shell resolves Homebrew's node
-        // v26 while the interactive shell resolves the version manager's v24, and v24
-        // is what compiled better-sqlite3. A login shell launched the engine with a
-        // node that could not load its own native module.
-        #expect(arguments?[1] == "-ic")
-        #expect(arguments?[1] != "-lc")
+        #expect(arguments?.first == toolchain.nodePath)
+        #expect(arguments?[1] == toolchain.pnpmPath)
+        #expect(arguments?[2] == "start")
         #expect(arguments?.count == 3)
+
+        #expect(arguments?.contains("/bin/zsh") == false)
+        #expect(arguments?.contains(where: { $0.hasPrefix("-") && $0.contains("c") }) == false)
     }
 
-    @Test func commandChangesToTheEngineDirectoryAndExecs() {
-        let command = (plist()["ProgramArguments"] as? [String])?[2] ?? ""
-
-        #expect(command.contains("cd '\(engineDir)'"))
-        #expect(command.contains("pnpm start"))
-        // Load-bearing: without exec, zsh remains the supervised process and launchd
-        // sees the shell exit rather than the engine crashing, so KeepAlive misfires.
-        #expect(command.contains("exec pnpm start"))
+    // WorkingDirectory rather than `cd '<dir>' && exec`, which takes the shell quoting
+    // question away entirely.
+    @Test func runsInTheEngineDirectory() {
+        #expect(plist()["WorkingDirectory"] as? String == engineDir)
     }
 
-    @Test func startsAtLoginAndRestartsOnlyAfterACrash() {
+    // pnpm's shebang is `#!/usr/bin/env node`, and tsx spawns node again, so the PATH
+    // the agent runs with decides which node the children get. The real node's own
+    // directory has to come first or a system node wins and the ABI mismatch is back.
+    @Test func putsTheRealNodeFirstOnThePath() throws {
+        let environment = plist()["EnvironmentVariables"] as? [String: String]
+        let path = try #require(environment?["PATH"])
+
+        #expect(path.hasPrefix(toolchain.nodeDirectory + ":"))
+        #expect(path.contains(toolchain.pnpmDirectory))
+        #expect(path.contains("/usr/bin"))
+    }
+
+    // Measured under launchd: killing the engine left it dead, because the supervised
+    // process is pnpm, which traps SIGTERM and exits 0. `["SuccessfulExit": false]`
+    // then reads that as a deliberate shutdown and restarts nothing, which defeats the
+    // point of supervising it at all. Blanket KeepAlive is what actually revives it.
+    @Test func startsAtLoginAndAlwaysRestarts() {
         #expect(plist()["RunAtLoad"] as? Bool == true)
 
-        // A dictionary, not `true`: blanket KeepAlive races against removal and
-        // resurrects an engine that exited on purpose.
-        let keepAlive = plist()["KeepAlive"] as? [String: Any]
-        #expect(keepAlive != nil)
-        #expect(plist()["KeepAlive"] as? Bool == nil)
-        #expect(keepAlive?["SuccessfulExit"] as? Bool == false)
+        #expect(plist()["KeepAlive"] as? Bool == true)
+        #expect(plist()["KeepAlive"] as? [String: Any] == nil, "the conditional form never fires through pnpm")
     }
 
     @Test func sendsOutputToTheLogSoAFailureIsDiagnosable() {
@@ -56,14 +76,16 @@ struct EngineAgentPlistTests {
         #expect(plist()["StandardErrorPath"] as? String == log)
     }
 
-    @Test func quotesTheDirectoryAgainstASpaceInThePath() {
+    // A space in the path was a quoting hazard while the command went through a shell.
+    // WorkingDirectory takes the raw string, so it is passed through untouched.
+    @Test func handlesASpaceInThePathWithoutQuoting() {
         let spaced = EngineAgent.plist(
             engineDirectory: "/Users/someone/My Projects/workbench/engine",
+            toolchain: toolchain,
             logPath: "/tmp/log"
         )
-        let command = (spaced["ProgramArguments"] as? [String])?[2] ?? ""
 
-        #expect(command.contains("cd '/Users/someone/My Projects/workbench/engine'"))
+        #expect(spaced["WorkingDirectory"] as? String == "/Users/someone/My Projects/workbench/engine")
     }
 
     @Test func serialisesToARealPlist() throws {

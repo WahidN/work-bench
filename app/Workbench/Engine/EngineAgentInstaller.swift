@@ -5,10 +5,14 @@ enum EngineAgentError: Error, Equatable, LocalizedError {
     case notAnEngineDirectory
     case portAlreadyInUse
     case notInstalled
+    case toolchainNotFound(String)
     case commandFailed(String)
 
     var errorDescription: String? {
         switch self {
+        case .toolchainNotFound(let tool):
+            return "Could not work out where \(tool) lives on this machine. Open a terminal and check that "
+                + "`\(tool)` runs there, then try again."
         case .notInstalled:
             return "The engine is not set up to start automatically yet. Choose the engine folder in Settings."
         case .noDirectoryChosen:
@@ -29,6 +33,9 @@ enum EngineAgentError: Error, Equatable, LocalizedError {
 protocol AgentEnvironment {
     func isEngineDirectory(_ path: String) -> Bool
     func isPortInUse() -> Bool
+    /// Where node and pnpm really live, resolved through the user's shell once at
+    /// install time so that launch time needs no shell at all.
+    func resolveToolchain() throws -> EngineToolchain
     func plistFileExists() -> Bool
     /// Whether launchd actually knows the job. Distinct from the plist existing:
     /// booting out unloads the job and leaves the file.
@@ -56,8 +63,13 @@ struct EngineAgentInstaller {
         guard environment.isEngineDirectory(engineDirectory) else { throw EngineAgentError.notAnEngineDirectory }
         guard !environment.isPortInUse() else { throw EngineAgentError.portAlreadyInUse }
 
+        // Resolving the toolchain can fail, so it belongs with the refusals above,
+        // before anything is written.
+        let toolchain = try environment.resolveToolchain()
+
         let plist = EngineAgent.plist(
             engineDirectory: engineDirectory,
+            toolchain: toolchain,
             logPath: EngineAgent.defaultLogPath
         )
         try environment.writePlist(plist, to: EngineAgent.plistPath)
