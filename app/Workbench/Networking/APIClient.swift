@@ -168,6 +168,10 @@ extension APIClient {
     func promoteTodo(id: Int) async throws -> Ticket {
         try await send("POST", "/todos/\(id)/promote", body: nil)
     }
+
+    func deleteTodo(id: Int) async throws {
+        try await sendNoContent("DELETE", "/todos/\(id)", body: nil)
+    }
 }
 
 extension APIClient {

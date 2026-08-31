@@ -7,6 +7,7 @@ protocol TodayAPI {
     func promoteTodo(id: Int) async throws -> Ticket
     func setTodoPriority(id: Int, priority: TodoPriority) async throws -> Todo
     func setTodoPinned(id: Int, pinned: Bool) async throws -> Todo
+    func deleteTodo(id: Int) async throws
 }
 
 extension APIClient: TodayAPI {}
@@ -96,6 +97,18 @@ final class TodayViewModel {
     func togglePin(_ todo: Todo) async {
         do {
             _ = try await api.setTodoPinned(id: todo.id, pinned: !todo.pinned)
+            await load()
+        } catch {
+            present(error)
+        }
+    }
+
+    /// Reloads instead of dropping the row from the local array: the sidebar count, the
+    /// project card and the facts card all derive from this list, and a local mutation
+    /// leaves those numbers stale. A failure leaves the row where it is.
+    func delete(_ todo: Todo) async {
+        do {
+            try await api.deleteTodo(id: todo.id)
             await load()
         } catch {
             present(error)
