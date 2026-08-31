@@ -9,12 +9,17 @@ import Foundation
 enum EngineAgent {
     static let label = "nl.linku.workbench.engine"
 
-    /// The engine is started the same way a person starts it, through a login shell.
+    /// The engine is started the same way a person starts it, through their own shell.
     ///
-    /// Not by resolving `pnpm` and `node` to absolute paths and baking those in: node
-    /// here resolves through a version-manager shim, so a baked path goes stale the
-    /// moment the user switches versions, and the app cannot discover the real one
-    /// anyway because a launched app inherits a minimal PATH.
+    /// `-i`, not `-l`. This was originally `-l` on the assumption that a login shell
+    /// gives what the user's terminal gives. It does not, at least here: a login shell
+    /// resolved Homebrew's node v26 while the interactive shell resolves the version
+    /// manager's v24, and v24 is the one that compiled better-sqlite3. The login shell
+    /// therefore started the engine with a node that could not load its own native
+    /// module, failing with ERR_DLOPEN_FAILED on every retry.
+    ///
+    /// Not by baking absolute paths in either: node resolves through a version-manager
+    /// shim, so a captured path goes stale the moment the user switches versions.
     ///
     /// `exec` is load-bearing. Without it zsh stays alive as the parent, launchd
     /// supervises the shell instead of the engine, and KeepAlive never sees a crash.
@@ -22,7 +27,7 @@ enum EngineAgent {
         let command = "cd '\(engineDirectory)' && exec pnpm start"
         return [
             "Label": label,
-            "ProgramArguments": ["/bin/zsh", "-lc", command],
+            "ProgramArguments": ["/bin/zsh", "-ic", command],
             "RunAtLoad": true,
             // A dictionary rather than `true`: blanket KeepAlive races against removal
             // and revives an engine that exited deliberately. Restart only on a crash.

@@ -9,6 +9,7 @@ final class FakeAgentEnvironment: AgentEnvironment {
     var validDirectories: Set<String> = []
     var portInUse = false
     var plistExists = false
+    var agentLoaded = false
     var runResults: [String: Result<String, Error>] = [:]
 
     private(set) var written: [(path: String, plist: [String: Any])] = []
@@ -18,6 +19,7 @@ final class FakeAgentEnvironment: AgentEnvironment {
     func isEngineDirectory(_ path: String) -> Bool { validDirectories.contains(path) }
     func isPortInUse() -> Bool { portInUse }
     func plistFileExists() -> Bool { plistExists }
+    func isAgentLoaded() -> Bool { agentLoaded }
 
     func writePlist(_ plist: [String: Any], to path: String) throws {
         written.append((path, plist))
@@ -142,9 +144,10 @@ struct EngineAgentInstallerTests {
     // Starting an agent that is already bootstrapped is a kickstart, not a second
     // bootstrap: launchctl refuses to bootstrap a label it already knows, so using
     // install() for the banner's Start button made the button silently do nothing.
-    @Test func startKickstartsAnAlreadyInstalledAgent() throws {
+    @Test func startKickstartsAnAgentThatIsLoaded() throws {
         let environment = FakeAgentEnvironment()
         environment.plistExists = true
+        environment.agentLoaded = true
 
         try installer(environment).start()
 
@@ -152,6 +155,22 @@ struct EngineAgentInstallerTests {
         #expect(environment.commands[0].contains("kickstart"))
         #expect(environment.commands[0].contains("-k"))
         #expect(environment.commands[0].contains("gui/\(getuid())/\(EngineAgent.label)"))
+        #expect(environment.written.isEmpty, "starting must not rewrite the plist")
+    }
+
+    // A plist on disk does not mean launchd knows about it: booting the agent out
+    // leaves the file behind, and kickstarting then fails with "Could not find
+    // service". Conflating the two is what made the Start button break after a bootout.
+    @Test func startBootstrapsAnAgentThatIsInstalledButNotLoaded() throws {
+        let environment = FakeAgentEnvironment()
+        environment.plistExists = true
+        environment.agentLoaded = false
+
+        try installer(environment).start()
+
+        #expect(environment.commands.count == 1)
+        #expect(environment.commands[0].contains("bootstrap"))
+        #expect(environment.commands[0].contains(EngineAgent.plistPath))
         #expect(environment.written.isEmpty, "starting must not rewrite the plist")
     }
 
@@ -168,6 +187,7 @@ struct EngineAgentInstallerTests {
     @Test func startSurfacesAKickstartFailure() {
         let environment = FakeAgentEnvironment()
         environment.plistExists = true
+        environment.agentLoaded = true
         environment.runResults["launchctl"] = .failure(EngineAgentError.commandFailed("No such process"))
 
         #expect(throws: EngineAgentError.commandFailed("No such process")) {

@@ -19,9 +19,12 @@ struct EngineAgentPlistTests {
         let arguments = plist()["ProgramArguments"] as? [String]
 
         #expect(arguments?.first == "/bin/zsh")
-        // -l so the user's own shell configuration is sourced: node resolves through a
-        // version-manager shim that a launched app's minimal PATH cannot see.
-        #expect(arguments?[1] == "-lc")
+        // -i, not -l. Measured on this machine: a login shell resolves Homebrew's node
+        // v26 while the interactive shell resolves the version manager's v24, and v24
+        // is what compiled better-sqlite3. A login shell launched the engine with a
+        // node that could not load its own native module.
+        #expect(arguments?[1] == "-ic")
+        #expect(arguments?[1] != "-lc")
         #expect(arguments?.count == 3)
     }
 

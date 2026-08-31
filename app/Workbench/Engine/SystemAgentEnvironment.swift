@@ -32,6 +32,12 @@ struct SystemAgentEnvironment: AgentEnvironment {
         FileManager.default.fileExists(atPath: EngineAgent.plistPath)
     }
 
+    /// `launchctl print` exits non-zero when the job is not in the domain, which is the
+    /// state after a bootout even though the plist is still on disk.
+    func isAgentLoaded() -> Bool {
+        (try? run(["launchctl", "print", "gui/\(getuid())/\(EngineAgent.label)"])) != nil
+    }
+
     func writePlist(_ plist: [String: Any], to path: String) throws {
         let directory = URL(fileURLWithPath: path).deletingLastPathComponent()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

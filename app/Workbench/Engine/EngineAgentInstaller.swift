@@ -30,6 +30,9 @@ protocol AgentEnvironment {
     func isEngineDirectory(_ path: String) -> Bool
     func isPortInUse() -> Bool
     func plistFileExists() -> Bool
+    /// Whether launchd actually knows the job. Distinct from the plist existing:
+    /// booting out unloads the job and leaves the file.
+    func isAgentLoaded() -> Bool
     func writePlist(_ plist: [String: Any], to path: String) throws
     func deletePlist(at path: String) throws
     func run(_ arguments: [String]) throws -> String
@@ -63,12 +66,19 @@ struct EngineAgentInstaller {
 
     /// Starts an agent that is installed but not running.
     ///
-    /// A kickstart, not a second bootstrap: launchctl refuses to bootstrap a label it
-    /// already knows, so reusing install() here made the Start button appear to do
-    /// nothing at all. `-k` restarts it if a process is somehow already up.
+    /// Which launchctl verb depends on whether launchd knows the job, and a plist on
+    /// disk does not settle that: booting the agent out unloads the job and leaves the
+    /// file, and kickstarting in that state fails with "Could not find service". So
+    /// bootstrap when unloaded, kickstart when loaded. Bootstrap also starts it,
+    /// because the plist sets RunAtLoad.
     func start() throws {
         guard environment.plistFileExists() else { throw EngineAgentError.notInstalled }
-        _ = try environment.run(["launchctl", "kickstart", "-k", "gui/\(getuid())/\(EngineAgent.label)"])
+
+        if environment.isAgentLoaded() {
+            _ = try environment.run(["launchctl", "kickstart", "-k", "gui/\(getuid())/\(EngineAgent.label)"])
+        } else {
+            _ = try environment.run(["launchctl", "bootstrap", "gui/\(getuid())", EngineAgent.plistPath])
+        }
     }
 
     func remove() throws {
