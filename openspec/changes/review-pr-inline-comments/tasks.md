@@ -56,14 +56,14 @@ Superseded the earlier "nothing is stored" approach. See design.md: the review f
 
 `POST /prs/:id/review` and `POST /prs/:id/review/publish` already exist from the superseded model. The first changes shape, the second is deleted along with its tests.
 
-- [ ] 5.1 Rewrite the failing tests for `POST /prs/:id/review` in `engine/tests/api/prs.test.ts`: it returns immediately rather than awaiting the review, so the response does not carry findings; it refuses a second review of the same pull request while one is running; 404 for an unknown pull request; 401 without a bearer token. Delete the tests for the batch publish route.
-- [ ] 5.2 Rewrite the route to start the work and return. Keep the `acquireJob` lock, the detached worktree, the diff, the head sha, the anchor validation and the `finally` that removes the worktree; what changes is that all of it happens after the response, and the anchorable findings are written to the store instead of returned. A failure must reach `finishJob` so it is visible rather than lost with the request.
-- [ ] 5.3 Write failing tests for `GET /prs/:id/review`: it returns the stored findings; it marks them outdated when the pull request's head has moved past the sha they were written against, and does not when it has not; an empty list for a pull request with no review; 401 without a bearer token.
-- [ ] 5.4 Implement it.
-- [ ] 5.5 Write failing tests for `POST /prs/:id/review/findings/:findingId`: it posts that one finding and marks it posted; it posts the body sent with the request, not the stored one, so an edit is what lands; a failure from GitHub is reported and the finding is **not** marked posted; posting an already posted finding is refused; 404 for an unknown finding; 401 without a bearer token; a project with no GitHub repo fails with a reason rather than a bare 500.
-- [ ] 5.6 Write failing tests for `DELETE /prs/:id/review/findings/:findingId`: it removes that finding; 404 for an unknown one; 401 without a bearer token.
-- [ ] 5.7 Implement both. Neither opens a worktree: the stored sha is what the comment anchors to. See design.md.
-- [ ] 5.8 Run the whole engine suite and typecheck. Commit.
+- [x] 5.1 Rewrite the failing tests for `POST /prs/:id/review` in `engine/tests/api/prs.test.ts`: it returns immediately rather than awaiting the review, so the response does not carry findings; it refuses a second review of the same pull request while one is running; 404 for an unknown pull request; 401 without a bearer token. Delete the tests for the batch publish route.
+- [x] 5.2 Rewrite the route to start the work and return. Keep the `acquireJob` lock, the detached worktree, the diff, the head sha, the anchor validation and the `finally` that removes the worktree; what changes is that all of it happens after the response, and the anchorable findings are written to the store instead of returned. A failure must reach `finishJob` so it is visible rather than lost with the request.
+- [x] 5.3 Write failing tests for `GET /prs/:id/review`: it returns the stored findings; it marks them outdated when the pull request's head has moved past the sha they were written against, and does not when it has not; an empty list for a pull request with no review; 401 without a bearer token.
+- [x] 5.4 Implement it.
+- [x] 5.5 Write failing tests for `POST /prs/:id/review/findings/:findingId`: it posts that one finding and marks it posted; it posts the body sent with the request, not the stored one, so an edit is what lands; a failure from GitHub is reported and the finding is **not** marked posted; posting an already posted finding is refused; 404 for an unknown finding; 401 without a bearer token; a project with no GitHub repo fails with a reason rather than a bare 500.
+- [x] 5.6 Write failing tests for `DELETE /prs/:id/review/findings/:findingId`: it removes that finding; 404 for an unknown one; 401 without a bearer token.
+- [x] 5.7 Implement both. Neither opens a worktree: the stored sha is what the comment anchors to. See design.md.
+- [x] 5.8 Run the whole engine suite and typecheck. Commit.
 
 ## 6. App: the findings on the pull request
 

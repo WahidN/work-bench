@@ -6,6 +6,7 @@ import { createProject } from '../../src/projects.js';
 import { createTicket } from '../../src/tickets.js';
 import { recordPr, updatePrStatus } from '../../src/prs.js';
 import { acquireJob } from '../../src/jobs.js';
+import { replaceReviewFindings, listReviewFindings } from '../../src/prReviewStore.js';
 import * as prChat from '../../src/prChat.js';
 import * as git from '../../src/git.js';
 import * as prReview from '../../src/prReview.js';
@@ -171,55 +172,87 @@ const DIFF = `diff --git a/src/a.ts b/src/a.ts
  const context = 4;
 `;
 
+/// The review runs after the response, so a test that wants to see its effect has
+/// to let the microtask queue drain first. Polling the store rather than sleeping
+/// a fixed time keeps this from being a slow test that also flakes.
+async function waitForFindings(prId: number): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    if (listReviewFindings(db, prId).length > 0) return;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
+async function settle(): Promise<void> {
+  await new Promise((r) => setTimeout(r, 30));
+}
+
 describe('POST /prs/:id/review', () => {
   beforeEach(() => {
     vi.mocked(git.openDetachedWorktree).mockResolvedValue('/repos/demo/.worktrees/fix-gh-1');
     vi.mocked(git.removeWorktree).mockResolvedValue(undefined);
     vi.mocked(git.headSha).mockResolvedValue('abc123');
     vi.mocked(git.getDiff).mockResolvedValue(DIFF);
+    vi.mocked(prReview.reviewPrDiff).mockResolvedValue([]);
   });
 
-  it('returns the findings that can be anchored and the ones that cannot, separately', async () => {
+  // The agent takes minutes. A request held open that long fails for reasons
+  // that have nothing to do with the review.
+  it('returns at once and does not carry the findings', async () => {
+    vi.mocked(prReview.reviewPrDiff).mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve([]), 1000))
+    );
+
+    const res = await auth(request(app).post(`/prs/${prId}/review`));
+
+    expect(res.status).toBe(202);
+    expect(res.body.findings).toBeUndefined();
+  });
+
+  it('stores the anchorable findings and drops the rest', async () => {
     vi.mocked(prReview.reviewPrDiff).mockResolvedValue([
       { path: 'src/a.ts', line: 12, body: 'real remark' },
       { path: 'src/a.ts', line: 999, body: 'invented line' },
     ]);
 
-    const res = await auth(request(app).post(`/prs/${prId}/review`));
+    await auth(request(app).post(`/prs/${prId}/review`));
+    await waitForFindings(prId);
 
-    expect(res.status).toBe(200);
-    expect(res.body.findings).toEqual([{ path: 'src/a.ts', line: 12, body: 'real remark' }]);
-    expect(res.body.discarded).toHaveLength(1);
-    expect(res.body.discarded[0].reason).toContain('999');
-    expect(res.body.commitSha).toBe('abc123');
+    const stored = listReviewFindings(db, prId);
+    expect(stored).toHaveLength(1);
+    expect(stored[0].body).toBe('real remark');
+    expect(stored[0].commitSha).toBe('abc123');
+    expect(stored[0].posted).toBe(false);
   });
 
   it('reviews read-only and cleans the worktree up', async () => {
-    vi.mocked(prReview.reviewPrDiff).mockResolvedValue([]);
-
     await auth(request(app).post(`/prs/${prId}/review`));
+    await settle();
 
     expect(git.removeWorktree).toHaveBeenCalledWith('/repos/demo', '/repos/demo/.worktrees/fix-gh-1');
     expect(git.commitAll).not.toHaveBeenCalled();
     expect(git.pushDetachedHead).not.toHaveBeenCalled();
   });
 
-  it('removes the worktree even when the review throws', async () => {
+  // The request is already answered when this fails, so the job is the only place
+  // the failure can be recorded.
+  it('records a failed review on the job rather than losing it with the request', async () => {
     vi.mocked(prReview.reviewPrDiff).mockRejectedValue(new Error('claude exploded'));
 
-    const res = await auth(request(app).post(`/prs/${prId}/review`));
+    await auth(request(app).post(`/prs/${prId}/review`));
+    await settle();
 
-    expect(res.status).toBe(500);
+    const job = db.prepare(`SELECT status, error FROM jobs WHERE target_id = ? ORDER BY id DESC`).get(prId) as any;
+    expect(job.status).toBe('failed');
+    expect(job.error).toContain('claude exploded');
     expect(git.removeWorktree).toHaveBeenCalled();
   });
 
-  it('reports an empty review rather than failing', async () => {
-    vi.mocked(prReview.reviewPrDiff).mockResolvedValue([]);
+  it('releases the lock when the review finishes, so a second review can run', async () => {
+    await auth(request(app).post(`/prs/${prId}/review`));
+    await settle();
 
-    const res = await auth(request(app).post(`/prs/${prId}/review`));
-
-    expect(res.status).toBe(200);
-    expect(res.body.findings).toEqual([]);
+    const second = await auth(request(app).post(`/prs/${prId}/review`));
+    expect(second.status).toBe(202);
   });
 
   it('refuses a second review while one is running', async () => {
@@ -228,6 +261,7 @@ describe('POST /prs/:id/review', () => {
     const res = await auth(request(app).post(`/prs/${prId}/review`));
 
     expect(res.status).toBe(409);
+    expect(git.openDetachedWorktree).not.toHaveBeenCalled();
   });
 
   it('404s an unknown pull request', async () => {
@@ -239,93 +273,167 @@ describe('POST /prs/:id/review', () => {
   });
 });
 
-describe('POST /prs/:id/review/publish', () => {
-  const finding = { path: 'src/a.ts', line: 12, body: 'real remark' };
+describe('GET /prs/:id/review', () => {
+  it('returns the stored findings', async () => {
+    replaceReviewFindings(db, prId, [{ path: 'src/a.ts', line: 12, body: 'a remark' }], 'abc123');
 
-  beforeEach(() => {
+    const res = await auth(request(app).get(`/prs/${prId}/review`));
+
+    expect(res.status).toBe(200);
+    expect(res.body.findings).toHaveLength(1);
+    expect(res.body.findings[0].body).toBe('a remark');
+    expect(res.body.findings[0].posted).toBe(false);
+  });
+
+  it('is empty for a pull request that was never reviewed', async () => {
+    const res = await auth(request(app).get(`/prs/${prId}/review`));
+
+    expect(res.status).toBe(200);
+    expect(res.body.findings).toEqual([]);
+  });
+
+  // Whether the remark still applies is the user's call, so this only reports.
+  it('marks the review outdated when the branch has moved past the reviewed commit', async () => {
+    replaceReviewFindings(db, prId, [{ path: 'src/a.ts', line: 12, body: 'a remark' }], 'oldsha');
     vi.mocked(git.openDetachedWorktree).mockResolvedValue('/repos/demo/.worktrees/fix-gh-1');
     vi.mocked(git.removeWorktree).mockResolvedValue(undefined);
-    vi.mocked(git.headSha).mockResolvedValue('abc123');
-    vi.mocked(git.getDiff).mockResolvedValue(DIFF);
+    vi.mocked(git.headSha).mockResolvedValue('newsha');
+
+    const res = await auth(request(app).get(`/prs/${prId}/review`));
+
+    expect(res.body.outdated).toBe(true);
+    expect(res.body.findings).toHaveLength(1);
+  });
+
+  it('is not outdated when the branch is still at the reviewed commit', async () => {
+    replaceReviewFindings(db, prId, [{ path: 'src/a.ts', line: 12, body: 'a remark' }], 'samesha');
+    vi.mocked(git.openDetachedWorktree).mockResolvedValue('/repos/demo/.worktrees/fix-gh-1');
+    vi.mocked(git.removeWorktree).mockResolvedValue(undefined);
+    vi.mocked(git.headSha).mockResolvedValue('samesha');
+
+    const res = await auth(request(app).get(`/prs/${prId}/review`));
+
+    expect(res.body.outdated).toBe(false);
+  });
+
+  it('401s without a bearer token', async () => {
+    expect((await request(app).get(`/prs/${prId}/review`)).status).toBe(401);
+  });
+});
+
+describe('POST /prs/:id/review/findings/:findingId', () => {
+  beforeEach(() => {
     db.prepare("UPDATE projects SET github_repo = 'linku/demo' WHERE id = 1").run();
+    replaceReviewFindings(db, prId, [
+      { path: 'src/a.ts', line: 12, body: 'stored body' },
+      { path: 'src/b.ts', line: 3, body: 'other' },
+    ], 'abc123');
   });
 
-  it('posts one comment per confirmed finding', async () => {
-    vi.mocked(githubPrDetail.postLineComment).mockResolvedValue({ id: 1 });
+  const firstId = () => listReviewFindings(db, prId)[0].id;
 
-    const res = await auth(request(app).post(`/prs/${prId}/review/publish`).send({
-      findings: [finding, { path: 'src/a.ts', line: 13, body: 'second remark' }],
-    }));
+  it('posts that one finding and marks it posted', async () => {
+    vi.mocked(githubPrDetail.postLineComment).mockResolvedValue({ id: 77 });
+
+    const res = await auth(request(app).post(`/prs/${prId}/review/findings/${firstId()}`)).send({ body: 'stored body' });
 
     expect(res.status).toBe(200);
-    expect(githubPrDetail.postLineComment).toHaveBeenCalledTimes(2);
-    expect(res.body.posted).toHaveLength(2);
-    expect(res.body.failed).toHaveLength(0);
-  });
-
-  // The user edited the text in the app, so what arrives is what must be posted.
-  it('posts the body it was given rather than re-reviewing', async () => {
-    vi.mocked(githubPrDetail.postLineComment).mockResolvedValue({ id: 1 });
-
-    await auth(request(app).post(`/prs/${prId}/review/publish`).send({
-      findings: [{ path: 'src/a.ts', line: 12, body: 'edited by the user' }],
-    }));
-
     expect(githubPrDetail.postLineComment).toHaveBeenCalledWith('linku/demo', 5, {
-      commitSha: 'abc123', path: 'src/a.ts', line: 12, body: 'edited by the user',
+      commitSha: 'abc123', path: 'src/a.ts', line: 12, body: 'stored body',
     });
-    expect(prReview.reviewPrDiff).not.toHaveBeenCalled();
+    const after = listReviewFindings(db, prId);
+    expect(after[0].posted).toBe(true);
+    expect(after[1].posted).toBe(false);
   });
 
-  // One bad comment must not cost the user the other five.
-  it('reports success and failure per finding instead of failing the whole call', async () => {
-    vi.mocked(githubPrDetail.postLineComment)
-      .mockResolvedValueOnce({ id: 1 })
-      .mockRejectedValueOnce(new Error('422 Unprocessable Entity'));
+  // The user edited it on screen, so what arrives is what must go to GitHub.
+  it('posts the body sent with the request, not the stored one', async () => {
+    vi.mocked(githubPrDetail.postLineComment).mockResolvedValue({ id: 77 });
 
-    const res = await auth(request(app).post(`/prs/${prId}/review/publish`).send({
-      findings: [finding, { path: 'src/a.ts', line: 13, body: 'second remark' }],
-    }));
+    await auth(request(app).post(`/prs/${prId}/review/findings/${firstId()}`)).send({ body: 'edited by the user' });
 
-    expect(res.status).toBe(200);
-    expect(res.body.posted).toHaveLength(1);
-    expect(res.body.failed).toHaveLength(1);
-    expect(res.body.failed[0].line).toBe(13);
-    expect(res.body.failed[0].error).toContain('422');
+    expect(githubPrDetail.postLineComment).toHaveBeenCalledWith(
+      'linku/demo', 5, expect.objectContaining({ body: 'edited by the user' })
+    );
   });
 
-  it('refuses a finding whose anchor is not in the current diff', async () => {
-    vi.mocked(githubPrDetail.postLineComment).mockResolvedValue({ id: 1 });
+  // Never opens a worktree: the stored sha is the anchor. See design.md.
+  it('does not open a worktree to post', async () => {
+    vi.mocked(githubPrDetail.postLineComment).mockResolvedValue({ id: 77 });
 
-    const res = await auth(request(app).post(`/prs/${prId}/review/publish`).send({
-      findings: [{ path: 'src/a.ts', line: 999, body: 'invented' }],
-    }));
+    await auth(request(app).post(`/prs/${prId}/review/findings/${firstId()}`)).send({ body: 'x' });
 
-    expect(githubPrDetail.postLineComment).not.toHaveBeenCalled();
-    expect(res.body.failed).toHaveLength(1);
-    expect(res.body.failed[0].error).toContain('999');
+    expect(git.openDetachedWorktree).not.toHaveBeenCalled();
+  });
+
+  it('reports a GitHub failure and leaves the finding unposted', async () => {
+    vi.mocked(githubPrDetail.postLineComment).mockRejectedValue(new Error('422 Unprocessable Entity'));
+
+    const res = await auth(request(app).post(`/prs/${prId}/review/findings/${firstId()}`)).send({ body: 'x' });
+
+    expect(res.status).toBe(502);
+    expect(res.body.error).toContain('422');
+    expect(listReviewFindings(db, prId)[0].posted).toBe(false);
+  });
+
+  it('refuses to post the same finding twice', async () => {
+    vi.mocked(githubPrDetail.postLineComment).mockResolvedValue({ id: 77 });
+    const id = firstId();
+    await auth(request(app).post(`/prs/${prId}/review/findings/${id}`)).send({ body: 'x' });
+
+    const second = await auth(request(app).post(`/prs/${prId}/review/findings/${id}`)).send({ body: 'x' });
+
+    expect(second.status).toBe(409);
+    expect(githubPrDetail.postLineComment).toHaveBeenCalledTimes(1);
   });
 
   it('fails with a reason when the project has no GitHub repo configured', async () => {
     db.prepare('UPDATE projects SET github_repo = NULL WHERE id = 1').run();
 
-    const res = await auth(request(app).post(`/prs/${prId}/review/publish`).send({ findings: [finding] }));
+    const res = await auth(request(app).post(`/prs/${prId}/review/findings/${firstId()}`)).send({ body: 'x' });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/github/i);
   });
 
-  it('rejects a body without findings', async () => {
-    expect((await auth(request(app).post(`/prs/${prId}/review/publish`).send({}))).status).toBe(400);
-  });
-
-  it('404s an unknown pull request', async () => {
-    const res = await auth(request(app).post('/prs/9999/review/publish').send({ findings: [finding] }));
+  it('404s an unknown finding', async () => {
+    const res = await auth(request(app).post(`/prs/${prId}/review/findings/9999`)).send({ body: 'x' });
     expect(res.status).toBe(404);
   });
 
   it('401s without a bearer token', async () => {
-    const res = await request(app).post(`/prs/${prId}/review/publish`).send({ findings: [finding] });
+    const res = await request(app).post(`/prs/${prId}/review/findings/${firstId()}`).send({ body: 'x' });
     expect(res.status).toBe(401);
   });
 });
+
+describe('DELETE /prs/:id/review/findings/:findingId', () => {
+  beforeEach(() => {
+    replaceReviewFindings(db, prId, [
+      { path: 'src/a.ts', line: 12, body: 'first' },
+      { path: 'src/b.ts', line: 3, body: 'second' },
+    ], 'abc123');
+  });
+
+  it('removes that one and leaves the others', async () => {
+    const id = listReviewFindings(db, prId)[0].id;
+
+    const res = await auth(request(app).delete(`/prs/${prId}/review/findings/${id}`));
+
+    expect(res.status).toBe(204);
+    const after = listReviewFindings(db, prId);
+    expect(after).toHaveLength(1);
+    expect(after[0].body).toBe('second');
+    expect(githubPrDetail.postLineComment).not.toHaveBeenCalled();
+  });
+
+  it('404s an unknown finding', async () => {
+    expect((await auth(request(app).delete(`/prs/${prId}/review/findings/9999`))).status).toBe(404);
+  });
+
+  it('401s without a bearer token', async () => {
+    const id = listReviewFindings(db, prId)[0].id;
+    expect((await request(app).delete(`/prs/${prId}/review/findings/${id}`)).status).toBe(401);
+  });
+});
+
