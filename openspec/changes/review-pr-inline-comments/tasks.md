@@ -18,11 +18,11 @@ Standing constraints for every task in this change:
 
 Pure diff parsing, no process and no network, because this is the rule that decides whether a remark reaches a colleague or is thrown away.
 
-- [ ] 1.1 Write failing tests in `engine/tests/diffAnchors.test.ts` for a function that turns a unified diff into the set of `(path, line)` pairs a comment can anchor to: an added line is anchorable; a context line is anchorable; a removed line is not, since only the right-hand side is supported; a line beyond the end of a hunk is not; a file not in the diff has no anchorable lines at all; a diff with several hunks in one file counts lines correctly across the gap between them, which is the case a naive running counter gets wrong; a diff touching several files keeps them apart; a rename or a binary file with no hunks contributes nothing rather than throwing.
-- [ ] 1.2 Implement the parser in `engine/src/diffAnchors.ts`, reading the `+` start line from each `@@ -a,b +c,d @@` header and walking the hunk body, counting added and context lines and skipping removed ones.
-- [ ] 1.3 Write failing tests for the validation rule itself: a finding whose pair is anchorable is kept; one whose line is not in the diff is discarded with a reason naming the file and line; one whose path is not in the diff is discarded with a reason; the kept and discarded findings are returned separately so both can be shown.
-- [ ] 1.4 Implement the validation. Confirm the tests pass.
-- [ ] 1.5 Run the whole engine suite and typecheck. Commit.
+- [x] 1.1 Write failing tests in `engine/tests/diffAnchors.test.ts` for a function that turns a unified diff into the set of `(path, line)` pairs a comment can anchor to: an added line is anchorable; a context line is anchorable; a removed line is not, since only the right-hand side is supported; a line beyond the end of a hunk is not; a file not in the diff has no anchorable lines at all; a diff with several hunks in one file counts lines correctly across the gap between them, which is the case a naive running counter gets wrong; a diff touching several files keeps them apart; a rename or a binary file with no hunks contributes nothing rather than throwing.
+- [x] 1.2 Implement the parser in `engine/src/diffAnchors.ts`, reading the `+` start line from each `@@ -a,b +c,d @@` header and walking the hunk body, counting added and context lines and skipping removed ones.
+- [x] 1.3 Write failing tests for the validation rule itself: a finding whose pair is anchorable is kept; one whose line is not in the diff is discarded with a reason naming the file and line; one whose path is not in the diff is discarded with a reason; the kept and discarded findings are returned separately so both can be shown.
+- [x] 1.4 Implement the validation. Confirm the tests pass.
+- [x] 1.5 Run the whole engine suite and typecheck. Commit.
 
 ## 2. Engine: the review
 
