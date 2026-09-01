@@ -12,6 +12,48 @@ import { splitByAnchor } from '../../diffAnchors.js';
 import {
   replaceReviewFindings, listReviewFindings, getReviewFinding, markFindingPosted, deleteReviewFinding,
 } from '../../prReviewStore.js';
+import type { PrDetailView } from '../../types.js';
+
+// One GET /prs/:id/detail costs three gh calls (the view, the changed files, the
+// review threads), and the screen refetches on every open, so walking back and
+// forth through the list pays for all three every time. Sixty seconds is picked to
+// cover that walk and little else: long enough that going back and returning is
+// free, short enough that nobody has to reason about staleness.
+const DETAIL_TTL_MS = 60 * 1000;
+
+// Keyed by database for the same reason poller.ts keys its in-flight guard that
+// way: one test's :memory: database must not leak entries into the next.
+const detailCache = new WeakMap<
+  Database.Database,
+  Map<number, { view: PrDetailView; expiresAt: number }>
+>();
+
+function cachedDetail(db: Database.Database, prId: number): PrDetailView | null {
+  const byPr = detailCache.get(db);
+  const entry = byPr?.get(prId);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    byPr!.delete(prId);
+    return null;
+  }
+  return entry.view;
+}
+
+function storeDetail(db: Database.Database, prId: number, view: PrDetailView): void {
+  let byPr = detailCache.get(db);
+  if (!byPr) {
+    byPr = new Map();
+    detailCache.set(db, byPr);
+  }
+  byPr.set(prId, { view, expiresAt: Date.now() + DETAIL_TTL_MS });
+}
+
+/// Anything this engine posts to a pull request makes the held copy wrong, so
+/// every write drops it. Without this the screen reloads straight after a reply
+/// and shows the conversation as it was before the reply existed.
+function invalidateDetail(db: Database.Database, prId: number): void {
+  detailCache.get(db)?.delete(prId);
+}
 
 export function registerPrsRoutes(app: Express, db: Database.Database): void {
   app.get('/prs', (_req, res) => res.json(listPrs(db)));
@@ -22,9 +64,9 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
     res.json({ ...pr, messages: listPrMessages(db, pr.id) });
   });
 
-  // Reads straight from gh. Unlike GET /prs/:id/diff this opens no worktree and
-  // takes no job lock, because opening a screen must not contend with the agent
-  // panel or pay for a clone.
+  // Reads from gh, through the short-lived cache above. Unlike GET /prs/:id/diff
+  // this opens no worktree and takes no job lock, because opening a screen must
+  // not contend with the agent panel or pay for a clone.
   app.get('/prs/:id/detail', async (req, res) => {
     const pr = getPr(db, Number(req.params.id));
     if (!pr) { res.status(404).json({ error: 'not found' }); return; }
@@ -38,8 +80,14 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
       res.status(400).json({ error: 'project has no GitHub repo configured' });
       return;
     }
+
+    const cached = cachedDetail(db, pr.id);
+    if (cached) { res.json(cached); return; }
+
     try {
-      res.json(await fetchPrDetailView(project.githubRepo, pr.number));
+      const view = await fetchPrDetailView(project.githubRepo, pr.number);
+      storeDetail(db, pr.id, view);
+      res.json(view);
     } catch (err) {
       res.status(502).json({ error: String(err) });
     }
@@ -74,9 +122,11 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
       return;
     }
     try {
-      res.json(await postReviewCommentReply(
+      const created = await postReviewCommentReply(
         project.githubRepo, pr.number, Number(req.params.commentId), text
-      ));
+      );
+      invalidateDetail(db, pr.id);
+      res.json(created);
     } catch (err) {
       res.status(502).json({ error: String(err) });
     }
@@ -224,6 +274,7 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
     }
 
     markFindingPosted(db, finding.id);
+    invalidateDetail(db, finding.prId);
     res.json({ posted: true });
   });
 
@@ -259,6 +310,9 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
     try {
       const result = await sendPrMessage(db, prId, 'merge it');
       finishJob(db, job.id, 'done');
+      // A merged pull request is a different pull request on screen: state, and
+      // whether the merge button should still be there.
+      invalidateDetail(db, prId);
       res.json(result);
     } catch (err) {
       finishJob(db, job.id, 'failed', String(err));
