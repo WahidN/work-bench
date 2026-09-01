@@ -59,6 +59,15 @@ export async function getDiff(worktreePath: string, defaultBranch: string): Prom
   return git(worktreePath, ['diff', `origin/${defaultBranch}...HEAD`]);
 }
 
+// The commit a review's inline comments anchor to. Taken from the worktree the
+// diff came from, so the line numbers and the commit they hang off cannot
+// disagree. Asking GitHub for the head sha separately would be a second source
+// of truth, and when the two differ the result is a comment on the wrong line
+// rather than an error.
+export async function headSha(worktreePath: string): Promise<string> {
+  return (await git(worktreePath, ['rev-parse', 'HEAD'])).trim();
+}
+
 export async function createPr(
   worktreePath: string,
   title: string,

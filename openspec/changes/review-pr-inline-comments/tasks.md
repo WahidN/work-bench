@@ -34,11 +34,11 @@ Pure diff parsing, no process and no network, because this is the rule that deci
 
 ## 3. Engine: posting a comment on a line
 
-- [ ] 3.1 Add a failing test to `engine/tests/git.test.ts` for reading the current commit sha of a worktree.
-- [ ] 3.2 Implement it in `engine/src/git.ts` as `git rev-parse HEAD` against the worktree path.
-- [ ] 3.3 Add failing tests to `engine/tests/sources/githubPrDetail.test.ts` for posting a comment anchored to a line: it calls the pull request comments endpoint with `commit_id`, `path`, `line`, `side` of `RIGHT` and the body; it sends **no** `in_reply_to`, which is what makes it a new comment rather than a threaded reply; a numeric field is sent as a number rather than a string, since `gh api` needs `-F` and not `-f` for those; a failure from `gh` surfaces rather than being swallowed.
-- [ ] 3.4 Implement the post alongside `postReviewCommentReply`. Leave that function alone.
-- [ ] 3.5 Run the whole engine suite and typecheck. Commit.
+- [x] 3.1 Add a failing test to `engine/tests/git.test.ts` for reading the current commit sha of a worktree.
+- [x] 3.2 Implement it in `engine/src/git.ts` as `git rev-parse HEAD` against the worktree path.
+- [x] 3.3 Add failing tests to `engine/tests/sources/githubPrDetail.test.ts` for posting a comment anchored to a line: it calls the pull request comments endpoint with `commit_id`, `path`, `line`, `side` of `RIGHT` and the body; it sends **no** `in_reply_to`, which is what makes it a new comment rather than a threaded reply; a numeric field is sent as a number rather than a string, since `gh api` needs `-F` and not `-f` for those; a failure from `gh` surfaces rather than being swallowed.
+- [x] 3.4 Implement the post alongside `postReviewCommentReply`. Leave that function alone.
+- [x] 3.5 Run the whole engine suite and typecheck. Commit.
 
 ## 4. Engine: the routes
 
