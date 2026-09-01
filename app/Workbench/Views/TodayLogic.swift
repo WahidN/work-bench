@@ -99,6 +99,19 @@ enum TodayLogic {
         return dueAt < today
     }
 
+    /// The task a row may delete, or nil. Manual tasks only: a mirrored Jira issue
+    /// would be recreated by the next poll, and the engine refuses it anyway. Pinned
+    /// counts, because a task the user created stays theirs to remove whether or not
+    /// they pulled it onto Today, and a control that vanished on pinning reads as a bug.
+    static func deletableTodo(in row: TodayTaskRow) -> Todo? {
+        switch row.source {
+        case .todo(let todo), .pinnedTodo(let todo):
+            return todo.source == .manual ? todo : nil
+        case .pinnedTicket, .pinnedPullRequest:
+            return nil
+        }
+    }
+
     static func row(for todo: Todo, projects: [Project]) -> TodayTaskRow {
         TodayTaskRow(
             id: "todo-\(todo.id)",

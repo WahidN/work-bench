@@ -9,6 +9,7 @@ struct TaskRow: View {
     let onDelete: (Todo) -> Void
     @State private var isHovered = false
     @State private var isCheckboxHovered = false
+    @State private var isDeleteHovered = false
 
     private var todo: Todo? {
         if case .todo(let todo) = row.source { return todo }
@@ -53,6 +54,7 @@ struct TaskRow: View {
                 .padding(.top, 3)
                 .help("Change priority")
             }
+            deleteButton
         }
         .padding(.vertical, Theme.Space.s3)
         .padding(.horizontal, Theme.Space.s4)
@@ -71,11 +73,34 @@ struct TaskRow: View {
             if let todo, todo.canPromote {
                 Button("Start fixing this") { onPromote(todo) }
             }
-            // Absent rather than disabled for a mirrored issue: the next poll would
-            // recreate it, and a greyed item invites a question the menu cannot answer.
-            if let todo, todo.source == .manual {
-                Button("Delete task") { onDelete(todo) }
+        }
+    }
+
+    /// Revealed on hover rather than always drawn: the rows are dense, and deleting
+    /// cannot be undone, so the control should not sit under the cursor on every row.
+    /// Absent rather than disabled for a mirrored issue, matching `Start fixing this`.
+    @ViewBuilder
+    private var deleteButton: some View {
+        if let deletable = TodayLogic.deletableTodo(in: row) {
+            Button {
+                onDelete(deletable)
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 11))
+                    .foregroundStyle(isDeleteHovered ? Theme.Accent.a400 : Theme.Neutral.n500)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .padding(.top, 2)
+            .opacity(isHovered ? 1 : 0)
+            // Opacity rather than removing it from the view tree: the button keeps its
+            // space either way, so revealing it never shifts the title or the priority
+            // label sideways under the cursor. Hit testing follows the opacity, or an
+            // invisible button would still swallow clicks.
+            .allowsHitTesting(isHovered)
+            .onHover { isDeleteHovered = $0 }
+            .help("Delete task")
+            .accessibilityLabel("Delete task")
         }
     }
 
