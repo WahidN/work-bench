@@ -69,15 +69,15 @@ Superseded the earlier "nothing is stored" approach. See design.md: the review f
 
 Supersedes the sheet. `app/Workbench/Views/PrReviewSheet.swift` is deleted, and `PrReviewViewModel` is reworked from holding findings in memory and publishing them all at once to reading stored findings and posting them one at a time.
 
-- [ ] 6.1 Rewrite the failing tests in `app/WorkbenchTests/Networking/APIClientPRsTests.swift` for the new calls: start uses `POST /prs/<id>/review`; read uses `GET /prs/<id>/review`; post one uses `POST /prs/<id>/review/findings/<findingId>` with the body; discard one uses `DELETE` on the same path. Remove the batch publish test.
-- [ ] 6.2 Update `APIClient` and the finding model to match, including the posted and outdated flags.
-- [ ] 6.3 Rewrite `app/WorkbenchTests/Views/PrReviewLogicTests.swift` for the new rules: a finding that has been posted is not offered for posting again; an outdated review is labelled; a review with nothing left reads as done rather than as an error; the discarded findings are still reported with their reasons.
-- [ ] 6.4 Update `PrReviewLogic` accordingly.
-- [ ] 6.5 Rewrite `app/WorkbenchTests/ViewModels/PrReviewViewModelTests.swift`: starting a review does not block and does not return findings; loading a pull request's review returns what is stored; posting one finding marks only that one posted and leaves the rest; a failed post keeps the finding unposted and puts the error on it; discarding one removes only that one; an edited body is what gets sent.
-- [ ] 6.6 Rework `PrReviewViewModel`. Confirm the tests pass.
-- [ ] 6.7 Delete `PrReviewSheet.swift` and the sheet presentation from `PRsScreen.swift` and `PrDetailScreen.swift`. The row button now starts a review and opens nothing.
-- [ ] 6.8 Build the review section on `PrDetailScreen.swift`: each finding with its file and line, its remark editable, its own Post and Discard controls, and its own error line when a post fails. Show the outdated marking when the head has moved. List the discarded findings with their reasons. Load it with the rest of the detail.
-- [ ] 6.9 Run `xcodegen generate`, build, and run the whole app suite. Commit.
+- [x] 6.1 Rewrite the failing tests in `app/WorkbenchTests/Networking/APIClientPRsTests.swift` for the new calls: start uses `POST /prs/<id>/review`; read uses `GET /prs/<id>/review`; post one uses `POST /prs/<id>/review/findings/<findingId>` with the body; discard one uses `DELETE` on the same path. Remove the batch publish test.
+- [x] 6.2 Update `APIClient` and the finding model to match, including the posted and outdated flags.
+- [x] 6.3 Rewrite `app/WorkbenchTests/Views/PrReviewLogicTests.swift` for the new rules: a finding that has been posted is not offered for posting again; an outdated review is labelled; a review with nothing left reads as done rather than as an error; the discarded findings are still reported with their reasons.
+- [x] 6.4 Update `PrReviewLogic` accordingly.
+- [x] 6.5 Rewrite `app/WorkbenchTests/ViewModels/PrReviewViewModelTests.swift`: starting a review does not block and does not return findings; loading a pull request's review returns what is stored; posting one finding marks only that one posted and leaves the rest; a failed post keeps the finding unposted and puts the error on it; discarding one removes only that one; an edited body is what gets sent.
+- [x] 6.6 Rework `PrReviewViewModel`. Confirm the tests pass.
+- [x] 6.7 Delete `PrReviewSheet.swift` and the sheet presentation from `PRsScreen.swift` and `PrDetailScreen.swift`. The row button now starts a review and opens nothing.
+- [x] 6.8 Build the review section on `PrDetailScreen.swift`: each finding with its file and line, its remark editable, its own Post and Discard controls, and its own error line when a post fails. Show the outdated marking when the head has moved. List the discarded findings with their reasons. Load it with the rest of the detail.
+- [x] 6.9 Run `xcodegen generate`, build, and run the whole app suite. Commit.
 
 ## 7. App: the notification
 

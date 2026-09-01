@@ -8,18 +8,18 @@ struct PRsScreen: View {
 
     @State private var filter: PrFilter = .assignedToMe
     @StateObject private var reviewModel = PrReviewViewModel()
-    @State private var reviewingPr: PullRequest?
+    @State private var startedReviewIds: Set<Int> = []
 
     private var rows: [PrRow] {
         PRsLogic.rows(prs: viewModel.pullRequests, projects: projects, filter: filter, now: Date())
     }
 
-    /// The sheet opens straight away and shows the review running, rather than
-    /// leaving the row looking inert for the minutes the agent takes.
+    /// Starts the review and opens nothing. There is nothing to open yet: the
+    /// review takes minutes, announces itself when it is done, and is read on the
+    /// pull request's own page.
     private func startReview(of pr: PullRequest) {
-        reviewModel.reset()
-        reviewingPr = pr
-        Task { await reviewModel.review(prId: pr.id) }
+        startedReviewIds.insert(pr.id)
+        Task { await reviewModel.start(prId: pr.id) }
     }
 
     var body: some View {
@@ -32,14 +32,6 @@ struct PRsScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.nocturneBg)
         .task { await viewModel.load() }
-        .sheet(item: $reviewingPr) { pr in
-            PrReviewSheet(
-                viewModel: reviewModel,
-                prId: pr.id,
-                prTitle: pr.title,
-                onClose: { reviewingPr = nil }
-            )
-        }
         .alert(
             "Error",
             isPresented: Binding(get: { viewModel.errorMessage != nil }, set: { if !$0 { viewModel.errorMessage = nil } })
@@ -88,7 +80,7 @@ struct PRsScreen: View {
                             onOpenAgent: { onOpenAgent(.pullRequest(row.pr)) },
                             onTogglePin: { Task { await viewModel.togglePin(row.pr) } },
                             onReview: { startReview(of: row.pr) },
-                            isReviewing: reviewingPr?.id == row.pr.id && reviewModel.isReviewing
+                            isReviewing: startedReviewIds.contains(row.pr.id)
                         )
                     }
                 }
@@ -189,6 +181,7 @@ private struct PrTableRow: View {
                     Image(systemName: "checklist")
                     Text(isReviewing ? "Reviewing…" : "Review")
                 }
+                .help("Review this pull request in the background")
                 .font(.system(size: Theme.FontSize.tableMeta))
                 .foregroundStyle(isReviewing ? Theme.Neutral.n600 : Theme.Neutral.n400)
             }

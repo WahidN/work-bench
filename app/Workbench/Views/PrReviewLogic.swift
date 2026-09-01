@@ -1,32 +1,34 @@
 import Foundation
 
-/// The rules the review sheet follows, kept out of the view so they can be tested.
+/// The rules the review section follows, kept out of the view so they can be tested.
 enum PrReviewLogic {
-    /// Publishing is offered only when something would actually be posted. An
-    /// empty publish is refused by the engine, so the button must not offer it.
-    static func canPublish(findings: [ReviewFinding]) -> Bool {
-        !findings.isEmpty
+    /// A remark already on GitHub is not offered again. Posting it twice would
+    /// duplicate the comment, and the engine refuses it anyway.
+    static func canPost(_ finding: ReviewFinding) -> Bool {
+        !finding.posted
     }
 
-    /// Counts what would be posted, never what the review produced. Showing the
-    /// larger number would promise comments that were already thrown away.
-    static func summary(findings: [ReviewFinding], discarded: [DiscardedFinding]) -> String {
-        let comments = findings.count == 1 ? "1 comment" : "\(findings.count) comments"
-        guard !discarded.isEmpty else { return comments }
-        let dropped = discarded.count == 1 ? "1 was dropped" : "\(discarded.count) were dropped"
-        return "\(comments) · \(dropped)"
+    static func unposted(_ findings: [ReviewFinding]) -> [ReviewFinding] {
+        findings.filter { !$0.posted }
     }
 
-    /// Why there is nothing to publish, or nil when there is.
-    ///
-    /// The two cases read differently on purpose: a clean review is a result,
-    /// while a review whose every remark was dropped is a sign the line numbers
-    /// were wrong and worth reporting.
-    static func emptyState(findings: [ReviewFinding], discarded: [DiscardedFinding]) -> String? {
-        guard findings.isEmpty else { return nil }
-        if discarded.isEmpty {
-            return "The review found nothing worth commenting on."
-        }
-        return "Nothing can be posted: every remark pointed at a line that is not part of this pull request."
+    /// Nothing left to act on. Distinct from "no review": a review every remark of
+    /// which has been posted is finished, not absent.
+    static func isDone(findings: [ReviewFinding]) -> Bool {
+        unposted(findings).isEmpty
+    }
+
+    /// Counts what is still to post, never the total the review produced, which
+    /// would keep promising work already finished.
+    static func summary(findings: [ReviewFinding]) -> String {
+        let left = unposted(findings).count
+        return left == 1 ? "1 comment to post" : "\(left) comments to post"
+    }
+
+    /// Says the branch moved on. Reporting only: the remarks stay postable,
+    /// because whether they still apply is the user's call.
+    static func outdatedLabel(outdated: Bool) -> String? {
+        guard outdated else { return nil }
+        return "Written against an earlier commit"
     }
 }

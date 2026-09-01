@@ -3,64 +3,59 @@ import Testing
 
 @Suite
 struct PrReviewLogicTests {
-    private func finding(_ line: Int, _ body: String = "a remark") -> ReviewFinding {
-        ReviewFinding(path: "src/a.ts", line: line, body: body)
+    private func finding(_ id: Int, posted: Bool = false) -> ReviewFinding {
+        ReviewFinding(id: id, path: "src/a.ts", line: id, body: "remark \(id)", posted: posted)
     }
 
-    private func discarded(_ line: Int) -> DiscardedFinding {
-        DiscardedFinding(path: "src/a.ts", line: line, body: "invented", reason: "line \(line) is not part of the changes")
+    @Test func anUnpostedFindingCanBePosted() {
+        #expect(PrReviewLogic.canPost(finding(1)))
     }
 
-    @Test func aReviewWithFindingsOffersPublishing() {
-        #expect(PrReviewLogic.canPublish(findings: [finding(12)]))
+    // Posting the same remark twice would duplicate the comment on GitHub, and the
+    // engine refuses it anyway, so the button must not offer it.
+    @Test func aPostedFindingCannotBePostedAgain() {
+        #expect(PrReviewLogic.canPost(finding(1, posted: true)) == false)
     }
 
-    @Test func aReviewWithNoFindingsDoesNotOfferPublishing() {
-        #expect(PrReviewLogic.canPublish(findings: []) == false)
+    @Test func aReviewWithUnpostedFindingsIsNotDone() {
+        #expect(PrReviewLogic.isDone(findings: [finding(1)]) == false)
     }
 
-    // Discarding the last one has to close publishing too, or the button posts
-    // an empty review and the engine rejects it.
-    @Test func discardingTheLastFindingStopsOfferingPublishing() {
-        var findings = [finding(12)]
-        findings.removeAll { $0.line == 12 }
-
-        #expect(PrReviewLogic.canPublish(findings: findings) == false)
+    @Test func aReviewWhereEverythingIsPostedIsDone() {
+        #expect(PrReviewLogic.isDone(findings: [finding(1, posted: true), finding(2, posted: true)]))
     }
 
-    // The count has to be what would actually be posted. Showing the number the
-    // review produced would promise comments that were already thrown away.
-    @Test func theCountIsWhatWouldBePostedNotWhatTheReviewProduced() {
-        let summary = PrReviewLogic.summary(findings: [finding(12), finding(13)], discarded: [discarded(999), discarded(998)])
+    @Test func aReviewWithNothingInItIsDone() {
+        #expect(PrReviewLogic.isDone(findings: []))
+    }
+
+    // The count is what is left to act on, not what the review produced, or it
+    // would keep promising work that is already finished.
+    @Test func theSummaryCountsWhatIsLeftToPost() {
+        let summary = PrReviewLogic.summary(findings: [finding(1), finding(2), finding(3, posted: true)])
 
         #expect(summary.contains("2"))
         #expect(summary.lowercased().contains("comment"))
     }
 
-    @Test func aReviewWhereEverythingWasDiscardedSaysSoAndOffersNothing() {
-        let state = PrReviewLogic.emptyState(findings: [], discarded: [discarded(999)])
-
-        #expect(state != nil)
-        #expect(state?.lowercased().contains("nothing") == true || state?.lowercased().contains("no ") == true)
-        #expect(PrReviewLogic.canPublish(findings: []) == false)
+    @Test func theSummaryIsSingularForOne() {
+        #expect(PrReviewLogic.summary(findings: [finding(1)]).contains("1 comment"))
     }
 
-    @Test func aReviewThatFoundNothingAtAllSaysSo() {
-        let state = PrReviewLogic.emptyState(findings: [], discarded: [])
+    @Test func anOutdatedReviewIsLabelled() {
+        let label = PrReviewLogic.outdatedLabel(outdated: true)
 
-        #expect(state != nil)
+        #expect(label != nil)
+        #expect(label?.lowercased().contains("earlier commit") == true)
     }
 
-    // A review with something to post is not an empty state, whatever was
-    // discarded alongside it.
-    @Test func aReviewWithSomethingToPostIsNotAnEmptyState() {
-        #expect(PrReviewLogic.emptyState(findings: [finding(12)], discarded: [discarded(999)]) == nil)
+    @Test func aCurrentReviewIsNotLabelled() {
+        #expect(PrReviewLogic.outdatedLabel(outdated: false) == nil)
     }
 
-    @Test func theTwoEmptyStatesReadDifferently() {
-        let foundNothing = PrReviewLogic.emptyState(findings: [], discarded: [])
-        let allDiscarded = PrReviewLogic.emptyState(findings: [], discarded: [discarded(999)])
-
-        #expect(foundNothing != allDiscarded)
+    // An outdated review stays postable: whether the remark still applies is the
+    // user's judgement, not the app's.
+    @Test func anOutdatedFindingIsStillPostable() {
+        #expect(PrReviewLogic.canPost(finding(1)))
     }
 }

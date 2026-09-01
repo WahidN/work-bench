@@ -1,25 +1,32 @@
 import Foundation
 
 protocol PrReviewAPI {
-    func reviewPr(id: Int) async throws -> PrReviewResult
-    func publishReview(id: Int, findings: [ReviewFinding]) async throws -> PublishReviewResult
+    func startReview(prId: Int) async throws
+    func review(prId: Int) async throws -> PrReview
+    func postReviewFinding(prId: Int, findingId: Int, body: String) async throws
+    func discardReviewFinding(prId: Int, findingId: Int) async throws
 }
 
 extension APIClient: PrReviewAPI {}
 
-/// Holds one pull request's review while the user reads it.
+/// One pull request's stored review, while the user works through it.
 ///
-/// Nothing here is persisted. A review is run, read, published or thrown away,
-/// which is why a failed publish has to keep what failed: there is nowhere else
-/// for those remarks to survive.
+/// Unlike the first cut, this holds nothing the engine does not: the findings are
+/// on disk, and every action here is a call that changes them there. What is local
+/// is the in-progress edit and the per-finding error, neither of which should
+/// outlive the screen.
 @MainActor
 final class PrReviewViewModel: ObservableObject {
     @Published private(set) var findings: [ReviewFinding] = []
-    @Published private(set) var discarded: [DiscardedFinding] = []
-    @Published private(set) var isReviewing = false
-    @Published private(set) var isPublishing = false
-    @Published private(set) var didPublish = false
+    @Published private(set) var outdated = false
+    @Published private(set) var isStarting = false
+    @Published private(set) var isLoading = false
+    @Published private(set) var postingIds: Set<Int> = []
     @Published var errorMessage: String?
+
+    /// Errors belong to the remark that failed, not to the screen: one bad anchor
+    /// says nothing about the other five.
+    @Published private(set) var findingErrors: [Int: String] = [:]
 
     private let api: any PrReviewAPI
 
@@ -27,64 +34,74 @@ final class PrReviewViewModel: ObservableObject {
         self.api = api
     }
 
-    func review(prId: Int) async {
-        isReviewing = true
+    func error(forFinding id: Int) -> String? {
+        findingErrors[id]
+    }
+
+    /// Starts a review. Returns as soon as the engine has taken it; the findings
+    /// arrive later, through `load`, after the notification.
+    func start(prId: Int) async {
+        isStarting = true
         errorMessage = nil
-        didPublish = false
-        defer { isReviewing = false }
+        defer { isStarting = false }
 
         do {
-            let result = try await api.reviewPr(id: prId)
-            findings = result.findings
-            discarded = result.discarded
+            try await api.startReview(prId: prId)
         } catch {
-            errorMessage = (error as? APIError)?.localizedDescription ?? String(describing: error)
-            findings = []
-            discarded = []
+            errorMessage = message(from: error)
         }
     }
 
-    func edit(findingAt index: Int, body: String) {
-        guard findings.indices.contains(index) else { return }
+    func load(prId: Int) async {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let review = try await api.review(prId: prId)
+            findings = review.findings
+            outdated = review.outdated
+        } catch {
+            errorMessage = message(from: error)
+        }
+    }
+
+    func edit(findingId: Int, body: String) {
+        guard let index = findings.firstIndex(where: { $0.id == findingId }) else { return }
         findings[index].body = body
     }
 
-    func discard(findingAt index: Int) {
-        guard findings.indices.contains(index) else { return }
-        findings.remove(at: index)
-    }
+    func post(prId: Int, findingId: Int) async {
+        guard let index = findings.firstIndex(where: { $0.id == findingId }) else { return }
+        let finding = findings[index]
+        guard PrReviewLogic.canPost(finding) else { return }
 
-    /// Posts what is left. On a partial failure the posted ones are dropped and
-    /// the failed ones stay, so what remains on screen is exactly what still has
-    /// not reached the pull request.
-    func publish(prId: Int) async {
-        guard PrReviewLogic.canPublish(findings: findings) else { return }
-        isPublishing = true
-        errorMessage = nil
-        defer { isPublishing = false }
+        postingIds.insert(findingId)
+        findingErrors[findingId] = nil
+        defer { postingIds.remove(findingId) }
 
         do {
-            let result = try await api.publishReview(id: prId, findings: findings)
-            guard result.failed.isEmpty else {
-                let failedLines = Set(result.failed.map(\.line))
-                findings = findings.filter { failedLines.contains($0.line) }
-                errorMessage = result.failed
-                    .map { "\($0.path):\($0.line) — \($0.error)" }
-                    .joined(separator: "\n")
-                return
-            }
-            findings = []
-            discarded = []
-            didPublish = true
+            try await api.postReviewFinding(prId: prId, findingId: findingId, body: finding.body)
+            // Rebuilt rather than mutated in place because `posted` is a let: the
+            // engine owns it, and this mirrors what it just recorded.
+            findings[index] = ReviewFinding(
+                id: finding.id, path: finding.path, line: finding.line, body: finding.body, posted: true
+            )
         } catch {
-            errorMessage = (error as? APIError)?.localizedDescription ?? String(describing: error)
+            findingErrors[findingId] = message(from: error)
         }
     }
 
-    func reset() {
-        findings = []
-        discarded = []
-        errorMessage = nil
-        didPublish = false
+    func discard(prId: Int, findingId: Int) async {
+        do {
+            try await api.discardReviewFinding(prId: prId, findingId: findingId)
+            findings.removeAll { $0.id == findingId }
+            findingErrors[findingId] = nil
+        } catch {
+            errorMessage = message(from: error)
+        }
+    }
+
+    private func message(from error: Error) -> String {
+        (error as? APIError)?.localizedDescription ?? String(describing: error)
     }
 }

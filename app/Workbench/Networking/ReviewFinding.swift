@@ -1,58 +1,28 @@
 import Foundation
 
-/// A remark about one line of a pull request, on its way to being posted there.
+/// One stored remark about a line of a pull request, waiting to be posted.
 ///
-/// `id` is local and not decoded: the engine sends no identifier, and the sheet
-/// needs something stable to key rows and edits off while the user works.
+/// `id` comes from the engine now, unlike the first cut where findings only ever
+/// lived in memory and needed a local UUID. It is what every per-finding action
+/// addresses, so it has to be the engine's.
+///
+/// `body` is var because the user edits it in place before posting.
 struct ReviewFinding: Codable, Identifiable, Equatable {
-    let id: UUID
+    let id: Int
     let path: String
     let line: Int
     var body: String
-
-    init(path: String, line: Int, body: String) {
-        self.id = UUID()
-        self.path = path
-        self.line = line
-        self.body = body
-    }
-
-    private enum CodingKeys: String, CodingKey { case path, line, body }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.id = UUID()
-        self.path = try container.decode(String.self, forKey: .path)
-        self.line = try container.decode(Int.self, forKey: .line)
-        self.body = try container.decode(String.self, forKey: .body)
-    }
+    let posted: Bool
 }
 
-/// A finding the engine refused to post, with the reason. Shown alongside the
-/// publishable ones so a trimmed review is visible rather than silent.
-struct DiscardedFinding: Codable, Identifiable, Equatable {
-    var id: String { "\(path):\(line)" }
-    let path: String
-    let line: Int
-    let body: String
-    let reason: String
-}
-
-/// A finding that reached GitHub and was rejected there.
-struct FailedFinding: Codable, Equatable {
-    let path: String
-    let line: Int
-    let body: String
-    let error: String
-}
-
-struct PrReviewResult: Codable {
+/// A stored review as the engine reports it.
+///
+/// `outdated` means the branch has moved past the commit these were written
+/// against. It is reported, never acted on: the remarks stay postable, because
+/// whether they still apply is the user's call.
+struct PrReview: Codable {
     let findings: [ReviewFinding]
-    let discarded: [DiscardedFinding]
-    let commitSha: String
-}
+    let outdated: Bool
 
-struct PublishReviewResult: Codable {
-    let posted: [ReviewFinding]
-    let failed: [FailedFinding]
+    static let empty = PrReview(findings: [], outdated: false)
 }
