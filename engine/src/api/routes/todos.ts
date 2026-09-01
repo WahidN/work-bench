@@ -64,17 +64,17 @@ export function registerTodosRoutes(app: Express, db: Database.Database): void {
   });
 
   app.delete('/todos/:id', (req, res) => {
-    try {
-      deleteTodo(db, Number(req.params.id));
-    } catch (err) {
-      // deleteTodo owns both refusals so the rule holds for any caller, not just the
-      // app; the route only decides which status each one deserves.
-      const message = String(err);
-      if (message.includes('not found')) res.status(404).json({ error: message });
-      else if (message.includes('cannot be deleted')) res.status(400).json({ error: message });
-      else throw err;
+    const id = Number(req.params.id);
+    // Read first for the 404, the way the PATCH route above does, rather than matching
+    // the words of an error message. deleteTodo still refuses both cases itself, so the
+    // rule holds for any caller; this only decides the status codes.
+    const todo = getTodo(db, id);
+    if (!todo) { res.status(404).json({ error: 'not found' }); return; }
+    if (todo.source !== 'manual') {
+      res.status(400).json({ error: `Todo ${id} cannot be deleted (not a manual task)` });
       return;
     }
+    deleteTodo(db, id);
     res.status(204).end();
   });
 

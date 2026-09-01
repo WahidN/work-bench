@@ -48,16 +48,20 @@ export async function fetchMyOpenPrs(repoSlugs: string[]): Promise<FetchMyOpenPr
   const mapped = new Set(repoSlugs.map((slug) => toRepoSlug(slug).toLowerCase()));
   if (mapped.size === 0) return { prs: [], truncated: false };
 
+  // A pull request someone else opened, that only names the user as a reviewer,
+  // matches neither of the first two searches. Without the third one the review queue
+  // can never be populated: the pull request is not filtered out, it is never fetched.
+  // Run together rather than in sequence: they do not depend on each other, and this
+  // is on the path of POST /poll, which the header's Refresh button waits for.
   let authored: { rows: any[]; truncated: boolean };
   let assigned: { rows: any[]; truncated: boolean };
-  // A pull request someone else opened, that only names the user as a reviewer,
-  // matches neither search above. Without this third one the review queue can
-  // never be populated: the pull request is not filtered out, it is never fetched.
   let reviewRequested: { rows: any[]; truncated: boolean };
   try {
-    authored = await search('--author=@me');
-    assigned = await search('--assignee=@me');
-    reviewRequested = await search('--review-requested=@me');
+    [authored, assigned, reviewRequested] = await Promise.all([
+      search('--author=@me'),
+      search('--assignee=@me'),
+      search('--review-requested=@me'),
+    ]);
   } catch (err) {
     throw new Error(`GitHub PR search failed: ${String(err)}`);
   }

@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import { openDb } from '../src/db.js';
 import { createProject } from '../src/projects.js';
 import { createTicket, getTicket, updateTicketStatus, findTicketBySource, listTicketMessages, addTicketMessage } from '../src/tickets.js';
-import { recordPr } from '../src/prs.js';
+import { recordPr, upsertGithubPr } from '../src/prs.js';
 import * as analyze from '../src/analyze.js';
 import {
   listTodos, getTodo, createManualTodo, setTodoDone, upsertJiraTodo, reconcileJiraTodos, promoteTodo, getTodayView,
@@ -312,6 +312,47 @@ describe('getTodayView', () => {
     );
     expect(view.needsInput.some((i) => i.id === doneTicket.id && i.kind === 'ticket')).toBe(false);
     expect(view.todos.map((t) => t.text)).toEqual(['unrelated task']);
+  });
+
+  it('leaves out a pull request that is only here because my review was asked', () => {
+    const project = createProject(db, {
+      name: 'demo', repoPath: '/repos/demo', defaultBranch: 'main',
+      githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null,
+    });
+    // Mine: belongs in needsInput exactly as before.
+    upsertGithubPr(db, {
+      projectId: project.id, number: 48, title: 'Mine', url: 'u48',
+      githubUpdatedAt: 'x', isDraft: false, authoredByMe: true, assignedToMe: false,
+      reviewRequestedByMe: false, reviewState: 'review_required', branch: 'feat/mine',
+    });
+    // A colleague's, here only for the review request. needsInput drives the dock
+    // badge and the macOS notifications, so this must not reach it.
+    upsertGithubPr(db, {
+      projectId: project.id, number: 45, title: 'Theirs', url: 'u45',
+      githubUpdatedAt: 'x', isDraft: false, authoredByMe: false, assignedToMe: false,
+      reviewRequestedByMe: true, reviewState: 'review_required', branch: 'feat/theirs',
+    });
+
+    const view = getTodayView(db);
+
+    // A pull request with no ticket is titled by its number, not by its own title.
+    expect(view.needsInput.filter((i) => i.kind === 'pr').map((i) => i.title)).toEqual(['PR #48']);
+  });
+
+  it('keeps a pull request that is assigned to me even when a review is also asked', () => {
+    const project = createProject(db, {
+      name: 'demo', repoPath: '/repos/demo', defaultBranch: 'main',
+      githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null,
+    });
+    upsertGithubPr(db, {
+      projectId: project.id, number: 50, title: 'Assigned to me', url: 'u50',
+      githubUpdatedAt: 'x', isDraft: false, authoredByMe: false, assignedToMe: true,
+      reviewRequestedByMe: true, reviewState: 'review_required', branch: 'feat/assigned',
+    });
+
+    const view = getTodayView(db);
+
+    expect(view.needsInput.filter((i) => i.kind === 'pr')).toHaveLength(1);
   });
 
   it('falls back to the PR number for a PR that has no ticket', () => {
