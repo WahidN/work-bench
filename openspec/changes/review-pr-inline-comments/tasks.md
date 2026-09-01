@@ -26,11 +26,11 @@ Pure diff parsing, no process and no network, because this is the rule that deci
 
 ## 2. Engine: the review
 
-- [ ] 2.1 Write failing tests in `engine/tests/prReview.test.ts` for the prompt builder: it carries the pull request title and the diff; it asks for findings that each name a path, a line and a body; it states that the response is JSON only. Assert it does **not** ask for scores, since nothing consumes them any more.
-- [ ] 2.2 Write failing tests for the response validator: a well-formed findings array passes; a finding missing `path`, `line` or `body` fails; a non-numeric line fails; an empty findings array is valid and means the review found nothing; a payload shaped like the old `ReviewScore` fails, which is the guard against the two review shapes being confused.
-- [ ] 2.3 Write a failing test asserting the review is invoked with `allowedTools` of exactly `['Read', 'Grep', 'Glob']`. This is the read-only boundary from design.md and deserves its own test rather than being implied by the others.
-- [ ] 2.4 Implement `engine/src/prReview.ts`: build the prompt, call `claudeJson` with the validator, and return the findings. Add the finding type to `engine/src/types.ts`.
-- [ ] 2.5 Run the whole engine suite and typecheck. Commit.
+- [x] 2.1 Write failing tests in `engine/tests/prReview.test.ts` for the prompt builder: it carries the pull request title and the diff; it asks for findings that each name a path, a line and a body; it states that the response is JSON only. Assert it does **not** ask for scores, since nothing consumes them any more.
+- [x] 2.2 Write failing tests for the response validator: a well-formed findings array passes; a finding missing `path`, `line` or `body` fails; a non-numeric line fails; an empty findings array is valid and means the review found nothing; a payload shaped like the old `ReviewScore` fails, which is the guard against the two review shapes being confused.
+- [x] 2.3 Write a failing test asserting the review is invoked with `allowedTools` of exactly `['Read', 'Grep', 'Glob']`. This is the read-only boundary from design.md and deserves its own test rather than being implied by the others.
+- [x] 2.4 Implement `engine/src/prReview.ts`: build the prompt, call `claudeJson` with the validator, and return the findings. Add the finding type to `engine/src/types.ts`.
+- [x] 2.5 Run the whole engine suite and typecheck. Commit.
 
 ## 3. Engine: posting a comment on a line
 
