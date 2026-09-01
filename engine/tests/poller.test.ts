@@ -237,6 +237,72 @@ describe('runPollCycle', () => {
     expect(listPrs(db).map((p) => p.number).sort()).toEqual([1, 24]);
   });
 
+  it('skips the per-PR lookup when GitHub reports the pull request has not changed', async () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+    upsertGithubPr(db, { projectId: project.id, number: 24, title: 't', url: 'u', githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: 'approved', branch: 'feat/known' });
+
+    vi.mocked(fetchMyOpenPrs).mockResolvedValue({
+      prs: [{
+        repo: 'linku/demo', number: 24, title: 't', url: 'u',
+        updatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+        reviewRequestedByMe: false,
+      }],
+      truncated: false,
+    });
+
+    const summary = await runPollCycle(db);
+
+    expect(fetchPrDetail).not.toHaveBeenCalled();
+    expect(summary.prsSynced).toBe(1);
+    expect(listPrs(db)[0]).toMatchObject({ reviewState: 'approved', branch: 'feat/known' });
+  });
+
+  it('looks the pull request up again once GitHub says it has changed', async () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+    upsertGithubPr(db, { projectId: project.id, number: 24, title: 't', url: 'u', githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: 'review_required', branch: 'feat/known' });
+
+    vi.mocked(fetchMyOpenPrs).mockResolvedValue({
+      prs: [{
+        repo: 'linku/demo', number: 24, title: 't', url: 'u',
+        updatedAt: '2026-08-17T12:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+        reviewRequestedByMe: false,
+      }],
+      truncated: false,
+    });
+    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/known' });
+
+    await runPollCycle(db);
+
+    expect(fetchPrDetail).toHaveBeenCalledTimes(1);
+    expect(listPrs(db)[0]).toMatchObject({ reviewState: 'approved' });
+  });
+
+  // The case the unchanged check would strand: a row stored by an earlier cycle
+  // whose lookup failed has no review state, and its updatedAt matches, so
+  // matching on updatedAt alone would leave it blank for as long as it sits still.
+  it('looks up a stored pull request that has never had a review state', async () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+    upsertGithubPr(db, { projectId: project.id, number: 24, title: 't', url: 'u', githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: null, branch: '' });
+
+    vi.mocked(fetchMyOpenPrs).mockResolvedValue({
+      prs: [{
+        repo: 'linku/demo', number: 24, title: 't', url: 'u',
+        updatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+        reviewRequestedByMe: false,
+      }],
+      truncated: false,
+    });
+    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/recovered' });
+
+    await runPollCycle(db);
+
+    expect(fetchPrDetail).toHaveBeenCalledTimes(1);
+    expect(listPrs(db)[0]).toMatchObject({ reviewState: 'approved', branch: 'feat/recovered' });
+  });
+
   it('reconciles exactly as before when the search was not truncated', async () => {
     const db = openDb(':memory:');
     const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
@@ -336,6 +402,29 @@ describe('runQuickPoll', () => {
     const summary = await runQuickPoll(db);
 
     expect(summary.sourceErrors[0]).toContain('githubPrs: gh exploded');
+  });
+
+  // The interval poller skips an unchanged pull request; the refresh button must
+  // not, or a review state GitHub never bumped updatedAt for has no way back.
+  it('looks every pull request up even when GitHub says nothing changed', async () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+    upsertGithubPr(db, { projectId: project.id, number: 24, title: 't', url: 'u', githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: 'review_required', branch: 'feat/known' });
+
+    vi.mocked(fetchMyOpenPrs).mockResolvedValue({
+      prs: [{
+        repo: 'linku/demo', number: 24, title: 't', url: 'u',
+        updatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+        reviewRequestedByMe: false,
+      }],
+      truncated: false,
+    });
+    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/known' });
+
+    await runQuickPoll(db);
+
+    expect(fetchPrDetail).toHaveBeenCalledTimes(1);
+    expect(listPrs(db)[0]).toMatchObject({ reviewState: 'approved' });
   });
 });
 

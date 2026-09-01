@@ -23,10 +23,20 @@ function findProjectByKey(projects: Project[], field: 'jiraProjectKey' | 'github
   return projects.find((p) => p[field] === key) ?? null;
 }
 
-/// One search pair plus one review lookup per pull request. A failed review
-/// lookup keeps whatever the row already had, so a single flaky call cannot
-/// quietly downgrade an approved PR to "Needs review".
-async function syncGithubPrs(db: Database.Database, projects: Project[]): Promise<number> {
+/// One search pair plus, at most, one review lookup per pull request. A failed
+/// review lookup keeps whatever the row already had, so a single flaky call
+/// cannot quietly downgrade an approved PR to "Needs review".
+///
+/// `force` skips the unchanged check below and looks every pull request up. The
+/// interval poller leaves it off, because being a cycle behind on a pull request
+/// nobody touched costs nothing. The Refresh button turns it on, because someone
+/// who clicked it is looking at the screen and wants the truth, and it is the only
+/// way back from a review state GitHub failed to bump `updatedAt` for.
+async function syncGithubPrs(
+  db: Database.Database,
+  projects: Project[],
+  force = false
+): Promise<number> {
   const mapped = projects.filter((p) => p.githubRepo);
   const { prs: found, truncated } = await fetchMyOpenPrs(mapped.map((p) => p.githubRepo!));
   const seen: Array<{ projectId: number; number: number }> = [];
@@ -40,12 +50,30 @@ async function syncGithubPrs(db: Database.Database, projects: Project[]): Promis
     const previous = findPrByNumber(db, project.id, pr.number);
     let reviewState = previous?.reviewState ?? null;
     let branch = previous?.branch ?? '';
-    try {
-      const detail = await fetchPrDetail(pr.repo, pr.number);
-      reviewState = detail.reviewState;
-      if (detail.headRefName) branch = detail.headRefName;
-    } catch (err) {
-      console.error('github prs: detail lookup failed for', pr.url, String(err));
+
+    // The search already reported when GitHub last touched this pull request. If
+    // that has not moved since the stored row, the lookup can only hand back what
+    // is already there, so it is skipped: on a quiet cycle this takes the per-PR
+    // calls to zero, which is the bulk of the engine's GitHub traffic.
+    //
+    // Both stored fields have to be present to skip. A row that has never been
+    // looked up has a null review state and an empty branch, and matching on
+    // `updatedAt` alone would leave it that way for as long as the pull request
+    // sits still, which is exactly when it would never recover.
+    const unchanged =
+      previous !== null &&
+      previous.githubUpdatedAt === pr.updatedAt &&
+      previous.reviewState !== null &&
+      branch !== '';
+
+    if (force || !unchanged) {
+      try {
+        const detail = await fetchPrDetail(pr.repo, pr.number);
+        reviewState = detail.reviewState;
+        if (detail.headRefName) branch = detail.headRefName;
+      } catch (err) {
+        console.error('github prs: detail lookup failed for', pr.url, String(err));
+      }
     }
 
     upsertGithubPr(db, {
@@ -102,6 +130,10 @@ export function applyJiraIssues(
 /// analyzeIssue (a Claude call) sequentially per new issue and would turn one click
 /// into a multi-minute wait. The interval poller still runs the full cycle, so
 /// nothing is lost, only delayed.
+///
+/// The pull request sync runs forced here: this is the deliberate, occasional,
+/// user-initiated fetch, so it pays for certainty where the interval poller
+/// deliberately does not.
 export async function runQuickPoll(db: Database.Database): Promise<PollSummary> {
   const projects = listProjects(db);
   const summary: PollSummary = { jiraTodos: 0, ticketsCreated: 0, prsSynced: 0, sourceErrors: [] };
@@ -113,7 +145,7 @@ export async function runQuickPoll(db: Database.Database): Promise<PollSummary> 
   }
 
   try {
-    summary.prsSynced = await syncGithubPrs(db, projects);
+    summary.prsSynced = await syncGithubPrs(db, projects, true);
   } catch (err) {
     summary.sourceErrors.push(`githubPrs: ${err instanceof Error ? err.message : String(err)}`);
   }
