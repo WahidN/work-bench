@@ -49,9 +49,14 @@ struct SystemAgentEnvironment: AgentEnvironment {
     /// `process.execPath` is the load-bearing trick: asking node to print its own
     /// binary makes a version-manager shim resolve to the real executable behind it,
     /// and only the real executable survives launchd.
+    /// `claude` is resolved the same way and treated as just as required, because the
+    /// engine spawns it for every agent feature. Unlike node it needs no execPath
+    /// trick: Claude Code installs a real binary behind a stable symlink, so the name
+    /// `command -v` reports keeps working after an update repoints it.
     func resolveToolchain() throws -> EngineToolchain {
         let node = try capture("node -e 'process.stdout.write(process.execPath)'")
         let pnpm = try capture("command -v pnpm")
+        let claude = try capture("command -v claude")
 
         let manager = FileManager.default
         guard !node.isEmpty, manager.isExecutableFile(atPath: node) else {
@@ -60,7 +65,10 @@ struct SystemAgentEnvironment: AgentEnvironment {
         guard !pnpm.isEmpty, manager.isExecutableFile(atPath: pnpm) else {
             throw EngineAgentError.toolchainNotFound("pnpm")
         }
-        return EngineToolchain(nodePath: node, pnpmPath: pnpm)
+        guard !claude.isEmpty, manager.isExecutableFile(atPath: claude) else {
+            throw EngineAgentError.toolchainNotFound("claude")
+        }
+        return EngineToolchain(nodePath: node, pnpmPath: pnpm, claudePath: claude)
     }
 
     /// stdout only, unlike `run`. A login-interactive shell prints its own noise on

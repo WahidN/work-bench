@@ -1,7 +1,7 @@
 import Foundation
 
-/// Where the engine's toolchain actually lives: a real node binary and the pnpm
-/// script it should run.
+/// Where the engine's toolchain actually lives: a real node binary, the pnpm
+/// script it should run, and the claude binary its agent features shell out to.
 ///
 /// `nodePath` must be a real executable, never a version-manager shim. On this
 /// machine `~/.vite-plus/bin/node` is a symlink to a single multiplexed `vp`
@@ -12,6 +12,10 @@ import Foundation
 struct EngineToolchain: Equatable {
     let nodePath: String
     let pnpmPath: String
+    /// Resolved as the symlink `command -v claude` reports, not the versioned binary
+    /// behind it: Claude Code repoints that symlink on every update, so capturing the
+    /// stable name keeps the agent working across upgrades.
+    let claudePath: String
 
     /// The directory holding the real node, put first on the agent's PATH so that
     /// pnpm's `#!/usr/bin/env node` shebang and every child process it spawns
@@ -22,6 +26,10 @@ struct EngineToolchain: Equatable {
 
     var pnpmDirectory: String {
         URL(fileURLWithPath: pnpmPath).deletingLastPathComponent().path
+    }
+
+    var claudeDirectory: String {
+        URL(fileURLWithPath: claudePath).deletingLastPathComponent().path
     }
 }
 
@@ -59,11 +67,22 @@ enum EngineAgent {
     /// the shell quoting question entirely, and there is no wrapper process left
     /// for launchd to supervise instead of the engine, so `exec` is no longer needed.
     static func plist(engineDirectory: String, toolchain: EngineToolchain, logPath: String) -> [String: Any] {
+        // claudeDirectory is here because the engine shells out to `claude` for chat,
+        // analyze, implement and review. launchd's own PATH is /usr/bin:/bin:/usr/sbin:
+        // /sbin, and Claude Code installs to ~/.local/bin, so without this entry every
+        // agent call failed with `spawn claude ENOENT` while the engine itself looked
+        // perfectly healthy: it started, it served, and `gh` and `git` both resolved.
+        //
+        // Deduplicated because two tools often share a directory, pnpm and claude both
+        // being common in /opt/homebrew/bin, and a repeated PATH entry reads like a bug
+        // when someone is debugging this plist at 2am.
+        var seen = Set<String>()
         let path = [
             toolchain.nodeDirectory,
             toolchain.pnpmDirectory,
+            toolchain.claudeDirectory,
             "/usr/bin", "/bin", "/usr/sbin", "/sbin",
-        ].joined(separator: ":")
+        ].filter { seen.insert($0).inserted }.joined(separator: ":")
 
         return [
             "Label": label,

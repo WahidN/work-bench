@@ -12,7 +12,11 @@ final class FakeAgentEnvironment: AgentEnvironment {
     var agentLoaded = false
     var runResults: [String: Result<String, Error>] = [:]
     var toolchain: Result<EngineToolchain, Error> = .success(
-        EngineToolchain(nodePath: "/opt/runtimes/node/24.20.0/bin/node", pnpmPath: "/opt/homebrew/bin/pnpm")
+        EngineToolchain(
+            nodePath: "/opt/runtimes/node/24.20.0/bin/node",
+            pnpmPath: "/opt/homebrew/bin/pnpm",
+            claudePath: "/Users/someone/.local/bin/claude"
+        )
     )
 
     private(set) var written: [(path: String, plist: [String: Any])] = []
@@ -121,7 +125,11 @@ struct EngineAgentInstallerTests {
         let environment = FakeAgentEnvironment()
         environment.validDirectories = [engineDir]
         environment.toolchain = .success(
-            EngineToolchain(nodePath: "/opt/runtimes/node/24.20.0/bin/node", pnpmPath: "/opt/homebrew/bin/pnpm")
+            EngineToolchain(
+                nodePath: "/opt/runtimes/node/24.20.0/bin/node",
+                pnpmPath: "/opt/homebrew/bin/pnpm",
+                claudePath: "/Users/someone/.local/bin/claude"
+            )
         )
 
         try installer(environment).install(engineDirectory: engineDir)
@@ -129,6 +137,22 @@ struct EngineAgentInstallerTests {
         let arguments = environment.written[0].plist["ProgramArguments"] as? [String]
         #expect(arguments?.first == "/opt/runtimes/node/24.20.0/bin/node")
         #expect(arguments?.contains("/opt/homebrew/bin/pnpm") == true)
+
+        let path = (environment.written[0].plist["EnvironmentVariables"] as? [String: String])?["PATH"]
+        #expect(path?.contains("/Users/someone/.local/bin") == true, "the agent cannot run without claude on PATH")
+    }
+
+    // Same refusal as a missing pnpm: better to fail here, with a message naming the
+    // tool, than to install an agent whose every chat and review call throws ENOENT.
+    @Test func installRefusesWhenClaudeCannotBeFound() {
+        let environment = FakeAgentEnvironment()
+        environment.validDirectories = [engineDir]
+        environment.toolchain = .failure(EngineAgentError.toolchainNotFound("claude"))
+
+        #expect(throws: EngineAgentError.toolchainNotFound("claude")) {
+            try installer(environment).install(engineDirectory: engineDir)
+        }
+        #expect(environment.written.isEmpty, "no plist may be written without claude")
     }
 
     @Test func installSurfacesALaunchctlFailureRatherThanSwallowingIt() {
