@@ -156,6 +156,7 @@ describe('runPollCycle', () => {
       prs: [{
         repo: 'linku/demo', number: 24, title: 'Guard the deploy', url: 'u',
         updatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+        reviewRequestedByMe: false,
       }],
       truncated: false,
     });
@@ -176,6 +177,7 @@ describe('runPollCycle', () => {
       prs: [{
         repo: 'linku/acv-website', number: 24, title: 'Guard the deploy', url: 'u',
         updatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+        reviewRequestedByMe: false,
       }],
       truncated: false,
     });
@@ -202,6 +204,7 @@ describe('runPollCycle', () => {
       prs: [{
         repo: 'linku/demo', number: 24, title: 't', url: 'u',
         updatedAt: '2026-08-17T11:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+        reviewRequestedByMe: false,
       }],
       truncated: false,
     });
@@ -222,6 +225,7 @@ describe('runPollCycle', () => {
       prs: [{
         repo: 'linku/demo', number: 24, title: 'Guard the deploy', url: 'u',
         updatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+        reviewRequestedByMe: false,
       }],
       truncated: true,
     });
@@ -242,6 +246,7 @@ describe('runPollCycle', () => {
       prs: [{
         repo: 'linku/demo', number: 24, title: 'Guard the deploy', url: 'u',
         updatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+        reviewRequestedByMe: false,
       }],
       truncated: false,
     });
