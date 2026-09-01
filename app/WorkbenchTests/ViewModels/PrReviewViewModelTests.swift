@@ -65,7 +65,7 @@ struct PrReviewViewModelTests {
 
     @Test func loadingReturnsWhatIsStored() async {
         let api = StubPrReviewAPI()
-        api.review = PrReview(findings: [finding(7), finding(8, posted: true)], outdated: false)
+        api.review = PrReview(findings: [finding(7), finding(8, posted: true)], outdated: false, running: false)
         let model = PrReviewViewModel(api: api)
 
         await model.load(prId: 1)
@@ -76,7 +76,7 @@ struct PrReviewViewModelTests {
 
     @Test func loadingCarriesTheOutdatedFlag() async {
         let api = StubPrReviewAPI()
-        api.review = PrReview(findings: [finding(7)], outdated: true)
+        api.review = PrReview(findings: [finding(7)], outdated: true, running: false)
         let model = PrReviewViewModel(api: api)
 
         await model.load(prId: 1)
@@ -86,7 +86,7 @@ struct PrReviewViewModelTests {
 
     @Test func postingOneMarksOnlyThatOne() async {
         let api = StubPrReviewAPI()
-        api.review = PrReview(findings: [finding(7), finding(8)], outdated: false)
+        api.review = PrReview(findings: [finding(7), finding(8)], outdated: false, running: false)
         let model = PrReviewViewModel(api: api)
         await model.load(prId: 1)
 
@@ -99,7 +99,7 @@ struct PrReviewViewModelTests {
 
     @Test func anEditedBodyIsWhatGetsPosted() async {
         let api = StubPrReviewAPI()
-        api.review = PrReview(findings: [finding(7, "original")], outdated: false)
+        api.review = PrReview(findings: [finding(7, "original")], outdated: false, running: false)
         let model = PrReviewViewModel(api: api)
         await model.load(prId: 1)
 
@@ -112,7 +112,7 @@ struct PrReviewViewModelTests {
     // The remark has to stay in front of the user, unposted, or it is lost.
     @Test func aFailedPostKeepsTheFindingUnpostedAndPutsTheErrorOnIt() async {
         let api = StubPrReviewAPI()
-        api.review = PrReview(findings: [finding(7), finding(8)], outdated: false)
+        api.review = PrReview(findings: [finding(7), finding(8)], outdated: false, running: false)
         api.postError = APIError.serverError("422 Unprocessable Entity")
         let model = PrReviewViewModel(api: api)
         await model.load(prId: 1)
@@ -126,7 +126,7 @@ struct PrReviewViewModelTests {
 
     @Test func aRetryAfterAFailureClearsTheOldError() async {
         let api = StubPrReviewAPI()
-        api.review = PrReview(findings: [finding(7)], outdated: false)
+        api.review = PrReview(findings: [finding(7)], outdated: false, running: false)
         api.postError = APIError.serverError("422")
         let model = PrReviewViewModel(api: api)
         await model.load(prId: 1)
@@ -141,7 +141,7 @@ struct PrReviewViewModelTests {
 
     @Test func discardingRemovesOnlyThatOne() async {
         let api = StubPrReviewAPI()
-        api.review = PrReview(findings: [finding(7), finding(8)], outdated: false)
+        api.review = PrReview(findings: [finding(7), finding(8)], outdated: false, running: false)
         let model = PrReviewViewModel(api: api)
         await model.load(prId: 1)
 
@@ -155,7 +155,7 @@ struct PrReviewViewModelTests {
 
     @Test func aFailedDiscardKeepsTheFinding() async {
         let api = StubPrReviewAPI()
-        api.review = PrReview(findings: [finding(7)], outdated: false)
+        api.review = PrReview(findings: [finding(7)], outdated: false, running: false)
         api.discardError = APIError.serverError("engine down")
         let model = PrReviewViewModel(api: api)
         await model.load(prId: 1)
@@ -166,9 +166,79 @@ struct PrReviewViewModelTests {
         #expect(model.errorMessage != nil)
     }
 
+    // The button has to stay disabled for the minutes the review takes, not for
+    // the milliseconds the start call takes.
+    @Test func aRunningReviewKeepsTheModelBusy() async {
+        let api = StubPrReviewAPI()
+        api.review = PrReview(findings: [], outdated: false, running: true)
+        let model = PrReviewViewModel(api: api)
+
+        await model.load(prId: 1)
+
+        #expect(model.isRunning)
+        #expect(model.isBusy)
+    }
+
+    @Test func aFinishedReviewIsNotBusy() async {
+        let api = StubPrReviewAPI()
+        api.review = PrReview(findings: [finding(7)], outdated: false, running: false)
+        let model = PrReviewViewModel(api: api)
+
+        await model.load(prId: 1)
+
+        #expect(model.isRunning == false)
+        #expect(model.isBusy == false)
+    }
+
+    // Starting has to disable the button immediately, before any load has had a
+    // chance to report the job, or the button flickers back enabled in between.
+    @Test func startingMarksItBusyBeforeTheEngineReportsTheJob() async {
+        let api = StubPrReviewAPI()
+        api.review = PrReview(findings: [], outdated: false, running: false)
+        let model = PrReviewViewModel(api: api)
+
+        await model.start(prId: 1)
+
+        #expect(model.isBusy)
+    }
+
+    @Test func aFailedStartDoesNotLeaveItBusy() async {
+        let api = StubPrReviewAPI()
+        api.startError = APIError.serverError("engine down")
+        let model = PrReviewViewModel(api: api)
+
+        await model.start(prId: 1)
+
+        #expect(model.isBusy == false)
+    }
+
+    // An engine restart marks the job interrupted rather than running, so the
+    // button must come back rather than stay disabled forever.
+    @Test func aLoadReportingNotRunningClearsTheOptimisticBusyFlag() async {
+        let api = StubPrReviewAPI()
+        api.review = PrReview(findings: [], outdated: false, running: false)
+        let model = PrReviewViewModel(api: api)
+        await model.start(prId: 1)
+
+        await model.load(prId: 1)
+
+        #expect(model.isBusy == false)
+    }
+
+    // A payload from before the engine sent the flag must not read as running.
+    @Test func aMissingRunningFlagIsNotRunning() async {
+        let api = StubPrReviewAPI()
+        api.review = PrReview(findings: [finding(7)], outdated: false, running: nil)
+        let model = PrReviewViewModel(api: api)
+
+        await model.load(prId: 1)
+
+        #expect(model.isRunning == false)
+    }
+
     @Test func nothingIsPostedByLoading() async {
         let api = StubPrReviewAPI()
-        api.review = PrReview(findings: [finding(7)], outdated: false)
+        api.review = PrReview(findings: [finding(7)], outdated: false, running: false)
         let model = PrReviewViewModel(api: api)
 
         await model.load(prId: 1)

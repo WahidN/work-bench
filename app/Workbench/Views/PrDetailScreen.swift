@@ -33,7 +33,14 @@ struct PrDetailScreen: View {
         }
         .background(Theme.nocturneBg)
         .task { await viewModel.load(prId: pr.id) }
-        .task { await reviewModel.load(prId: pr.id) }
+        // Follows a review that was already running when this page was opened,
+        // including one started from the list, so it fills in on its own.
+        .task {
+            await reviewModel.load(prId: pr.id)
+            if reviewModel.isRunning {
+                await reviewModel.followUntilFinished(prId: pr.id)
+            }
+        }
         .alert(
             "Error",
             isPresented: Binding(
@@ -115,21 +122,24 @@ struct PrDetailScreen: View {
 
     private var reviewButton: some View {
         Button {
-            Task { await reviewModel.start(prId: pr.id) }
+            Task {
+                await reviewModel.start(prId: pr.id)
+                await reviewModel.followUntilFinished(prId: pr.id)
+            }
         } label: {
-            Text(reviewModel.isStarting ? "Starting…" : "Review this PR")
+            Text(reviewModel.isBusy ? "Reviewing…" : "Review this PR")
                 .font(Theme.heading(Theme.FontSize.secondary))
                 .padding(.vertical, Theme.Space.s2)
                 .padding(.horizontal, Theme.Space.s4)
                 .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         }
         .buttonStyle(.plain)
-        .foregroundStyle(Theme.nocturneAccent)
+        .foregroundStyle(reviewModel.isBusy ? Theme.Neutral.n600 : Theme.nocturneAccent)
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md)
-                .strokeBorder(Theme.nocturneAccent, lineWidth: 1)
+                .strokeBorder(reviewModel.isBusy ? Theme.Neutral.n700 : Theme.nocturneAccent, lineWidth: 1)
         )
-        .disabled(reviewModel.isStarting)
+        .disabled(reviewModel.isBusy)
     }
 
     /// The review as part of the pull request, not as a dialog over it. It arrives

@@ -9,7 +9,7 @@ struct ReviewNotificationLogicTests {
 
     @Test func aFinishedReviewWithSomethingToPostIsAnnounced() {
         let announce = ReviewNotificationLogic.toAnnounce(
-            reviews: [1: PrReview(findings: [finding(7)], outdated: false)],
+            reviews: [1: PrReview(findings: [finding(7)], outdated: false, running: false)],
             alreadyAnnounced: []
         )
 
@@ -20,7 +20,7 @@ struct ReviewNotificationLogicTests {
     // every 15 seconds until the user dealt with it.
     @Test func anAlreadyAnnouncedReviewIsNotAnnouncedAgain() {
         let announce = ReviewNotificationLogic.toAnnounce(
-            reviews: [1: PrReview(findings: [finding(7)], outdated: false)],
+            reviews: [1: PrReview(findings: [finding(7)], outdated: false, running: false)],
             alreadyAnnounced: [1]
         )
 
@@ -29,7 +29,7 @@ struct ReviewNotificationLogicTests {
 
     @Test func aReviewWithNothingToPostIsNotAnnounced() {
         let announce = ReviewNotificationLogic.toAnnounce(
-            reviews: [1: PrReview(findings: [], outdated: false)],
+            reviews: [1: PrReview(findings: [], outdated: false, running: false)],
             alreadyAnnounced: []
         )
 
@@ -39,7 +39,7 @@ struct ReviewNotificationLogicTests {
     // Everything posted or discarded means the user has already dealt with it.
     @Test func aReviewWhoseRemarksAreAllPostedIsNotAnnounced() {
         let announce = ReviewNotificationLogic.toAnnounce(
-            reviews: [1: PrReview(findings: [finding(7, posted: true)], outdated: false)],
+            reviews: [1: PrReview(findings: [finding(7, posted: true)], outdated: false, running: false)],
             alreadyAnnounced: []
         )
 
@@ -49,9 +49,9 @@ struct ReviewNotificationLogicTests {
     @Test func severalPullRequestsAreEachAnnouncedOnce() {
         let announce = ReviewNotificationLogic.toAnnounce(
             reviews: [
-                1: PrReview(findings: [finding(7)], outdated: false),
-                2: PrReview(findings: [finding(8)], outdated: false),
-                3: PrReview(findings: [], outdated: false),
+                1: PrReview(findings: [finding(7)], outdated: false, running: false),
+                2: PrReview(findings: [finding(8)], outdated: false, running: false),
+                3: PrReview(findings: [], outdated: false, running: false),
             ],
             alreadyAnnounced: [2]
         )

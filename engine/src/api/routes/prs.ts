@@ -3,7 +3,7 @@ import type Database from 'better-sqlite3';
 import { listPrs, getPr, listPrMessages, setPrPinned } from '../../prs.js';
 import { getProject } from '../../projects.js';
 import { sendPrMessage } from '../../prChat.js';
-import { acquireJob, finishJob } from '../../jobs.js';
+import { acquireJob, finishJob, isJobRunning } from '../../jobs.js';
 import { openDetachedWorktree, getDiff, removeWorktree, headSha } from '../../git.js';
 import { fetchPrDetailView, postReviewCommentReply, postLineComment } from '../../sources/githubPrDetail.js';
 import { draftReviewReply } from '../../prReplyDraft.js';
@@ -162,8 +162,13 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
     const pr = getPr(db, prId);
     if (!pr) { res.status(404).json({ error: 'not found' }); return; }
 
+    // Reported alongside the findings because the app cannot infer it: a review
+    // still running and one that finished with nothing to say both look like an
+    // empty list from outside.
+    const running = isJobRunning(db, 'pr', prId);
+
     const findings = listReviewFindings(db, prId);
-    if (findings.length === 0) { res.json({ findings: [], outdated: false }); return; }
+    if (findings.length === 0) { res.json({ findings: [], outdated: false, running }); return; }
 
     const project = getProject(db, pr.projectId);
     let outdated = false;
@@ -180,7 +185,7 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
         if (worktreePath) await removeWorktree(project.repoPath, worktreePath);
       }
     }
-    res.json({ findings, outdated });
+    res.json({ findings, outdated, running });
   });
 
   /// Posts one finding. No worktree: the sha stored with it is the anchor, and

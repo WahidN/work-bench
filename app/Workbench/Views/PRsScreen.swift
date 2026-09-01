@@ -17,9 +17,17 @@ struct PRsScreen: View {
     /// Starts the review and opens nothing. There is nothing to open yet: the
     /// review takes minutes, announces itself when it is done, and is read on the
     /// pull request's own page.
+    ///
+    /// The row is disabled straight away and released when the engine stops
+    /// reporting work on that pull request, so it does not stay dead for the rest
+    /// of the session, and comes back if the review was interrupted.
     private func startReview(of pr: PullRequest) {
         startedReviewIds.insert(pr.id)
-        Task { await reviewModel.start(prId: pr.id) }
+        Task {
+            await reviewModel.start(prId: pr.id)
+            await reviewModel.followUntilFinished(prId: pr.id)
+            startedReviewIds.remove(pr.id)
+        }
     }
 
     var body: some View {
@@ -183,7 +191,7 @@ private struct PrTableRow: View {
                 }
                 .help("Review this pull request in the background")
                 .font(.system(size: Theme.FontSize.tableMeta))
-                .foregroundStyle(isReviewing ? Theme.Neutral.n600 : Theme.Neutral.n400)
+                .foregroundStyle(isReviewing ? Theme.Neutral.n700 : Theme.Neutral.n400)
             }
             .buttonStyle(.plain)
             .disabled(isReviewing)

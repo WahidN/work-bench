@@ -24,5 +24,15 @@ struct PrReview: Codable {
     let findings: [ReviewFinding]
     let outdated: Bool
 
-    static let empty = PrReview(findings: [], outdated: false)
+    /// Whether the engine is working on this pull request right now. Cannot be
+    /// inferred from the findings: a review still running and one that finished
+    /// with nothing to say both come back as an empty list.
+    ///
+    /// Optional so a payload written before the engine sent it still decodes;
+    /// Swift's synthesized `Decodable` ignores property defaults.
+    let running: Bool?
+
+    var isRunning: Bool { running ?? false }
+
+    static let empty = PrReview(findings: [], outdated: false, running: false)
 }

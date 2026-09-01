@@ -24,6 +24,18 @@ final class PrReviewViewModel: ObservableObject {
     @Published private(set) var postingIds: Set<Int> = []
     @Published var errorMessage: String?
 
+    /// What the engine last said about work on this pull request.
+    @Published private(set) var isRunning = false
+
+    /// Set the moment a review is started, before any load has reported the job.
+    /// Without it the button flickers back to enabled between the start call
+    /// returning and the next load, which is most of the time the review takes.
+    @Published private(set) var didStart = false
+
+    /// Whether a review can be started. The engine's answer wins once it has one,
+    /// so an interrupted job releases the button rather than disabling it forever.
+    var isBusy: Bool { isStarting || isRunning || didStart }
+
     /// Errors belong to the remark that failed, not to the screen: one bad anchor
     /// says nothing about the other five.
     @Published private(set) var findingErrors: [Int: String] = [:]
@@ -47,7 +59,10 @@ final class PrReviewViewModel: ObservableObject {
 
         do {
             try await api.startReview(prId: prId)
+            didStart = true
         } catch {
+            // Nothing was started, so the button has to come back.
+            didStart = false
             errorMessage = message(from: error)
         }
     }
@@ -60,8 +75,24 @@ final class PrReviewViewModel: ObservableObject {
             let review = try await api.review(prId: prId)
             findings = review.findings
             outdated = review.outdated
+            isRunning = review.isRunning
+            // The engine's answer replaces the optimistic flag. This is what
+            // releases the button when a review finishes, and also when one was
+            // interrupted by a restart and is never coming back.
+            didStart = false
         } catch {
             errorMessage = message(from: error)
+        }
+    }
+
+    /// Reloads until the engine stops reporting work, so the button re-enables and
+    /// the findings appear without the user having to leave and come back.
+    func followUntilFinished(prId: Int, pollSeconds: UInt64 = 5) async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(pollSeconds))
+            if Task.isCancelled { return }
+            await load(prId: prId)
+            if !isRunning { return }
         }
     }
 

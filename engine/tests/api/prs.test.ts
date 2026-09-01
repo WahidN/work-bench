@@ -5,7 +5,7 @@ import { openDb } from '../../src/db.js';
 import { createProject } from '../../src/projects.js';
 import { createTicket } from '../../src/tickets.js';
 import { recordPr, updatePrStatus } from '../../src/prs.js';
-import { acquireJob } from '../../src/jobs.js';
+import { acquireJob, finishJob, reconcileInterruptedJobs } from '../../src/jobs.js';
 import { replaceReviewFindings, listReviewFindings } from '../../src/prReviewStore.js';
 import * as prChat from '../../src/prChat.js';
 import * as git from '../../src/git.js';
@@ -290,6 +290,46 @@ describe('GET /prs/:id/review', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.findings).toEqual([]);
+  });
+
+  // The app cannot work this out for itself: a review still running and one that
+  // finished with nothing to say both look like an empty list.
+  it('reports that work is running on the pull request', async () => {
+    acquireJob(db, 'pr-chat', 'pr', prId);
+
+    const res = await auth(request(app).get(`/prs/${prId}/review`));
+
+    expect(res.body.running).toBe(true);
+  });
+
+  it('reports nothing running when the job has finished', async () => {
+    const job = acquireJob(db, 'pr-chat', 'pr', prId)!;
+    finishJob(db, job.id, 'done');
+
+    const res = await auth(request(app).get(`/prs/${prId}/review`));
+
+    expect(res.body.running).toBe(false);
+  });
+
+  // A review killed by a restart is marked interrupted, not running, so the
+  // button does not stay disabled forever waiting for something that is gone.
+  it('does not report an interrupted job as running', async () => {
+    acquireJob(db, 'pr-chat', 'pr', prId);
+    reconcileInterruptedJobs(db);
+
+    const res = await auth(request(app).get(`/prs/${prId}/review`));
+
+    expect(res.body.running).toBe(false);
+  });
+
+  it('reports running even when the pull request has stored findings', async () => {
+    replaceReviewFindings(db, prId, [{ path: 'src/a.ts', line: 12, body: 'old remark' }], 'abc123');
+    acquireJob(db, 'pr-chat', 'pr', prId);
+
+    const res = await auth(request(app).get(`/prs/${prId}/review`));
+
+    expect(res.body.running).toBe(true);
+    expect(res.body.findings).toHaveLength(1);
   });
 
   // Whether the remark still applies is the user's call, so this only reports.
