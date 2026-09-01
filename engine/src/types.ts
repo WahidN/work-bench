@@ -85,6 +85,7 @@ export interface Pr {
   githubUpdatedAt: string | null;
   authoredByMe: boolean;
   assignedToMe: boolean;
+  reviewRequestedByMe: boolean;
   messageCount: number;
   createdAt: string;
 }

@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS prs (
   github_updated_at TEXT,
   authored_by_me INTEGER NOT NULL DEFAULT 0,
   assigned_to_me INTEGER NOT NULL DEFAULT 0,
+  review_requested_by_me INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
 
@@ -195,6 +196,12 @@ const MIGRATIONS: string[] = [
   // unknown status stays distinguishable from a real one.
   `ALTER TABLE todos ADD COLUMN status TEXT;
    ALTER TABLE todos ADD COLUMN status_category TEXT;`,
+
+  // 8: whether GitHub currently asks this user for a review on the pull request.
+  // Separate from review_state, which is the pull request's overall decision and
+  // says nothing about who was asked. Defaults to 0, so every existing row reads
+  // as not awaiting review until the first poll after this fills it in.
+  `ALTER TABLE prs ADD COLUMN review_requested_by_me INTEGER NOT NULL DEFAULT 0;`,
 ];
 
 function isEmptyDatabase(db: Database.Database): boolean {

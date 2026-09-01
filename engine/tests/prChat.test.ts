@@ -24,7 +24,7 @@ function ingestedPr(authoredByMe = false) {
   return upsertGithubPr(db, {
     projectId, number: 88, title: 'Bump the deploy timeout', url: 'https://github.com/x/pull/88',
     githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe,
-    assignedToMe: true, reviewState: 'review_required', branch: 'feat/deploy-timeout',
+    assignedToMe: true, reviewRequestedByMe: false, reviewState: 'review_required', branch: 'feat/deploy-timeout',
   });
 }
 

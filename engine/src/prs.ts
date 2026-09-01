@@ -13,6 +13,7 @@ function rowToPr(row: any): Pr {
     title: row.title, reviewState: row.review_state as PrReviewState | null,
     isDraft: !!row.is_draft, githubUpdatedAt: row.github_updated_at,
     authoredByMe: !!row.authored_by_me, assignedToMe: !!row.assigned_to_me,
+    reviewRequestedByMe: !!row.review_requested_by_me,
     messageCount: Number(row.message_count ?? 0),
   };
 }
@@ -90,6 +91,7 @@ export interface UpsertGithubPrInput {
   isDraft: boolean;
   authoredByMe: boolean;
   assignedToMe: boolean;
+  reviewRequestedByMe: boolean;
   reviewState: PrReviewState | null;
   branch: string;
 }
@@ -113,6 +115,9 @@ export function upsertGithubPr(db: Database.Database, input: UpsertGithubPrInput
     isDraft: input.isDraft ? 1 : 0,
     authoredByMe: input.authoredByMe ? 1 : 0,
     assignedToMe: input.assignedToMe ? 1 : 0,
+    // Restated on every poll, not only on insert: a review the user has given, or
+    // one the author withdrew, has to clear or the queue keeps finished work.
+    reviewRequestedByMe: input.reviewRequestedByMe ? 1 : 0,
     reviewState: input.reviewState,
     branch: input.branch,
   };
@@ -121,6 +126,7 @@ export function upsertGithubPr(db: Database.Database, input: UpsertGithubPrInput
     db.prepare(
       `UPDATE prs SET title = @title, url = @url, github_updated_at = @githubUpdatedAt,
        is_draft = @isDraft, authored_by_me = @authoredByMe, assigned_to_me = @assignedToMe,
+       review_requested_by_me = @reviewRequestedByMe,
        review_state = @reviewState, branch = @branch WHERE id = @id`
     ).run({ ...fields, id: existing.id });
     return getPr(db, existing.id)!;
@@ -129,9 +135,9 @@ export function upsertGithubPr(db: Database.Database, input: UpsertGithubPrInput
   const result = db
     .prepare(
       `INSERT INTO prs (ticket_id, project_id, branch, number, url, status, created_at,
-         title, github_updated_at, is_draft, authored_by_me, assigned_to_me, review_state)
+         title, github_updated_at, is_draft, authored_by_me, assigned_to_me, review_requested_by_me, review_state)
        VALUES (NULL, @projectId, @branch, @number, @url, 'open', @createdAt,
-         @title, @githubUpdatedAt, @isDraft, @authoredByMe, @assignedToMe, @reviewState)`
+         @title, @githubUpdatedAt, @isDraft, @authoredByMe, @assignedToMe, @reviewRequestedByMe, @reviewState)`
     )
     .run({ ...fields, projectId: input.projectId, number: input.number, createdAt: new Date().toISOString() });
   return getPr(db, Number(result.lastInsertRowid))!;
