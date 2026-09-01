@@ -3,7 +3,7 @@ import { getProject } from './projects.js';
 import { getTicket, listTickets, findTicketBySource, createTicket } from './tickets.js';
 import { listPrs } from './prs.js';
 import { analyzeIssue } from './analyze.js';
-import type { Todo, SourceIssue, Project, Ticket, TicketStatus, PrStatus, TodoPriority, TodoMessage } from './types.js';
+import type { Todo, SourceIssue, Project, Ticket, TicketStatus, Pr, PrStatus, TodoPriority, TodoMessage } from './types.js';
 
 function rowToTodo(row: any): Todo {
   return {
@@ -101,6 +101,23 @@ export function setTodoPriority(db: Database.Database, id: number, priority: Tod
 export function setTodoPinned(db: Database.Database, id: number, pinned: boolean): Todo | null {
   db.prepare('UPDATE todos SET pinned = ? WHERE id = ?').run(pinned ? 1 : 0, id);
   return getTodo(db, id);
+}
+
+// todo_messages references todos(id) and foreign keys are enforced at runtime, so the
+// thread has to go before the row it hangs off, the same order reconcileJiraTodos needs.
+// One transaction because a failure between the two statements would leave a task whose
+// thread had been destroyed, which is worse than either outcome on its own.
+export function deleteTodo(db: Database.Database, id: number): void {
+  const todo = getTodo(db, id);
+  if (!todo) throw new Error(`Todo ${id} not found`);
+  // The interface never offers this for a mirrored issue, but "the UI does not offer it"
+  // is not a guarantee about an HTTP API, and the next poll would recreate the row anyway.
+  if (todo.source !== 'manual') throw new Error(`Todo ${id} cannot be deleted (not a manual task)`);
+
+  db.transaction(() => {
+    db.prepare('DELETE FROM todo_messages WHERE todo_id = ?').run(id);
+    db.prepare('DELETE FROM todos WHERE id = ?').run(id);
+  })();
 }
 
 export function upsertJiraTodo(db: Database.Database, issue: SourceIssue, project: Project | null): void {
@@ -230,7 +247,18 @@ export function getTodayView(db: Database.Database): TodayView {
   const tickets = listTickets(db).filter(
     (t) => t.status === 'new' || t.status === 'sparring' || t.status === 'needs_attention'
   );
-  const prs = listPrs(db).filter((p) => p.status === 'open' || p.status === 'needs_attention');
+  // needsInput feeds the dock badge and the "newly appeared" notifications, and a
+  // colleague's pull request arriving because my review was requested is not something
+  // to interrupt me with. It stays visible on the Pull requests screen, which is where
+  // review work belongs.
+  //
+  // Deliberately "only because": testing authoredByMe || assignedToMe instead would
+  // also drop rows written before those columns existed, which the migration backfilled
+  // with 0. Nothing that reached needsInput before review requests were fetched changes.
+  const forReviewOnly = (pr: Pr) => pr.reviewRequestedByMe && !pr.authoredByMe && !pr.assignedToMe;
+  const prs = listPrs(db).filter(
+    (p) => (p.status === 'open' || p.status === 'needs_attention') && !forReviewOnly(p)
+  );
 
   const needsInput: TodayItem[] = [
     ...tickets.map((t) => ({ kind: 'ticket' as const, id: t.id, title: t.title, status: t.status, reviewScore: null })),

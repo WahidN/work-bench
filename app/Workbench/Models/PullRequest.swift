@@ -36,5 +36,6 @@ struct PullRequest: Codable, Identifiable, Equatable {
     var githubUpdatedAt: String?
     var authoredByMe: Bool
     var assignedToMe: Bool
+    var reviewRequestedByMe: Bool?
     var messageCount: Int
 }

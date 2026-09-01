@@ -195,4 +195,18 @@ struct APIClientTodosTests {
         #expect(capturedBody?["text"] as? String == "what is this?")
         #expect(reply.reply == "It is the redirect guard.")
     }
+
+    @Test func deleteTodoSendsDeleteToTheTodoRoute() async throws {
+        var capturedPath: String?
+        var capturedMethod: String?
+        let session = mockedSession { request in
+            capturedPath = request.url?.path
+            capturedMethod = request.httpMethod
+            return jsonResponse(request.url!, status: 204, body: "")
+        }
+        try await APIClient(session: session, keychain: StubSecretStore()).deleteTodo(id: 12)
+
+        #expect(capturedPath == "/todos/12")
+        #expect(capturedMethod == "DELETE")
+    }
 }

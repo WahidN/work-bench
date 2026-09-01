@@ -196,6 +196,35 @@ func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
     #expect(pr.authoredByMe)
 }
 
+@Test func decodesAPullRequestAwaitingMyReview() throws {
+    let json = """
+    {"id":1,"ticketId":null,"projectId":1,"branch":"feat/meldingsbalk","number":45,"url":"u",
+     "status":"open","lastReviewScore":null,"createdAt":"2026-09-01T07:17:02Z",
+     "pinned":false,"title":"[ACV-38] Herbouw meldingsbalk","reviewState":"review_required",
+     "isDraft":false,"githubUpdatedAt":"2026-09-01T07:17:02Z",
+     "authoredByMe":false,"assignedToMe":false,"reviewRequestedByMe":true,"messageCount":0}
+    """
+    let pr = try decode(PullRequest.self, json)
+    #expect(pr.reviewRequestedByMe == true)
+    #expect(pr.authoredByMe == false)
+    #expect(pr.assignedToMe == false)
+}
+
+@Test func decodesAPullRequestPayloadWrittenBeforeReviewRequestsExisted() throws {
+    // Swift's synthesized Decodable ignores property defaults, so the field has to be
+    // optional or every payload from an engine that predates it fails to decode.
+    let json = """
+    {"id":1,"ticketId":null,"projectId":2,"branch":"","number":24,"url":"u",
+     "status":"open","lastReviewScore":null,"createdAt":"2026-08-17T10:00:00Z",
+     "pinned":false,"title":"Guard the deploy","reviewState":"changes_requested",
+     "isDraft":false,"githubUpdatedAt":"2026-08-17T09:46:24Z",
+     "authoredByMe":true,"assignedToMe":false,"messageCount":3}
+    """
+    let pr = try decode(PullRequest.self, json)
+    #expect(pr.reviewRequestedByMe == nil)
+    #expect(pr.title == "Guard the deploy")
+}
+
 @Test func decodesProjectStatusAndBlurb() throws {
     let json = """
     {"id":3,"name":"Drydock","repoPath":"/repos/drydock","defaultBranch":"main",

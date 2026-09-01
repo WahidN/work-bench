@@ -50,7 +50,8 @@ async function syncGithubPrs(db: Database.Database, projects: Project[]): Promis
     upsertGithubPr(db, {
       projectId: project.id, number: pr.number, title: pr.title, url: pr.url,
       githubUpdatedAt: pr.updatedAt, isDraft: pr.isDraft,
-      authoredByMe: pr.authoredByMe, assignedToMe: pr.assignedToMe, reviewState, branch,
+      authoredByMe: pr.authoredByMe, assignedToMe: pr.assignedToMe,
+      reviewRequestedByMe: pr.reviewRequestedByMe, reviewState, branch,
     });
     seen.push({ projectId: project.id, number: pr.number });
   }

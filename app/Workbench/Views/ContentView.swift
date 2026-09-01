@@ -40,6 +40,8 @@ struct ContentView: View {
     // notes save returns a new row, and the header would keep rendering the pre-edit copy.
     // Resolving by id also means a deleted project falls back to the grid on its own.
     @State private var openProjectId: Int?
+    @State private var todoPendingDeletion: Todo?
+    @State private var deleteError: String?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -236,8 +238,48 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
     private var content: some View {
+        contentBody
+            // Here rather than in TaskRow: the row is rendered once per task, so an
+            // alert inside it would give every row its own presentation state. Both
+            // screens that show a task row route their delete through this one
+            // confirmation. Deliberately not on the outer chain next to the Refresh
+            // alert: SwiftUI presents one alert per view, and a pending Refresh error
+            // swallowed this one, leaving the trash button looking dead.
+            .alert(
+                "Delete this task?",
+                isPresented: Binding(
+                    get: { todoPendingDeletion != nil },
+                    set: { if !$0 { todoPendingDeletion = nil } }
+                ),
+                presenting: todoPendingDeletion
+            ) { todo in
+                Button("Delete", role: .destructive) {
+                    todoPendingDeletion = nil
+                    Task { deleteError = await todayViewModel.delete(todo) }
+                }
+                Button("Cancel", role: .cancel) { todoPendingDeletion = nil }
+            } message: { todo in
+                Text("\u{201C}\(todo.text)\u{201D} and anything the agent said about it are removed for good. There is no undo.")
+            }
+            // A failed delete has to say so on whichever screen it was started from.
+            // TodayViewModel.errorMessage only reaches an alert inside TodayScreen, so a
+            // delete from a project's Tasks tab used to fail in complete silence.
+            .alert(
+                "Could not delete the task",
+                isPresented: Binding(
+                    get: { deleteError != nil },
+                    set: { if !$0 { deleteError = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(deleteError ?? "")
+            }
+    }
+
+    @ViewBuilder
+    private var contentBody: some View {
         switch selection {
         case .today:
             TodayScreen(
@@ -251,7 +293,8 @@ struct ContentView: View {
                 onNavigate: { selection = $0 },
                 onDidPromote: { Task { await ticketsViewModel.load() } },
                 onTogglePinTodo: { todo in Task { await todayViewModel.togglePin(todo) } },
-                onChatTodo: openTodoChat
+                onChatTodo: openTodoChat,
+                onDeleteTodo: { todoPendingDeletion = $0 }
             )
         case .issues:
             JiraScreen(
@@ -297,7 +340,8 @@ struct ContentView: View {
                     onToggleTask: { row in toggleProjectTask(row) },
                     onOpenWork: { item in openWork(item) },
                     onChat: { item in openAgent(chatTarget(for: item)) },
-                    onChatTodo: openTodoChat
+                    onChatTodo: openTodoChat,
+                    onDeleteTodo: { todoPendingDeletion = $0 }
                 )
                 .id(project.id)
             } else {

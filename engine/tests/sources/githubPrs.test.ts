@@ -25,9 +25,10 @@ describe('fetchMyOpenPrs', () => {
   it('flags a PR that only the assignee search returned', async () => {
     vi.mocked(execa)
       .mockResolvedValueOnce({ stdout: '[]' } as any)
-      .mockResolvedValueOnce({ stdout: JSON.stringify([hit()]) } as any);
+      .mockResolvedValueOnce({ stdout: JSON.stringify([hit()]) } as any)
+      .mockResolvedValueOnce({ stdout: '[]' } as any);
     const { prs } = await fetchMyOpenPrs(['linku/demo']);
-    expect(prs[0]).toMatchObject({ authoredByMe: false, assignedToMe: true });
+    expect(prs[0]).toMatchObject({ authoredByMe: false, assignedToMe: true, reviewRequestedByMe: false });
   });
 
   it('drops a PR whose repo maps to no project', async () => {
@@ -62,6 +63,7 @@ describe('fetchMyOpenPrs', () => {
     const capped = Array.from({ length: 100 }, (_, i) => hit({ number: i + 1, url: `https://github.com/linku/demo/pull/${i + 1}` }));
     vi.mocked(execa)
       .mockResolvedValueOnce({ stdout: JSON.stringify(capped) } as any)
+      .mockResolvedValueOnce({ stdout: '[]' } as any)
       .mockResolvedValueOnce({ stdout: '[]' } as any);
     const { truncated } = await fetchMyOpenPrs(['linku/demo']);
     expect(truncated).toBe(true);
@@ -71,6 +73,50 @@ describe('fetchMyOpenPrs', () => {
     vi.mocked(execa).mockResolvedValue({ stdout: JSON.stringify([hit()]) } as any);
     const { truncated } = await fetchMyOpenPrs(['linku/demo']);
     expect(truncated).toBe(false);
+  });
+
+  it('asks gh for review requests as well as authored and assigned', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: '[]' } as any);
+    await fetchMyOpenPrs(['linku/demo']);
+    const filters = vi.mocked(execa).mock.calls.map((call) => (call[1] as string[])[2]);
+    expect(filters).toEqual(['--author=@me', '--assignee=@me', '--review-requested=@me']);
+  });
+
+  it('flags a PR that only the review-requested search returned', async () => {
+    vi.mocked(execa)
+      .mockResolvedValueOnce({ stdout: '[]' } as any)
+      .mockResolvedValueOnce({ stdout: '[]' } as any)
+      .mockResolvedValueOnce({ stdout: JSON.stringify([hit()]) } as any);
+    const { prs } = await fetchMyOpenPrs(['linku/demo']);
+    expect(prs).toHaveLength(1);
+    expect(prs[0]).toMatchObject({ authoredByMe: false, assignedToMe: false, reviewRequestedByMe: true });
+  });
+
+  it('carries all three flags for a PR every search returned, without duplicating it', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: JSON.stringify([hit()]) } as any);
+    const { prs } = await fetchMyOpenPrs(['linku/demo']);
+    expect(prs).toHaveLength(1);
+    expect(prs[0]).toMatchObject({ authoredByMe: true, assignedToMe: true, reviewRequestedByMe: true });
+  });
+
+  it('drops a review-requested PR whose repo maps to no project', async () => {
+    vi.mocked(execa)
+      .mockResolvedValueOnce({ stdout: '[]' } as any)
+      .mockResolvedValueOnce({ stdout: '[]' } as any)
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify([hit({ repository: { nameWithOwner: 'linku/other' } })]),
+      } as any);
+    expect((await fetchMyOpenPrs(['linku/demo'])).prs).toEqual([]);
+  });
+
+  it('flags truncated when only the review-requested search hits the cap', async () => {
+    const capped = Array.from({ length: 100 }, (_, i) => hit({ number: i + 1, url: `https://github.com/linku/demo/pull/${i + 1}` }));
+    vi.mocked(execa)
+      .mockResolvedValueOnce({ stdout: '[]' } as any)
+      .mockResolvedValueOnce({ stdout: '[]' } as any)
+      .mockResolvedValueOnce({ stdout: JSON.stringify(capped) } as any);
+    const { truncated } = await fetchMyOpenPrs(['linku/demo']);
+    expect(truncated).toBe(true);
   });
 });
 

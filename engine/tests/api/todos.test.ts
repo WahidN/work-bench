@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import Database from 'better-sqlite3';
 import { openDb } from '../../src/db.js';
-import { createManualTodo, promoteTodo, setTodoDone } from '../../src/todos.js';
+import { createManualTodo, promoteTodo, setTodoDone, getTodo, listTodos, upsertJiraTodo } from '../../src/todos.js';
 import { createProject } from '../../src/projects.js';
 import { createServer } from '../../src/api/server.js';
 
@@ -215,5 +215,40 @@ describe('POST /todos with a project', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.projectId).toBeNull();
+  });
+});
+
+describe('DELETE /todos/:id', () => {
+  const issue = { source: 'jira' as const, sourceId: 'JIRA-DEMO-1', title: '[DEMO-1] Update env vars', url: 'https://x/browse/DEMO-1', body: 'Redirect loop on logout.', projectKey: 'DEMO', statusName: null, statusCategory: null };
+
+  it('deletes a manual todo', async () => {
+    const res = await auth(request(app).delete(`/todos/${todoId}`));
+
+    expect(res.status).toBe(204);
+    expect(getTodo(db, todoId)).toBeNull();
+  });
+
+  it('400s for a mirrored jira issue, with a reason, and leaves it in place', async () => {
+    upsertJiraTodo(db, issue, null);
+    const jira = listTodos(db).find((t) => t.source === 'jira')!;
+
+    const res = await auth(request(app).delete(`/todos/${jira.id}`));
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/cannot be deleted/);
+    expect(getTodo(db, jira.id)).not.toBeNull();
+  });
+
+  it('404s for a todo that does not exist', async () => {
+    const res = await auth(request(app).delete('/todos/999'));
+
+    expect(res.status).toBe(404);
+  });
+
+  it('401s without a bearer token, and the todo survives', async () => {
+    const res = await request(app).delete(`/todos/${todoId}`);
+
+    expect(res.status).toBe(401);
+    expect(getTodo(db, todoId)).not.toBeNull();
   });
 });

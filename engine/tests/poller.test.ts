@@ -156,6 +156,7 @@ describe('runPollCycle', () => {
       prs: [{
         repo: 'linku/demo', number: 24, title: 'Guard the deploy', url: 'u',
         updatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+        reviewRequestedByMe: false,
       }],
       truncated: false,
     });
@@ -176,6 +177,7 @@ describe('runPollCycle', () => {
       prs: [{
         repo: 'linku/acv-website', number: 24, title: 'Guard the deploy', url: 'u',
         updatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+        reviewRequestedByMe: false,
       }],
       truncated: false,
     });
@@ -196,12 +198,13 @@ describe('runPollCycle', () => {
   it('keeps the previous review state and branch when the per-PR lookup fails', async () => {
     const db = openDb(':memory:');
     const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
-    upsertGithubPr(db, { projectId: project.id, number: 24, title: 't', url: 'u', githubUpdatedAt: 'x', isDraft: false, authoredByMe: true, assignedToMe: false, reviewState: 'approved', branch: 'feat/keep-me' });
+    upsertGithubPr(db, { projectId: project.id, number: 24, title: 't', url: 'u', githubUpdatedAt: 'x', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: 'approved', branch: 'feat/keep-me' });
 
     vi.mocked(fetchMyOpenPrs).mockResolvedValue({
       prs: [{
         repo: 'linku/demo', number: 24, title: 't', url: 'u',
         updatedAt: '2026-08-17T11:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+        reviewRequestedByMe: false,
       }],
       truncated: false,
     });
@@ -216,12 +219,13 @@ describe('runPollCycle', () => {
     const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
     // Already stored, but the truncated search below does not return it. If this
     // cycle reconciled anyway, it would delete a pull request that is still open.
-    upsertGithubPr(db, { projectId: project.id, number: 1, title: 'Fell off the cap', url: 'u1', githubUpdatedAt: 'x', isDraft: false, authoredByMe: true, assignedToMe: false, reviewState: null, branch: 'b' });
+    upsertGithubPr(db, { projectId: project.id, number: 1, title: 'Fell off the cap', url: 'u1', githubUpdatedAt: 'x', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: null, branch: 'b' });
 
     vi.mocked(fetchMyOpenPrs).mockResolvedValue({
       prs: [{
         repo: 'linku/demo', number: 24, title: 'Guard the deploy', url: 'u',
         updatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+        reviewRequestedByMe: false,
       }],
       truncated: true,
     });
@@ -236,12 +240,13 @@ describe('runPollCycle', () => {
   it('reconciles exactly as before when the search was not truncated', async () => {
     const db = openDb(':memory:');
     const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
-    upsertGithubPr(db, { projectId: project.id, number: 1, title: 'Actually closed', url: 'u1', githubUpdatedAt: 'x', isDraft: false, authoredByMe: true, assignedToMe: false, reviewState: null, branch: 'b' });
+    upsertGithubPr(db, { projectId: project.id, number: 1, title: 'Actually closed', url: 'u1', githubUpdatedAt: 'x', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: null, branch: 'b' });
 
     vi.mocked(fetchMyOpenPrs).mockResolvedValue({
       prs: [{
         repo: 'linku/demo', number: 24, title: 'Guard the deploy', url: 'u',
         updatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+        reviewRequestedByMe: false,
       }],
       truncated: false,
     });

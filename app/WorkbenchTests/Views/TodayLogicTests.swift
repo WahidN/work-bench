@@ -290,3 +290,42 @@ struct TodayLogicColorTests {
 
     #expect(sections.flatMap(\.rows).map(\.id) == ["todo-7"], "exactly one row, not one pinned and one normal")
 }
+
+// MARK: - Which rows offer a delete
+
+private func row(_ source: TodayTaskSource) -> TodayTaskRow {
+    TodayTaskRow(
+        id: "r", source: source, title: "t", isDone: false, projectName: "Atlas Payments",
+        projectDot: Theme.nocturneAccent, ref: nil, refSymbol: TodayLogic.issueSymbol,
+        tag: nil, priority: nil
+    )
+}
+
+@Test func aManualTaskCanBeDeleted() {
+    let manual = todo(id: 3)
+    #expect(TodayLogic.deletableTodo(in: row(.todo(manual)))?.id == 3)
+}
+
+@Test func aPinnedManualTaskCanBeDeletedToo() {
+    var pinnedManual = todo(id: 4)
+    pinnedManual.pinned = true
+    // The rule this replaces unwrapped only .todo, so a task the user had pinned
+    // offered no delete at all, which the spec does not allow.
+    #expect(TodayLogic.deletableTodo(in: row(.pinnedTodo(pinnedManual)))?.id == 4)
+}
+
+@Test func aMirroredJiraIssueCanNeverBeDeleted() {
+    let mirrored = todo(id: 5, source: .jira, sourceId: "JIRA-ATL-441")
+    #expect(TodayLogic.deletableTodo(in: row(.todo(mirrored))) == nil)
+    #expect(TodayLogic.deletableTodo(in: row(.pinnedTodo(mirrored))) == nil)
+}
+
+@Test func aPinnedTicketOrPullRequestOffersNoDelete() {
+    #expect(TodayLogic.deletableTodo(in: row(.pinnedTicket(ticket(pinned: true)))) == nil)
+    #expect(TodayLogic.deletableTodo(in: row(.pinnedPullRequest(pullRequest(pinned: true)))) == nil)
+}
+
+@Test func aCompletedManualTaskCanStillBeDeleted() {
+    let done = todo(id: 6, done: true)
+    #expect(TodayLogic.deletableTodo(in: row(.todo(done)))?.id == 6)
+}

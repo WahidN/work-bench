@@ -1,6 +1,6 @@
 import type { Express } from 'express';
 import type Database from 'better-sqlite3';
-import { listTodos, createManualTodo, setTodoDone, setTodoPriority, getTodo, promoteTodo, setTodoPinned, listTodoMessages } from '../../todos.js';
+import { listTodos, createManualTodo, setTodoDone, setTodoPriority, getTodo, promoteTodo, setTodoPinned, listTodoMessages, deleteTodo } from '../../todos.js';
 import { getProject } from '../../projects.js';
 import { acquireJob, finishJob } from '../../jobs.js';
 import { sendTodoMessage } from '../../todoChat.js';
@@ -61,6 +61,21 @@ export function registerTodosRoutes(app: Express, db: Database.Database): void {
     if (done !== undefined) todo = setTodoDone(db, id, done);
     if (priority !== undefined) todo = setTodoPriority(db, id, priority);
     res.json(todo);
+  });
+
+  app.delete('/todos/:id', (req, res) => {
+    const id = Number(req.params.id);
+    // Read first for the 404, the way the PATCH route above does, rather than matching
+    // the words of an error message. deleteTodo still refuses both cases itself, so the
+    // rule holds for any caller; this only decides the status codes.
+    const todo = getTodo(db, id);
+    if (!todo) { res.status(404).json({ error: 'not found' }); return; }
+    if (todo.source !== 'manual') {
+      res.status(400).json({ error: `Todo ${id} cannot be deleted (not a manual task)` });
+      return;
+    }
+    deleteTodo(db, id);
+    res.status(204).end();
   });
 
   app.post('/todos/:id/promote', async (req, res) => {

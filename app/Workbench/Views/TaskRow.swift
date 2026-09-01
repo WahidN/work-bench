@@ -6,8 +6,10 @@ struct TaskRow: View {
     let onCyclePriority: (Todo) -> Void
     let onPromote: (Todo) -> Void
     let onChat: (Todo) -> Void
+    let onDelete: (Todo) -> Void
     @State private var isHovered = false
     @State private var isCheckboxHovered = false
+    @State private var isDeleteHovered = false
 
     private var todo: Todo? {
         if case .todo(let todo) = row.source { return todo }
@@ -52,6 +54,7 @@ struct TaskRow: View {
                 .padding(.top, 3)
                 .help("Change priority")
             }
+            deleteButton
         }
         .padding(.vertical, Theme.Space.s3)
         .padding(.horizontal, Theme.Space.s4)
@@ -70,7 +73,50 @@ struct TaskRow: View {
             if let todo, todo.canPromote {
                 Button("Start fixing this") { onPromote(todo) }
             }
+            // Kept alongside the button, not instead of it. The button is what makes
+            // deleting discoverable; this is the only route that does not need a
+            // pointer, and the button is hover-gated so it has none.
+            if let deletable = TodayLogic.deletableTodo(in: row) {
+                Button("Delete task") { onDelete(deletable) }
+            }
         }
+    }
+
+    /// Revealed on hover rather than always drawn: the rows are dense, and deleting
+    /// cannot be undone, so the control should not sit under the cursor on every row.
+    /// Absent rather than disabled for a mirrored issue, matching `Start fixing this`.
+    ///
+    /// The space is reserved on every row, deletable or not. Returning EmptyView for a
+    /// mirrored issue contributed no width and no HStack spacing, so on Today, where
+    /// manual tasks and pinned Jira rows share a section, the title column was narrower
+    /// on some rows than others and titles wrapped at different points.
+    private var deleteButton: some View {
+        let deletable = TodayLogic.deletableTodo(in: row)
+        let isVisible = deletable != nil && isHovered
+        return Button {
+            if let deletable { onDelete(deletable) }
+        } label: {
+            Image(systemName: "trash")
+                .font(.system(size: 11))
+                .foregroundStyle(isDeleteHovered ? Theme.Accent.a400 : Theme.Neutral.n500)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 2)
+        .opacity(isVisible ? 1 : 0)
+        // Opacity rather than removing it from the view tree, so revealing it never
+        // shifts the title or the priority label sideways under the cursor. Hit testing
+        // follows the opacity, or an invisible button would still swallow clicks.
+        .allowsHitTesting(isVisible)
+        .onHover { isDeleteHovered = $0 }
+        // The alert takes the pointer on click, so onHover never reports false and the
+        // trash stayed accent-coloured on a row the cursor had left.
+        .onChange(of: isHovered) { _, hovering in
+            if !hovering { isDeleteHovered = false }
+        }
+        .help("Delete task")
+        .accessibilityLabel("Delete task")
+        .accessibilityHidden(deletable == nil)
     }
 
     private var checkbox: some View {

@@ -15,9 +15,12 @@ export interface GithubPr {
   isDraft: boolean;
   authoredByMe: boolean;
   assignedToMe: boolean;
+  reviewRequestedByMe: boolean;
 }
 
-async function search(filter: '--author=@me' | '--assignee=@me'): Promise<{ rows: any[]; truncated: boolean }> {
+async function search(
+  filter: '--author=@me' | '--assignee=@me' | '--review-requested=@me'
+): Promise<{ rows: any[]; truncated: boolean }> {
   const { stdout } = await execa('gh', [
     'search', 'prs', filter, '--state=open', '--limit', String(SEARCH_LIMIT),
     '--json', 'number,title,url,repository,updatedAt,isDraft',
@@ -45,17 +48,26 @@ export async function fetchMyOpenPrs(repoSlugs: string[]): Promise<FetchMyOpenPr
   const mapped = new Set(repoSlugs.map((slug) => toRepoSlug(slug).toLowerCase()));
   if (mapped.size === 0) return { prs: [], truncated: false };
 
+  // A pull request someone else opened, that only names the user as a reviewer,
+  // matches neither of the first two searches. Without the third one the review queue
+  // can never be populated: the pull request is not filtered out, it is never fetched.
+  // Run together rather than in sequence: they do not depend on each other, and this
+  // is on the path of POST /poll, which the header's Refresh button waits for.
   let authored: { rows: any[]; truncated: boolean };
   let assigned: { rows: any[]; truncated: boolean };
+  let reviewRequested: { rows: any[]; truncated: boolean };
   try {
-    authored = await search('--author=@me');
-    assigned = await search('--assignee=@me');
+    [authored, assigned, reviewRequested] = await Promise.all([
+      search('--author=@me'),
+      search('--assignee=@me'),
+      search('--review-requested=@me'),
+    ]);
   } catch (err) {
     throw new Error(`GitHub PR search failed: ${String(err)}`);
   }
 
   const byUrl = new Map<string, GithubPr>();
-  const take = (rows: any[], key: 'authoredByMe' | 'assignedToMe') => {
+  const take = (rows: any[], key: 'authoredByMe' | 'assignedToMe' | 'reviewRequestedByMe') => {
     for (const row of rows) {
       const repo = row.repository?.nameWithOwner ?? '';
       if (!mapped.has(repo.toLowerCase())) continue;
@@ -68,12 +80,17 @@ export async function fetchMyOpenPrs(repoSlugs: string[]): Promise<FetchMyOpenPr
         repo, number: row.number, title: row.title, url: row.url,
         updatedAt: row.updatedAt, isDraft: !!row.isDraft,
         authoredByMe: key === 'authoredByMe', assignedToMe: key === 'assignedToMe',
+        reviewRequestedByMe: key === 'reviewRequestedByMe',
       });
     }
   };
   take(authored.rows, 'authoredByMe');
   take(assigned.rows, 'assignedToMe');
-  return { prs: [...byUrl.values()], truncated: authored.truncated || assigned.truncated };
+  take(reviewRequested.rows, 'reviewRequestedByMe');
+  return {
+    prs: [...byUrl.values()],
+    truncated: authored.truncated || assigned.truncated || reviewRequested.truncated,
+  };
 }
 
 export interface GithubPrDetail {

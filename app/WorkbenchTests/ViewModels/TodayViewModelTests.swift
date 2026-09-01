@@ -9,12 +9,14 @@ final class MockTodayAPI: TodayAPI {
     var promoteTodoResult: Result<Ticket, Error>?
     var setTodoPriorityResult: Result<Todo, Error>?
     var setTodoPinnedResult: Result<Todo, Error>?
+    var deleteTodoResult: Result<Void, Error>?
     private(set) var createTodoCalls: [String] = []
     private(set) var createTodoProjectIds: [Int?] = []
     private(set) var setTodoDoneCalls: [(id: Int, done: Bool)] = []
     private(set) var promoteTodoCalls: [Int] = []
     private(set) var setTodoPriorityCalls: [(id: Int, priority: TodoPriority)] = []
     private(set) var setTodoPinnedCalls: [(id: Int, pinned: Bool)] = []
+    private(set) var deleteTodoCalls: [Int] = []
 
     func today() async throws -> TodayResponse { try todayResult.get() }
     func createTodo(text: String, projectId: Int?) async throws -> Todo {
@@ -37,6 +39,10 @@ final class MockTodayAPI: TodayAPI {
     func setTodoPinned(id: Int, pinned: Bool) async throws -> Todo {
         setTodoPinnedCalls.append((id, pinned))
         return try setTodoPinnedResult!.get()
+    }
+    func deleteTodo(id: Int) async throws {
+        deleteTodoCalls.append(id)
+        try deleteTodoResult!.get()
     }
 }
 
@@ -161,5 +167,60 @@ struct TodayViewModelTests {
         await viewModel.togglePin(sampleTodo(id: 1))
 
         #expect(viewModel.errorMessage != nil)
+    }
+
+    @Test func deleteReturnsNilOnSuccess() async {
+        let api = MockTodayAPI()
+        api.deleteTodoResult = .success(())
+        let viewModel = TodayViewModel(api: api)
+
+        #expect(await viewModel.delete(sampleTodo(id: 1)) == nil)
+    }
+
+    @Test func deleteReloadsRatherThanRemovingTheRowLocally() async {
+        let api = MockTodayAPI()
+        api.todayResult = .success(TodayResponse(needsInput: [], todos: [sampleTodo(id: 1), sampleTodo(id: 2)]))
+        api.deleteTodoResult = .success(())
+        let viewModel = TodayViewModel(api: api)
+        await viewModel.load()
+        // Only the reload can see this, so the list below proves the request happened.
+        api.todayResult = .success(TodayResponse(needsInput: [], todos: [sampleTodo(id: 2)]))
+
+        _ = await viewModel.delete(sampleTodo(id: 1))
+
+        #expect(api.deleteTodoCalls == [1])
+        #expect(viewModel.todos.map(\.id) == [2],
+                "the list must come back from GET /today: the sidebar count, the project card and the facts card all derive from it")
+    }
+
+    @Test func deleteReturnsAMessageAndLeavesTheListAloneWhenItFails() async {
+        let api = MockTodayAPI()
+        api.todayResult = .success(TodayResponse(needsInput: [], todos: [sampleTodo(id: 1)]))
+        api.deleteTodoResult = .failure(APIError.serverError("boom"))
+        let viewModel = TodayViewModel(api: api)
+        await viewModel.load()
+
+        let failure = await viewModel.delete(sampleTodo(id: 1))
+
+        // Returned rather than parked on errorMessage: only TodayScreen presents that,
+        // so a delete started from a project's Tasks tab reported nothing at all.
+        #expect(failure != nil)
+        #expect(viewModel.todos.map(\.id) == [1], "a failed delete must leave the row on screen")
+    }
+
+    @Test func deleteReportsSuccessEvenWhenTheReloadBehindItFails() async {
+        let api = MockTodayAPI()
+        api.todayResult = .success(TodayResponse(needsInput: [], todos: [sampleTodo(id: 1)]))
+        api.deleteTodoResult = .success(())
+        let viewModel = TodayViewModel(api: api)
+        await viewModel.load()
+        // The engine goes away after the delete landed but before the refresh.
+        api.todayResult = .failure(APIError.transportFailed("engine went away"))
+
+        let failure = await viewModel.delete(sampleTodo(id: 1))
+
+        // The task is gone whatever the refresh did, so reporting a delete failure here
+        // would be a lie and would invite the user to try again against a 404.
+        #expect(failure == nil)
     }
 }

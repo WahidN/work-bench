@@ -57,6 +57,7 @@ describe('prs', () => {
     // creates comes from the user's own authenticated gh.
     expect(pr.authoredByMe).toBe(true);
     expect(pr.assignedToMe).toBe(false);
+    expect(pr.reviewRequestedByMe).toBe(false);
     expect(pr.messageCount).toBe(0);
 
     addPrMessage(db, pr.id, 'user', 'hello');
@@ -102,7 +103,8 @@ describe('upserting a github PR', () => {
     const merged = upsertGithubPr(db, {
       projectId: project.id, number: 7, title: 'Fix x', url: 'u2',
       githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false,
-      authoredByMe: true, assignedToMe: false, reviewState: 'approved', branch: 'fix/x',
+      authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false,
+      reviewState: 'approved', branch: 'fix/x',
     });
 
     expect(merged.id).toBe(local.id);
@@ -117,13 +119,51 @@ describe('upserting a github PR', () => {
     const pr = upsertGithubPr(db, {
       projectId: project.id, number: 9, title: 'From github', url: 'u',
       githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: true,
-      authoredByMe: false, assignedToMe: true, reviewState: null, branch: 'feat/from-github',
+      authoredByMe: false, assignedToMe: true, reviewRequestedByMe: false,
+      reviewState: null, branch: 'feat/from-github',
     });
     // The branch is what makes this row workable: openDetachedWorktree builds from
     // origin/<branch>, so the agent panel needs nothing to exist locally.
     expect(pr.branch).toBe('feat/from-github');
     expect(pr.ticketId).toBeNull();
     expect(pr.isDraft).toBe(true);
+  });
+
+  it('stores a review request and reads it back', () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+
+    const pr = upsertGithubPr(db, {
+      projectId: project.id, number: 45, title: 'Herbouw meldingsbalk', url: 'u',
+      githubUpdatedAt: '2026-09-01T07:17:02Z', isDraft: false,
+      authoredByMe: false, assignedToMe: false, reviewRequestedByMe: true,
+      reviewState: 'review_required', branch: 'feat/meldingsbalk',
+    });
+
+    expect(pr.reviewRequestedByMe).toBe(true);
+    expect(pr.authoredByMe).toBe(false);
+    expect(pr.assignedToMe).toBe(false);
+    expect(getPr(db, pr.id)!.reviewRequestedByMe).toBe(true);
+    expect(listPrs(db)[0].reviewRequestedByMe).toBe(true);
+  });
+
+  it('clears the review request on a later upsert that no longer reports one', () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+    const input = {
+      projectId: project.id, number: 45, title: 'Herbouw meldingsbalk', url: 'u',
+      githubUpdatedAt: '2026-09-01T07:17:02Z', isDraft: false,
+      authoredByMe: true, assignedToMe: false, reviewState: 'review_required' as const,
+      branch: 'feat/meldingsbalk',
+    };
+
+    upsertGithubPr(db, { ...input, reviewRequestedByMe: true });
+    const after = upsertGithubPr(db, { ...input, reviewRequestedByMe: false });
+
+    // Overwritten rather than only set on insert. Without this a review the user has
+    // already given, or one the author withdrew, would keep the row in the queue.
+    expect(after.reviewRequestedByMe).toBe(false);
+    expect(listPrs(db)).toHaveLength(1);
   });
 });
 

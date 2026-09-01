@@ -57,6 +57,9 @@ describe('openDb', () => {
     );
     first.exec('ALTER TABLE todos DROP COLUMN status');
     first.exec('ALTER TABLE todos DROP COLUMN status_category');
+    // Stamping back to 6 replays every later migration too, so what they add has to
+    // go as well or migration 8 hits a column SCHEMA already created.
+    first.exec('ALTER TABLE prs DROP COLUMN review_requested_by_me');
     first.pragma('user_version = 6');
     first.close();
 
@@ -65,11 +68,47 @@ describe('openDb', () => {
     const columns = (db.prepare('PRAGMA table_info(todos)').all() as any[]).map((column) => column.name);
     expect(columns).toContain('status');
     expect(columns).toContain('status_category');
-    expect(db.pragma('user_version', { simple: true })).toBe(7);
+    expect(db.pragma('user_version', { simple: true })).toBe(8);
     // The existing row survives with a null status until the next poll rewrites it.
     expect(db.prepare(`SELECT text, status, status_category FROM todos`).get()).toEqual({
       text: '[DEMO-1] Old issue', status: null, status_category: null,
     });
+    db.close();
+  });
+
+  it('adds review_requested_by_me to a prs database migrated from before this change', () => {
+    dir = mkdtempSync(join(tmpdir(), 'workbench-db-'));
+    const file = join(dir, 'legacy-review.db');
+    const first = openDb(file);
+    first.prepare(
+      `INSERT INTO projects (name, repo_path, default_branch) VALUES ('demo', '/tmp/demo', 'main')`
+    ).run();
+    first.prepare(
+      `INSERT INTO prs (project_id, branch, number, url, status, created_at)
+       VALUES (1, 'feat/old', 24, 'u', 'open', 'now')`
+    ).run();
+    first.exec('ALTER TABLE prs DROP COLUMN review_requested_by_me');
+    first.pragma('user_version = 7');
+    first.close();
+
+    const db = openDb(file);
+
+    const columns = (db.prepare('PRAGMA table_info(prs)').all() as any[]).map((column) => column.name);
+    expect(columns).toContain('review_requested_by_me');
+    expect(db.pragma('user_version', { simple: true })).toBe(8);
+    // The existing row reads as not awaiting review until the next poll fills it in,
+    // which is accurate rather than wrong: nothing has asked GitHub yet.
+    expect(db.prepare(`SELECT number, review_requested_by_me FROM prs`).get()).toEqual({
+      number: 24, review_requested_by_me: 0,
+    });
+    db.close();
+  });
+
+  it('gives a fresh database the review_requested_by_me column too', () => {
+    dir = mkdtempSync(join(tmpdir(), 'workbench-db-'));
+    const db = openDb(join(dir, 'fresh-review.db'));
+    const columns = (db.prepare('PRAGMA table_info(prs)').all() as any[]).map((column) => column.name);
+    expect(columns).toContain('review_requested_by_me');
     db.close();
   });
 
@@ -85,7 +124,7 @@ describe('openDb', () => {
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='todo_messages'")
       .get();
     expect(row).toBeTruthy();
-    expect(second.pragma('user_version', { simple: true })).toBe(7);
+    expect(second.pragma('user_version', { simple: true })).toBe(8);
     second.close();
   });
 
@@ -110,7 +149,7 @@ describe('openDb', () => {
   it('stamps a fresh database as already migrated', () => {
     dir = mkdtempSync(join(tmpdir(), 'workbench-db-'));
     const db = openDb(join(dir, 'test.db'));
-    expect(db.pragma('user_version', { simple: true })).toBe(7);
+    expect(db.pragma('user_version', { simple: true })).toBe(8);
     db.close();
   });
 
@@ -182,7 +221,7 @@ describe('openDb', () => {
     expect(db.prepare('SELECT pinned FROM tickets').get()).toEqual({ pinned: 0 });
     expect(db.prepare('SELECT pinned FROM prs').get()).toEqual({ pinned: 0 });
     expect(db.prepare('SELECT status, blurb, notes FROM projects').get()).toEqual({ status: 'active', blurb: '', notes: '' });
-    expect(db.pragma('user_version', { simple: true })).toBe(7);
+    expect(db.pragma('user_version', { simple: true })).toBe(8);
     db.close();
 
     // Reopening an already-migrated file must be a no-op: no throw, version unchanged.
@@ -191,7 +230,7 @@ describe('openDb', () => {
     // at 0, so the next open replayed the ALTER TABLE and threw on the duplicate column.
     const reopened = openDb(path);
     expect(columns(reopened, 'todos')).toContain('priority');
-    expect(reopened.pragma('user_version', { simple: true })).toBe(7);
+    expect(reopened.pragma('user_version', { simple: true })).toBe(8);
     reopened.close();
   });
 
@@ -329,7 +368,7 @@ describe('openDb', () => {
 
     const db = openDb(file);
 
-    expect(db.pragma('user_version', { simple: true })).toBe(7);
+    expect(db.pragma('user_version', { simple: true })).toBe(8);
     expect(db.pragma('foreign_keys', { simple: true })).toBe(1);
     expect(db.pragma('foreign_key_check')).toEqual([]);
     expect(db.prepare('SELECT ticket_id FROM prs').get()).toEqual({ ticket_id: 1 });
