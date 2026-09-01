@@ -5,13 +5,15 @@ import Foundation
 private func makePr(
     id: Int, number: Int? = 24, projectId: Int = 1, draft: Bool = false,
     review: PrReviewState? = nil, authored: Bool = false, assigned: Bool = false,
+    reviewRequested: Bool? = nil,
     messages: Int = 0, updated: String? = "2026-08-17T10:00:00Z"
 ) -> PullRequest {
     PullRequest(
         id: id, ticketId: nil, projectId: projectId, branch: "", number: number, url: nil,
         status: .open, lastReviewScore: nil, createdAt: "2026-08-17T09:00:00Z", messages: nil,
         pinned: false, title: "Guard the deploy", reviewState: review, isDraft: draft,
-        githubUpdatedAt: updated, authoredByMe: authored, assignedToMe: assigned, messageCount: messages
+        githubUpdatedAt: updated, authoredByMe: authored, assignedToMe: assigned,
+        reviewRequestedByMe: reviewRequested, messageCount: messages
     )
 }
 
@@ -70,14 +72,52 @@ private let project = Project(
         #expect(rows.map(\.id) == [2])
     }
 
-    @Test func needsReviewFilterUsesTheComputedLabel() {
+    @Test func needsReviewFilterKeepsOnlyPullRequestsAwaitingMyReview() {
         let prs = [
-            makePr(id: 1, review: .approved),
-            makePr(id: 2, number: 25, review: nil),
-            makePr(id: 3, number: 26, draft: true),
+            makePr(id: 1, review: .reviewRequired, authored: true),
+            makePr(id: 2, number: 25, review: .reviewRequired, reviewRequested: true),
+            makePr(id: 3, number: 26, review: .approved, reviewRequested: true),
         ]
         let rows = PRsLogic.rows(prs: prs, projects: [project], filter: .needsReview, now: Date())
-        #expect(rows.map(\.id) == [2])
+        // 3 is kept even though a colleague already approved it: the user's own request
+        // still stands, which is what the tab is about. 1 is the dropped old meaning.
+        #expect(rows.map(\.id) == [2, 3])
+    }
+
+    @Test func needsReviewFilterDropsMyOwnUnreviewedPullRequest() {
+        let mine = makePr(id: 1, review: nil, authored: true)
+        let rows = PRsLogic.rows(prs: [mine], projects: [project], filter: .needsReview, now: Date())
+        #expect(rows.isEmpty, "a PR of my own waiting on someone else belongs under Mine, not here")
+    }
+
+    @Test func needsReviewFilterIgnoresAPullRequestFromAnOlderEngine() {
+        // reviewRequestedByMe is absent from payloads written before this change, so it
+        // decodes as nil. Nil must read as "not awaiting my review", never as true.
+        let legacy = makePr(id: 1, review: .reviewRequired, authored: true, reviewRequested: nil)
+        let rows = PRsLogic.rows(prs: [legacy], projects: [project], filter: .needsReview, now: Date())
+        #expect(rows.isEmpty)
+    }
+
+    @Test func aReviewOnlyPullRequestStaysOutOfTheOtherTwoTabs() {
+        let reviewOnly = makePr(id: 1, review: .reviewRequired, reviewRequested: true)
+        let assigned = PRsLogic.rows(prs: [reviewOnly], projects: [project], filter: .assignedToMe, now: Date())
+        let mine = PRsLogic.rows(prs: [reviewOnly], projects: [project], filter: .mine, now: Date())
+        #expect(assigned.isEmpty)
+        #expect(mine.isEmpty)
+    }
+
+    @Test func theOtherTwoTabsAreUnaffectedByAReviewRequest() {
+        // Both flags still decide their own tab even when a review is also requested.
+        let both = makePr(id: 1, authored: true, assigned: true, reviewRequested: true)
+        #expect(PRsLogic.rows(prs: [both], projects: [project], filter: .assignedToMe, now: Date()).map(\.id) == [1])
+        #expect(PRsLogic.rows(prs: [both], projects: [project], filter: .mine, now: Date()).map(\.id) == [1])
+    }
+
+    @Test func theEmptyStateMentionsReviewRequests() {
+        #expect(PRsLogic.emptyStateText.lowercased().contains("review"))
+        #expect(
+            PRsLogic.emptyStateText == "Nothing here. Pull requests you open, get assigned, or are asked to review show up automatically."
+        )
     }
 
     @Test func buildsTheRefAndTheProjectName() {

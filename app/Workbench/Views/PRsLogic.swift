@@ -21,7 +21,7 @@ struct PrRow: Identifiable, Equatable {
 }
 
 enum PRsLogic {
-    static let emptyStateText = "Nothing here. Pull requests you open or get assigned show up automatically."
+    static let emptyStateText = "Nothing here. Pull requests you open, get assigned, or are asked to review show up automatically."
 
     private static let timestampFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
@@ -83,7 +83,11 @@ enum PRsLogic {
         switch filter {
         case .assignedToMe: pr.assignedToMe
         case .mine: pr.authoredByMe
-        case .needsReview: statusLabel(pr) == "Needs review"
+        // Whether GitHub asks this user for a review, not what the pull request's
+        // overall review decision is. statusLabel still reports the latter, so a row
+        // here can read "Approved" when a colleague approved it and this request stands.
+        // Nil is a payload from an engine that predates the field: not my review.
+        case .needsReview: pr.reviewRequestedByMe == true
         }
     }
 
