@@ -42,13 +42,13 @@ Pure diff parsing, no process and no network, because this is the rule that deci
 
 ## 4. Engine: the routes
 
-- [ ] 4.1 Write failing tests in `engine/tests/api/prs.test.ts` for `POST /prs/:id/review`: it returns the anchorable findings and the discarded ones separately; it returns 404 for an unknown pull request; 401 without a bearer token; a pull request whose project has no GitHub repo configured fails with a reason rather than a bare 500; the worktree is removed even when the review throws, which is the leak the existing diff route already guards against.
-- [ ] 4.2 Implement `POST /prs/:id/review` in `engine/src/api/routes/prs.ts`, following the shape of the existing `GET /prs/:id/diff`: open the detached worktree, read the diff, read the head sha, run the review, validate the anchors, and remove the worktree in a `finally`. Write nothing.
-- [ ] 4.3 Write failing tests for `POST /prs/:id/review/publish`: it posts one comment per confirmed finding; it reports success and failure per finding rather than failing the whole call on one bad comment; a finding whose anchor does not validate against the current diff is refused rather than posted; 404 for an unknown pull request; 401 without a bearer token.
+- [x] 4.1 Write failing tests in `engine/tests/api/prs.test.ts` for `POST /prs/:id/review`: it returns the anchorable findings and the discarded ones separately; it returns 404 for an unknown pull request; 401 without a bearer token; a pull request whose project has no GitHub repo configured fails with a reason rather than a bare 500; the worktree is removed even when the review throws, which is the leak the existing diff route already guards against.
+- [x] 4.2 Implement `POST /prs/:id/review` in `engine/src/api/routes/prs.ts`, following the shape of the existing `GET /prs/:id/diff`: open the detached worktree, read the diff, read the head sha, run the review, validate the anchors, and remove the worktree in a `finally`. Write nothing.
+- [x] 4.3 Write failing tests for `POST /prs/:id/review/publish`: it posts one comment per confirmed finding; it reports success and failure per finding rather than failing the whole call on one bad comment; a finding whose anchor does not validate against the current diff is refused rather than posted; 404 for an unknown pull request; 401 without a bearer token.
 
       Re-validating at publish time is deliberate: the findings come back from the app, where the user may have edited them, and the engine holds no draft state between the two calls.
-- [ ] 4.4 Implement `POST /prs/:id/review/publish`. Confirm the tests pass.
-- [ ] 4.5 Run the whole engine suite and typecheck. Commit.
+- [x] 4.4 Implement `POST /prs/:id/review/publish`. Confirm the tests pass.
+- [x] 4.5 Run the whole engine suite and typecheck. Commit.
 
 ## 5. App: the calls and the state
 
