@@ -9,6 +9,7 @@ import { findTicketBySource, createTicket } from './tickets.js';
 import { upsertJiraTodo, reconcileJiraTodos, countJiraTodos } from './todos.js';
 import { upsertGithubPr, reconcileGithubPrs, findPrByNumber } from './prs.js';
 import { getSecret } from './keychain.js';
+import { POLL_INTERVAL_MS } from './config.js';
 import type { SourceIssue, Project } from './types.js';
 
 export interface PollSummary {
@@ -200,7 +201,7 @@ export async function runPollCycle(db: Database.Database): Promise<PollSummary> 
   return summary;
 }
 
-export function startPoller(db: Database.Database, intervalMs: number = 5 * 60 * 1000): () => void {
+export function startPoller(db: Database.Database, intervalMs: number = POLL_INTERVAL_MS): () => void {
   const tick = (): void => {
     // The timer skips rather than riding along: the interval comes round again
     // shortly, and a warning is more useful than a silently queued duplicate. The
