@@ -237,6 +237,16 @@ extension APIClient {
             "POST", "/prs/\(prId)/review-comments/\(commentId)/reply", body: ["text": text]
         )
     }
+
+    /// Runs the review. Posts nothing: the findings come back for the user to read.
+    func reviewPr(id: Int) async throws -> PrReviewResult {
+        try await send("POST", "/prs/\(id)/review", body: nil)
+    }
+
+    /// Posts the findings the user confirmed, with whatever edits they made.
+    func publishReview(id: Int, findings: [ReviewFinding]) async throws -> PublishReviewResult {
+        try await send("POST", "/prs/\(id)/review/publish", body: ["findings": findings])
+    }
 }
 
 extension APIClient {

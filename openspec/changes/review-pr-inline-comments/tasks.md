@@ -52,13 +52,13 @@ Pure diff parsing, no process and no network, because this is the rule that deci
 
 ## 5. App: the calls and the state
 
-- [ ] 5.1 Write failing tests in `app/WorkbenchTests/Networking/APIClientPRsTests.swift` asserting the review call uses `POST` against `/prs/<id>/review`, and the publish call `POST` against `/prs/<id>/review/publish` with the findings in the body.
-- [ ] 5.2 Add the finding model and both calls to `APIClient`. Decode the finding with optional fields where the engine may omit them, since Swift's synthesized `Decodable` ignores property defaults.
-- [ ] 5.3 Write failing tests in `app/WorkbenchTests/Views/PrReviewLogicTests.swift` for the pure rules: a review with findings offers publishing; a review with none does not; a review where every finding was discarded reports that and does not offer publishing; discarding the last remaining finding stops offering publishing; the count shown matches the findings that would actually be posted, not the total the review produced.
-- [ ] 5.4 Implement those rules in `app/Workbench/Views/PrReviewLogic.swift`.
-- [ ] 5.5 Write failing tests in `app/WorkbenchTests/ViewModels/PrReviewViewModelTests.swift`: running a review sets a running state and clears it on success and on failure; a failed review surfaces the error and offers nothing to publish; an edited remark is what gets sent on publish; a discarded finding is not sent; a partial publish failure keeps the failed findings and reports which ones they are; publishing never runs automatically after a review.
-- [ ] 5.6 Implement `PrReviewViewModel`. Confirm the tests pass.
-- [ ] 5.7 Run the whole app suite. Commit.
+- [x] 5.1 Write failing tests in `app/WorkbenchTests/Networking/APIClientPRsTests.swift` asserting the review call uses `POST` against `/prs/<id>/review`, and the publish call `POST` against `/prs/<id>/review/publish` with the findings in the body.
+- [x] 5.2 Add the finding model and both calls to `APIClient`. Decode the finding with optional fields where the engine may omit them, since Swift's synthesized `Decodable` ignores property defaults.
+- [x] 5.3 Write failing tests in `app/WorkbenchTests/Views/PrReviewLogicTests.swift` for the pure rules: a review with findings offers publishing; a review with none does not; a review where every finding was discarded reports that and does not offer publishing; discarding the last remaining finding stops offering publishing; the count shown matches the findings that would actually be posted, not the total the review produced.
+- [x] 5.4 Implement those rules in `app/Workbench/Views/PrReviewLogic.swift`.
+- [x] 5.5 Write failing tests in `app/WorkbenchTests/ViewModels/PrReviewViewModelTests.swift`: running a review sets a running state and clears it on success and on failure; a failed review surfaces the error and offers nothing to publish; an edited remark is what gets sent on publish; a discarded finding is not sent; a partial publish failure keeps the failed findings and reports which ones they are; publishing never runs automatically after a review.
+- [x] 5.6 Implement `PrReviewViewModel`. Confirm the tests pass.
+- [x] 5.7 Run the whole app suite. Commit.
 
 ## 6. App: the buttons and the sheet
 

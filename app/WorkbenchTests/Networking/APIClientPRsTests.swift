@@ -70,4 +70,62 @@ struct APIClientPRsTests {
         #expect(capturedPath == "/prs/1/merge")
         #expect(result.action == .merged)
     }
+
+    @Test func reviewPrPostsAndDecodesFindingsAndDiscards() async throws {
+        var capturedPath: String?
+        var capturedMethod: String?
+        let session = mockedSession { request in
+            capturedPath = request.url?.path
+            capturedMethod = request.httpMethod
+            return jsonResponse(request.url!, status: 200, body: #"""
+            {"findings":[{"path":"src/a.ts","line":12,"body":"duplicated helper"}],
+             "discarded":[{"path":"src/a.ts","line":999,"body":"invented","reason":"line 999 of src/a.ts is not part of the changes"}],
+             "commitSha":"abc123"}
+            """#)
+        }
+
+        let result = try await APIClient(session: session, keychain: StubSecretStore()).reviewPr(id: 1)
+
+        #expect(capturedMethod == "POST")
+        #expect(capturedPath == "/prs/1/review")
+        #expect(result.findings.count == 1)
+        #expect(result.findings[0].path == "src/a.ts")
+        #expect(result.findings[0].line == 12)
+        #expect(result.discarded.count == 1)
+        #expect(result.discarded[0].reason.contains("999"))
+    }
+
+    @Test func reviewPrDecodesAnEmptyReview() async throws {
+        let session = mockedSession { request in
+            jsonResponse(request.url!, status: 200, body: #"{"findings":[],"discarded":[],"commitSha":"abc"}"#)
+        }
+        let result = try await APIClient(session: session, keychain: StubSecretStore()).reviewPr(id: 1)
+        #expect(result.findings.isEmpty)
+    }
+
+    @Test func publishReviewSendsTheFindingsAndDecodesWhatLanded() async throws {
+        var capturedPath: String?
+        var capturedMethod: String?
+        var capturedBody: Data?
+        let session = mockedSession { request in
+            capturedPath = request.url?.path
+            capturedMethod = request.httpMethod
+            capturedBody = request.capturedBodyData()
+            return jsonResponse(request.url!, status: 200, body: #"""
+            {"posted":[{"path":"src/a.ts","line":12,"body":"edited by the user"}],
+             "failed":[{"path":"src/b.ts","line":3,"body":"other","error":"422 Unprocessable Entity"}]}
+            """#)
+        }
+
+        let result = try await APIClient(session: session, keychain: StubSecretStore()).publishReview(
+            id: 1, findings: [ReviewFinding(path: "src/a.ts", line: 12, body: "edited by the user")]
+        )
+
+        #expect(capturedMethod == "POST")
+        #expect(capturedPath == "/prs/1/review/publish")
+        #expect(String(data: capturedBody ?? Data(), encoding: .utf8)?.contains("edited by the user") == true)
+        #expect(result.posted.count == 1)
+        #expect(result.failed.count == 1)
+        #expect(result.failed[0].error.contains("422"))
+    }
 }
