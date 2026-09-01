@@ -11,8 +11,8 @@ Standing constraints for every task in this change:
 - Dutch commit messages, Conventional Commits, one line. No Claude trailer.
 - TDD: the failing test comes first, and it must be observed failing before the implementation is written.
 - **Never let a test reach the real GitHub.** `engine/tests/sources/githubPrDetail.test.ts` already mocks `execa`; every new test drives that mock. A test that shells out to `gh` is a defect in the test.
-- **No schema change.** Nothing about a review is stored. If a task seems to need a migration, stop and say so.
 - **Do not touch `engine/src/review.ts`.** `fixPipeline.ts` and `prChat.ts` read its score and must keep working. If a task seems to need a change there, stop and say so.
+- **Do not hang the notification off `needsInput`.** `getTodayView` filters review-requested pull requests out of it deliberately. See design.md.
 
 ## 1. Engine: which lines a comment can attach to
 
@@ -40,46 +40,66 @@ Pure diff parsing, no process and no network, because this is the rule that deci
 - [x] 3.4 Implement the post alongside `postReviewCommentReply`. Leave that function alone.
 - [x] 3.5 Run the whole engine suite and typecheck. Commit.
 
-## 4. Engine: the routes
+## 4. Engine: storing a review
 
-- [x] 4.1 Write failing tests in `engine/tests/api/prs.test.ts` for `POST /prs/:id/review`: it returns the anchorable findings and the discarded ones separately; it returns 404 for an unknown pull request; 401 without a bearer token; a pull request whose project has no GitHub repo configured fails with a reason rather than a bare 500; the worktree is removed even when the review throws, which is the leak the existing diff route already guards against.
-- [x] 4.2 Implement `POST /prs/:id/review` in `engine/src/api/routes/prs.ts`, following the shape of the existing `GET /prs/:id/diff`: open the detached worktree, read the diff, read the head sha, run the review, validate the anchors, and remove the worktree in a `finally`. Write nothing.
-- [x] 4.3 Write failing tests for `POST /prs/:id/review/publish`: it posts one comment per confirmed finding; it reports success and failure per finding rather than failing the whole call on one bad comment; a finding whose anchor does not validate against the current diff is refused rather than posted; 404 for an unknown pull request; 401 without a bearer token.
+Superseded the earlier "nothing is stored" approach. See design.md: the review finishes while the user is elsewhere, so there is nowhere for the findings to live but the database.
 
-      Re-validating at publish time is deliberate: the findings come back from the app, where the user may have edited them, and the engine holds no draft state between the two calls.
-- [x] 4.4 Implement `POST /prs/:id/review/publish`. Confirm the tests pass.
+- [x] 4.1 Add a failing test to `engine/tests/db.test.ts` asserting a database migrated from before this change has the review findings table, and extend the fresh-database assertions to cover it.
+
+      **Migration 9 will break the existing assertions that expect `user_version === 8`.** Update each. Deliberate legacy stamps at lower versions stay as they are. Those failures are expected and are not a sign the migration is wrong. Confirm the drift test still passes: a migrated database and a fresh one must end with identical column sets.
+- [x] 4.2 Add the table to `SCHEMA` and migration 9: one row per finding, with the pull request, path, line, body, the commit sha the review was written against, whether it has been posted, and when it was created. Foreign key to `prs`, deleted with it, the way `todo_messages` already hangs off its task.
+- [x] 4.3 Write failing tests in `engine/tests/prReviewStore.test.ts`: storing a review's findings replaces whatever that pull request had before, so a second review does not stack on the first; reading them back returns them in a stable order; marking one posted leaves the others alone; discarding one removes it; discarding the last one leaves an empty list rather than an error; findings for one pull request are untouched by another's.
+- [x] 4.4 Implement the store in `engine/src/prReviewStore.ts`. Confirm the tests pass.
 - [x] 4.5 Run the whole engine suite and typecheck. Commit.
 
-## 5. App: the calls and the state
+## 5. Engine: the routes
 
-- [x] 5.1 Write failing tests in `app/WorkbenchTests/Networking/APIClientPRsTests.swift` asserting the review call uses `POST` against `/prs/<id>/review`, and the publish call `POST` against `/prs/<id>/review/publish` with the findings in the body.
-- [x] 5.2 Add the finding model and both calls to `APIClient`. Decode the finding with optional fields where the engine may omit them, since Swift's synthesized `Decodable` ignores property defaults.
-- [x] 5.3 Write failing tests in `app/WorkbenchTests/Views/PrReviewLogicTests.swift` for the pure rules: a review with findings offers publishing; a review with none does not; a review where every finding was discarded reports that and does not offer publishing; discarding the last remaining finding stops offering publishing; the count shown matches the findings that would actually be posted, not the total the review produced.
-- [x] 5.4 Implement those rules in `app/Workbench/Views/PrReviewLogic.swift`.
-- [x] 5.5 Write failing tests in `app/WorkbenchTests/ViewModels/PrReviewViewModelTests.swift`: running a review sets a running state and clears it on success and on failure; a failed review surfaces the error and offers nothing to publish; an edited remark is what gets sent on publish; a discarded finding is not sent; a partial publish failure keeps the failed findings and reports which ones they are; publishing never runs automatically after a review.
-- [x] 5.6 Implement `PrReviewViewModel`. Confirm the tests pass.
-- [x] 5.7 Run the whole app suite. Commit.
+`POST /prs/:id/review` and `POST /prs/:id/review/publish` already exist from the superseded model. The first changes shape, the second is deleted along with its tests.
 
-## 6. App: the buttons and the sheet
+- [ ] 5.1 Rewrite the failing tests for `POST /prs/:id/review` in `engine/tests/api/prs.test.ts`: it returns immediately rather than awaiting the review, so the response does not carry findings; it refuses a second review of the same pull request while one is running; 404 for an unknown pull request; 401 without a bearer token. Delete the tests for the batch publish route.
+- [ ] 5.2 Rewrite the route to start the work and return. Keep the `acquireJob` lock, the detached worktree, the diff, the head sha, the anchor validation and the `finally` that removes the worktree; what changes is that all of it happens after the response, and the anchorable findings are written to the store instead of returned. A failure must reach `finishJob` so it is visible rather than lost with the request.
+- [ ] 5.3 Write failing tests for `GET /prs/:id/review`: it returns the stored findings; it marks them outdated when the pull request's head has moved past the sha they were written against, and does not when it has not; an empty list for a pull request with no review; 401 without a bearer token.
+- [ ] 5.4 Implement it.
+- [ ] 5.5 Write failing tests for `POST /prs/:id/review/findings/:findingId`: it posts that one finding and marks it posted; it posts the body sent with the request, not the stored one, so an edit is what lands; a failure from GitHub is reported and the finding is **not** marked posted; posting an already posted finding is refused; 404 for an unknown finding; 401 without a bearer token; a project with no GitHub repo fails with a reason rather than a bare 500.
+- [ ] 5.6 Write failing tests for `DELETE /prs/:id/review/findings/:findingId`: it removes that finding; 404 for an unknown one; 401 without a bearer token.
+- [ ] 5.7 Implement both. Neither opens a worktree: the stored sha is what the comment anchors to. See design.md.
+- [ ] 5.8 Run the whole engine suite and typecheck. Commit.
 
-No tests for the view wiring itself: every rule it follows is tested in section 5. Manual verification covers the rest.
+## 6. App: the findings on the pull request
 
-- [x] 6.1 Add a review button to `PrTableRow` in `app/Workbench/Views/PRsScreen.swift`, beside the existing pin and agent buttons, with an accessibility label.
-- [x] 6.2 Add a review button to the header of `app/Workbench/Views/PrDetailScreen.swift`, beside Merge. Note that Merge is shown only for a pull request the user authored; the review button is shown for every pull request, which is the point of it.
-- [x] 6.3 Build the review sheet: each finding with its file and line, its remark editable, and a discard control; the discarded findings listed separately with their reasons; a Publish control and a Discard control. Publish is offered only when at least one finding remains.
-- [x] 6.4 Present the sheet from both entry points, and show the running state on the button that started the review.
-- [x] 6.5 Run `xcodegen generate`, build, and run the whole app suite. Commit.
+Supersedes the sheet. `app/Workbench/Views/PrReviewSheet.swift` is deleted, and `PrReviewViewModel` is reworked from holding findings in memory and publishing them all at once to reading stored findings and posting them one at a time.
 
-## 7. Verify for real
+- [ ] 6.1 Rewrite the failing tests in `app/WorkbenchTests/Networking/APIClientPRsTests.swift` for the new calls: start uses `POST /prs/<id>/review`; read uses `GET /prs/<id>/review`; post one uses `POST /prs/<id>/review/findings/<findingId>` with the body; discard one uses `DELETE` on the same path. Remove the batch publish test.
+- [ ] 6.2 Update `APIClient` and the finding model to match, including the posted and outdated flags.
+- [ ] 6.3 Rewrite `app/WorkbenchTests/Views/PrReviewLogicTests.swift` for the new rules: a finding that has been posted is not offered for posting again; an outdated review is labelled; a review with nothing left reads as done rather than as an error; the discarded findings are still reported with their reasons.
+- [ ] 6.4 Update `PrReviewLogic` accordingly.
+- [ ] 6.5 Rewrite `app/WorkbenchTests/ViewModels/PrReviewViewModelTests.swift`: starting a review does not block and does not return findings; loading a pull request's review returns what is stored; posting one finding marks only that one posted and leaves the rest; a failed post keeps the finding unposted and puts the error on it; discarding one removes only that one; an edited body is what gets sent.
+- [ ] 6.6 Rework `PrReviewViewModel`. Confirm the tests pass.
+- [ ] 6.7 Delete `PrReviewSheet.swift` and the sheet presentation from `PRsScreen.swift` and `PrDetailScreen.swift`. The row button now starts a review and opens nothing.
+- [ ] 6.8 Build the review section on `PrDetailScreen.swift`: each finding with its file and line, its remark editable, its own Post and Discard controls, and its own error line when a post fails. Show the outdated marking when the head has moved. List the discarded findings with their reasons. Load it with the rest of the detail.
+- [ ] 6.9 Run `xcodegen generate`, build, and run the whole app suite. Commit.
 
-Only a human can do these, and 7.2 and 7.4 are the ones this change exists for.
+## 7. App: the notification
 
-- [ ] 7.1 Start a review from a row in the Pull requests list on a pull request the user did not write. It reports that it is running, and the sheet opens with findings that each name a real file and line in that pull request.
-- [ ] 7.2 Publish the findings and confirm on GitHub that each comment sits on the line it named, that there is no summary comment, no heading and no score, and that the Reviews section is still empty because no review was submitted.
-- [ ] 7.3 Edit a remark before publishing and confirm the edited text is what appears on GitHub. Discard a different finding and confirm it does not appear at all.
-- [ ] 7.4 Confirm the pull request is unchanged as work: no new commit, no push, its branch is where it was, and it is still in the Needs review tab, which is the accepted consequence of posting plain comments.
-- [ ] 7.5 Run a review, then discard the sheet without publishing. Nothing appears on GitHub.
-- [ ] 7.6 Confirm a discarded finding is reported. If a whole review comes back with everything discarded, that points at the line numbering rather than at the pull request, so report it rather than treating it as normal.
-- [ ] 7.7 Start a review on a pull request from a fork. Confirm it fails with a reason naming the fetch, not a bare 500. This is the known limitation from design.md.
-- [ ] 7.8 Start a review with the engine stopped. An alert says so and no sheet opens.
-- [ ] 7.9 Confirm the worktree was cleaned up: `.worktrees` under the project's repository holds nothing left over after a review, including after a failed one.
+- [ ] 7.1 Write failing tests for the rule deciding when to notify: a pull request whose review has finished with postable findings is announced once; it is not announced again on the next poll; a review that produced nothing to post is not announced; a review still running is not announced; a pull request whose findings have all been posted or discarded is not announced.
+- [ ] 7.2 Implement that rule as pure logic, and drive it from the polling loop that already exists in `ContentView`. **Do not route it through `needsInput`**: `getTodayView` filters review-requested pull requests out of that list on purpose, and hanging this off it would drag them back into the badge. See design.md.
+- [ ] 7.3 Send the notification through the existing `AppDelegate.notify(title:body:)`, naming the pull request.
+- [ ] 7.4 Run `xcodegen generate`, build, and run the whole app suite. Commit.
+
+## 8. Verify for real
+
+Only a human can do these, and 8.3 and 8.5 are the ones this change exists for.
+
+- [ ] 8.1 Start a review from a row in the Pull requests list on a pull request the user did not write. The list stays usable and nothing opens. Move to another screen and confirm the app is not blocked.
+- [ ] 8.2 Wait for the review to finish and confirm a notification arrives naming that pull request.
+- [ ] 8.3 Open the pull request and confirm the findings are listed, each naming a real file and line in that pull request. Post one, and confirm on GitHub that it sits on the line it named, that there is no summary comment, no heading and no score, and that the Reviews section is still empty because no review was submitted.
+- [ ] 8.4 Confirm the posted one now reads as posted and is not offered again, and that the others are still there unposted.
+- [ ] 8.5 Confirm the pull request is unchanged as work: no new commit, no push, its branch is where it was, and it is still in the Needs review tab, which is the accepted consequence of posting plain comments.
+- [ ] 8.6 Edit a remark before posting it and confirm the edited text is what appears on GitHub. Discard a different one and confirm it disappears and never reaches GitHub.
+- [ ] 8.7 Restart the engine after a review has finished and confirm the findings are still there.
+- [ ] 8.8 Restart the engine **while** a review is running, and confirm that review does not stay stuck reporting itself as running, and that a new review can be started.
+- [ ] 8.9 Push a commit to the reviewed branch and confirm the findings are marked as written against an earlier commit, and are still postable.
+- [ ] 8.10 Confirm a discarded finding is reported with its reason. If a whole review comes back with everything discarded, that points at the line numbering rather than at the pull request, so report it rather than treating it as normal.
+- [ ] 8.11 Start a review on a pull request from a fork. Confirm the failure is visible and names the fetch rather than vanishing with the request. This is the known limitation from design.md, and the background job makes it easier to lose.
+- [ ] 8.12 Start a review with the engine stopped. An alert says so.
+- [ ] 8.13 Confirm the worktree was cleaned up: `.worktrees` under the project's repository holds nothing left over after a review, including after a failed one.

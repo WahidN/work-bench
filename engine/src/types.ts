@@ -163,6 +163,19 @@ export interface DiscardedFinding extends ReviewFinding {
   reason: string;
 }
 
+/// A finding on disk, waiting to be posted or discarded.
+///
+/// `commitSha` is the commit its line numbers were read from. It anchors the
+/// comment when posted, and comparing it against the pull request's current head
+/// is what says whether the remark has gone stale.
+export interface StoredReviewFinding extends ReviewFinding {
+  id: number;
+  prId: number;
+  commitSha: string;
+  posted: boolean;
+  createdAt: string;
+}
+
 /// The three Atlassian status categories, as stable tokens rather than Atlassian's
 /// own keys: `new` reads as nothing useful at a call site, `todo` does.
 export type JiraStatusCategory = 'todo' | 'in_progress' | 'done';

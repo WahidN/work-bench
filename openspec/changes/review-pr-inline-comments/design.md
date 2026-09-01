@@ -7,6 +7,8 @@ See proposal.md for motivation. What shapes the approach:
 - `openDetachedWorktree` runs `git fetch origin <branch>`, so a pull request from a fork, whose branch is not on origin, already fails there today.
 - `postReviewCommentReply` posts to `repos/{slug}/pulls/{n}/comments` with `in_reply_to`. The same endpoint without `in_reply_to`, plus `commit_id`, `path`, `line` and `side`, creates a new comment anchored to a line.
 - `getDiff` returns a unified diff. Its `@@ -a,b +c,d @@` headers, with the `+` and context lines that follow, are enough to know every line a comment can be anchored to.
+- `jobs.ts` already runs work in the background: `acquireJob` and `finishJob` over a `jobs` table with running, done and failed, and `reconcileInterruptedJobs`, which marks anything still running at startup as `interrupted` with "engine restarted mid-job".
+- The app already notifies: `AppDelegate.notify(title:body:)` over `UNUserNotificationCenter`, driven from a 15-second polling loop in `ContentView` that diffs `todayViewModel.needsInput` and notifies on newly appeared items.
 
 ## Goals / Non-Goals
 
@@ -15,13 +17,14 @@ See proposal.md for motivation. What shapes the approach:
 - Reviewing is read-only by construction, not by convention.
 - A published comment lands on the line it is about, or is not published at all.
 - The user sees every remark before the author does.
+- A review outlives the request that started it: the user starts it, walks away, and finds it waiting.
 
 **Non-Goals:**
 
 - Reviewing a pull request from a fork. It fails today on the existing diff path for the same reason, and fixing that is its own change.
-- Storing reviews. Nothing survives a restart, so there is no schema change.
 - Any change to `ReviewScore` or the pipeline and chat that read it.
 - Replying to review threads. That already exists and is untouched.
+- Editing a remark after it has been posted. Once it is on GitHub it is GitHub's, and the existing reply flow is where a follow-up belongs.
 
 ## Decisions
 
@@ -59,42 +62,82 @@ The review runs with `allowedTools: ['Read', 'Grep', 'Glob']`, the same set `dra
 
 A prompt saying "do not change anything" is a request. A tool list is a boundary. This is what makes "reviewing changes nothing" a property of the system rather than of the model's cooperation.
 
-### The draft is a sheet
+### The review is stored, which means a migration
 
-The review can start from a list row or from the detail header, so its result has to be presentable over either. A sheet is the one presentation that works from both without the list needing to navigate somewhere first.
+**This reverses an earlier decision.** The first cut kept nothing: a review was run, shown in a sheet, and posted or thrown away, so there was no schema change.
 
-It holds a list of findings, each with its file and line, an editable remark, and a discard control, plus a list of anything discarded for not being anchorable so the user can see the review was not silently trimmed.
+That cannot survive the interaction the user actually wants. The review runs in the background, finishes while they are on another screen, announces itself, and is read later on the pull request's own page. Between finishing and being read there is nowhere for the findings to live except the database, and "survives the engine restarting" rules out memory even as a shortcut.
 
-*Alternative considered:* a panel on the detail screen only, with the row button navigating there first. Rejected: it makes the row button a navigation control that also starts a slow job, which is two things at once.
+So: a new table, migration 9, one row per finding, holding the pull request it belongs to, the path, the line, the body, the commit sha the review was written against, and whether it has been posted. Discarding a finding removes its row.
 
-*Flagged for the user:* this is a design-level call, not one that was explicitly decided. It is easy to change to a panel later; the API and the engine do not depend on it.
+*Alternative considered:* keep the findings in the app and persist them there. Rejected: the review runs in the engine, and the app is not running when the engine is. It would also put the record of what was said about a colleague's code in a place nothing else in this system keeps state.
 
-### Publishing posts one comment at a time and reports each
+### The findings live on the pull request's page
 
-Each finding is a separate call. The response says which succeeded and which failed, and the sheet keeps anything that did not post.
+**This reverses the "draft is a sheet" decision**, which was flagged as a design-level call the user could overturn. They overturned it after using it.
 
-The endpoint has no batch form, so a single call is not on offer. Given that, reporting per finding is what lets the user retry the two that failed instead of re-posting the six that worked.
+A sheet is a thing you deal with now. These findings are not: they arrive when the user is elsewhere, and the point of storing them is that they can be dealt with whenever. A section of the pull request's own page is where something that belongs to that pull request and waits for attention should sit, next to the diff it is about.
 
-### Two routes
+The row button in the list therefore starts a review and nothing else. It does not open anything, because there is nothing to open yet.
 
-- `POST /prs/:id/review` runs the review and returns the anchorable findings and the discarded ones. Writes nothing.
-- `POST /prs/:id/review/publish` takes the findings the user confirmed and posts them.
+### The review runs as a job and the route returns at once
 
-The user's edits are sent back at publish time, so the engine holds no draft state between the two calls. That is what keeps "what is published is what the user last saw" true without a store.
+`POST /prs/:id/review` records the job, starts the work and returns. It does not await the review, because the agent takes minutes and an HTTP call held open that long is a request that fails for reasons unrelated to the work.
+
+The existing `jobs` table is the record of what is running, which is also what makes "do not start a second review of this pull request" the same check it already is for the diff route and the chat.
+
+`reconcileInterruptedJobs` already marks anything still running at startup as `interrupted`. That is what stops a review killed by a restart from looking like it is still going, and it is why the engine restarting is a case the spec can make a promise about.
+
+### The notification gets its own signal, not `needsInput`
+
+`needsInput` is the obvious hook: it already drives the badge and already produces "newly appeared" notifications on a 15-second poll.
+
+It is the wrong one. `getTodayView` filters review-requested pull requests out of `needsInput` on purpose, with the reasoning recorded in the code: a colleague's pull request arriving because a review was requested is not worth interrupting the user with. Hanging the review notification off that list would drag those pull requests back into the badge and quietly undo that decision.
+
+The two are different events anyway. That decision was about work arriving unbidden. This is about work the user themselves started, finishing. So the review notification comes from its own signal: pull requests with unposted findings the user has not been told about yet.
+
+*Alternative considered:* widen `needsInput` and re-filter at the notification site. Rejected: it makes one list mean two things and leaves the badge wrong.
+
+### Posting trusts the commit the review was written against
+
+Each finding carries the sha its line numbers were read from. Posting sends that sha and does not re-open a worktree.
+
+Re-validating per post would mean a `git fetch` and a checkout on every single click, which turns a one-second action into a several-second one and does it once per comment. GitHub already validates the anchor and answers 422 when it will not take it, and GitHub is the authority on that question, not a local re-derivation of it.
+
+*Consequence:* a comment can be posted against a commit that is no longer the head. GitHub marks it outdated, which is honest: it was written about that code.
+
+*Alternative considered:* re-diff before each post. Rejected on cost, and it would not be more correct, only slower to reach the same answer.
+
+### An outdated review is marked, not deleted
+
+When the pull request's head has moved past the sha a finding was written against, the finding is shown as written against an earlier commit and stays postable.
+
+Deleting it would throw away work the user asked for on the grounds of a guess about whether it still applies. Saying nothing would let them post a remark about code that changed without knowing. Marking it puts the judgement where it belongs.
+
+### The routes
+
+- `POST /prs/:id/review` starts a review in the background and returns immediately.
+- `GET /prs/:id/review` returns the stored findings for a pull request, with whether they are outdated.
+- `POST /prs/:id/review/findings/:findingId` posts that one finding, with the body the user last saw.
+- `DELETE /prs/:id/review/findings/:findingId` discards that one.
+
+The body travels with the post rather than being saved on every keystroke, so an edit the user makes and then abandons never becomes the stored text.
 
 ## Risks / Trade-offs
 
 **The model invents a line number that is not in the diff** → The anchor validation discards it and says so. This is expected often enough that the discarded list is part of the interface, not an error path.
 
-**The model anchors a real finding to the wrong line** → Not detectable by the system: the line is in the diff, so it validates. The user reads every remark with its file and line before publishing, which is the actual mitigation and part of why publishing is a separate action.
+**The model anchors a real finding to the wrong line** → Not detectable by the system: the line is in the diff, so it validates. The user reads every remark with its file and line before posting it, which is the actual mitigation and part of why each post is its own action.
 
-**A fork pull request cannot be reviewed** → `openDetachedWorktree` fails on `git fetch origin <branch>`. Inherited from the existing diff path. The failure must name the cause rather than surface as a bare 500, because the Needs review tab is mostly other people's pull requests and some will be forks.
+**A fork pull request cannot be reviewed** → `openDetachedWorktree` fails on `git fetch origin <branch>`. Inherited from the existing diff path. The failure must name the cause rather than surface as a bare 500, because the Needs review tab is mostly other people's pull requests and some will be forks. Now that the review is a background job, this failure has to reach the user through the job rather than through the response to the button.
 
-**The review is slow** → It runs the agent over a whole diff, so minutes, not seconds. The button reports that a review is running and refuses a second one. No timeout beyond the existing agent call timeout.
+**The review is slow** → It runs the agent over a whole diff, so minutes, not seconds. This is why it is a background job at all. The button reports that a review is running and refuses a second one.
 
 **Too many remarks on one pull request** → Per-finding discard is the release valve. The prompt asks for findings worth a colleague's time rather than an exhaustive list.
 
-**Publishing partially fails** → Reported per finding, and what failed stays in the sheet. The trade-off accepted here is that a retry could double-post a comment that actually succeeded but reported a failure; the endpoint has no idempotency key, and the user can see and delete a duplicate on GitHub.
+**A post reports failure but actually succeeded** → The finding stays unposted and the user can post it again, which duplicates the comment. The endpoint has no idempotency key. Accepted: a visible duplicate the user can delete on GitHub is better than a remark silently lost.
+
+**Stored findings accumulate** → Nothing expires them. A pull request reviewed and never dealt with keeps its rows indefinitely. Accepted for now: the volume is one row per remark per review, and the user posting or discarding is what clears them.
 
 **Comments are posted under the user's own GitHub account** → They are indistinguishable from remarks the user wrote. That is the point, and it is also why nothing is posted without an explicit action on text the user has read.
 
