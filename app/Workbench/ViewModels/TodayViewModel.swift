@@ -103,15 +103,25 @@ final class TodayViewModel {
         }
     }
 
+    /// Deletes the task and reloads. Returns nil on success, or a message describing why
+    /// the delete itself failed.
+    ///
     /// Reloads instead of dropping the row from the local array: the sidebar count, the
     /// project card and the facts card all derive from this list, and a local mutation
-    /// leaves those numbers stale. A failure leaves the row where it is.
-    func delete(_ todo: Todo) async {
+    /// leaves those numbers stale.
+    ///
+    /// The outcome is returned rather than parked on `errorMessage` because only
+    /// TodayScreen presents that, so a delete started from a project's Tasks tab
+    /// reported nothing at all. Only the delete is reported: once the engine has
+    /// answered, the task is gone whatever the refresh behind it did, and calling that
+    /// a failure would invite the user to retry against a 404.
+    func delete(_ todo: Todo) async -> String? {
         do {
             try await api.deleteTodo(id: todo.id)
-            await load()
         } catch {
-            present(error)
+            return (error as? APIError)?.errorDescription ?? error.localizedDescription
         }
+        await load()
+        return nil
     }
 }

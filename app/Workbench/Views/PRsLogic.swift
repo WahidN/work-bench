@@ -87,7 +87,11 @@ enum PRsLogic {
         // overall review decision is. statusLabel still reports the latter, so a row
         // here can read "Approved" when a colleague approved it and this request stands.
         // Nil is a payload from an engine that predates the field: not my review.
-        case .needsReview: pr.reviewRequestedByMe == true
+        //
+        // Drafts stay out. The predicate this replaced ran through statusLabel, which
+        // answers "Draft" before it looks at the review state, so asking for reviewers
+        // on a draft never queued it. That guard is deliberate, not incidental.
+        case .needsReview: pr.reviewRequestedByMe == true && !pr.isDraft
         }
     }
 

@@ -84,6 +84,21 @@ private let project = Project(
         #expect(rows.map(\.id) == [2, 3])
     }
 
+    @Test func needsReviewFilterExcludesADraft() {
+        // The predicate this replaced ran through statusLabel, which returns "Draft"
+        // before it looks at the review state, so a draft never entered the queue.
+        // Asking for reviewers on a draft does not make it ready to review.
+        let draft = makePr(id: 1, draft: true, review: .reviewRequired, reviewRequested: true)
+        let rows = PRsLogic.rows(prs: [draft], projects: [project], filter: .needsReview, now: Date())
+        #expect(rows.isEmpty)
+    }
+
+    @Test func needsReviewFilterKeepsANonDraftWithTheSameRequest() {
+        let ready = makePr(id: 2, draft: false, review: .reviewRequired, reviewRequested: true)
+        let rows = PRsLogic.rows(prs: [ready], projects: [project], filter: .needsReview, now: Date())
+        #expect(rows.map(\.id) == [2])
+    }
+
     @Test func needsReviewFilterDropsMyOwnUnreviewedPullRequest() {
         let mine = makePr(id: 1, review: nil, authored: true)
         let rows = PRsLogic.rows(prs: [mine], projects: [project], filter: .needsReview, now: Date())
