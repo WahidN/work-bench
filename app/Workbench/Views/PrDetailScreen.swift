@@ -16,6 +16,8 @@ struct PrDetailScreen: View {
     @State private var viewModel = PrDetailViewModel()
     @State private var tab: PrDetailTab = .files
     @State private var collapsedFiles: Set<String> = []
+    @StateObject private var reviewModel = PrReviewViewModel()
+    @State private var isReviewing = false
 
     var body: some View {
         ScrollView {
@@ -31,6 +33,14 @@ struct PrDetailScreen: View {
         }
         .background(Theme.nocturneBg)
         .task { await viewModel.load(prId: pr.id) }
+        .sheet(isPresented: $isReviewing) {
+            PrReviewSheet(
+                viewModel: reviewModel,
+                prId: pr.id,
+                prTitle: viewModel.detail?.title ?? pr.title,
+                onClose: { isReviewing = false }
+            )
+        }
         .alert(
             "Error",
             isPresented: Binding(
@@ -78,6 +88,9 @@ struct PrDetailScreen: View {
                         .foregroundStyle(Theme.Neutral.n600)
                 }
                 Spacer()
+                // Unlike Merge, offered whoever wrote it: the review queue is
+                // mostly other people's work, and that is what needs reviewing.
+                reviewButton
                 if pr.authoredByMe {
                     mergeButton
                 }
@@ -105,6 +118,27 @@ struct PrDetailScreen: View {
             .font(.system(size: Theme.FontSize.tableMeta))
             .foregroundStyle(Theme.Neutral.n600)
         }
+    }
+
+    private var reviewButton: some View {
+        Button {
+            reviewModel.reset()
+            isReviewing = true
+            Task { await reviewModel.review(prId: pr.id) }
+        } label: {
+            Text(reviewModel.isReviewing ? "Reviewing…" : "Review this PR")
+                .font(Theme.heading(Theme.FontSize.secondary))
+                .padding(.vertical, Theme.Space.s2)
+                .padding(.horizontal, Theme.Space.s4)
+                .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Theme.nocturneAccent)
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .strokeBorder(Theme.nocturneAccent, lineWidth: 1)
+        )
+        .disabled(reviewModel.isReviewing)
     }
 
     /// Only ever shown on a pull request you wrote. The engine refuses anything

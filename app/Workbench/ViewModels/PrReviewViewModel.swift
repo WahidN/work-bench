@@ -23,7 +23,7 @@ final class PrReviewViewModel: ObservableObject {
 
     private let api: any PrReviewAPI
 
-    init(api: any PrReviewAPI) {
+    init(api: any PrReviewAPI = APIClient()) {
         self.api = api
     }
 

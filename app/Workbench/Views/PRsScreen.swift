@@ -7,9 +7,19 @@ struct PRsScreen: View {
     let onSelectPr: (PullRequest) -> Void
 
     @State private var filter: PrFilter = .assignedToMe
+    @StateObject private var reviewModel = PrReviewViewModel()
+    @State private var reviewingPr: PullRequest?
 
     private var rows: [PrRow] {
         PRsLogic.rows(prs: viewModel.pullRequests, projects: projects, filter: filter, now: Date())
+    }
+
+    /// The sheet opens straight away and shows the review running, rather than
+    /// leaving the row looking inert for the minutes the agent takes.
+    private func startReview(of pr: PullRequest) {
+        reviewModel.reset()
+        reviewingPr = pr
+        Task { await reviewModel.review(prId: pr.id) }
     }
 
     var body: some View {
@@ -22,6 +32,14 @@ struct PRsScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.nocturneBg)
         .task { await viewModel.load() }
+        .sheet(item: $reviewingPr) { pr in
+            PrReviewSheet(
+                viewModel: reviewModel,
+                prId: pr.id,
+                prTitle: pr.title,
+                onClose: { reviewingPr = nil }
+            )
+        }
         .alert(
             "Error",
             isPresented: Binding(get: { viewModel.errorMessage != nil }, set: { if !$0 { viewModel.errorMessage = nil } })
@@ -68,7 +86,9 @@ struct PRsScreen: View {
                             row: row,
                             onSelect: { onSelectPr(row.pr) },
                             onOpenAgent: { onOpenAgent(.pullRequest(row.pr)) },
-                            onTogglePin: { Task { await viewModel.togglePin(row.pr) } }
+                            onTogglePin: { Task { await viewModel.togglePin(row.pr) } },
+                            onReview: { startReview(of: row.pr) },
+                            isReviewing: reviewingPr?.id == row.pr.id && reviewModel.isReviewing
                         )
                     }
                 }
@@ -104,6 +124,8 @@ private struct PrTableRow: View {
     let onSelect: () -> Void
     let onOpenAgent: () -> Void
     let onTogglePin: () -> Void
+    let onReview: () -> Void
+    let isReviewing: Bool
     @State private var isHovered = false
 
     var body: some View {
@@ -160,6 +182,21 @@ private struct PrTableRow: View {
 
     private var actions: some View {
         HStack(spacing: Theme.Space.s3) {
+            // Offered on every pull request, unlike Merge: reviewing is most often
+            // owed on work the user did not write.
+            Button(action: onReview) {
+                HStack(spacing: 4) {
+                    Image(systemName: "checklist")
+                    Text(isReviewing ? "Reviewing…" : "Review")
+                }
+                .font(.system(size: Theme.FontSize.tableMeta))
+                .foregroundStyle(isReviewing ? Theme.Neutral.n600 : Theme.Neutral.n400)
+            }
+            .buttonStyle(.plain)
+            .disabled(isReviewing)
+            .help("Review this pull request and draft comments on its lines")
+            .accessibilityLabel("Review this pull request")
+
             Button(action: onTogglePin) {
                 HStack(spacing: 4) {
                     Image(systemName: row.pinned ? "pin.fill" : "pin")

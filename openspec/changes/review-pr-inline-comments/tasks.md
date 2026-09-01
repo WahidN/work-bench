@@ -64,11 +64,11 @@ Pure diff parsing, no process and no network, because this is the rule that deci
 
 No tests for the view wiring itself: every rule it follows is tested in section 5. Manual verification covers the rest.
 
-- [ ] 6.1 Add a review button to `PrTableRow` in `app/Workbench/Views/PRsScreen.swift`, beside the existing pin and agent buttons, with an accessibility label.
-- [ ] 6.2 Add a review button to the header of `app/Workbench/Views/PrDetailScreen.swift`, beside Merge. Note that Merge is shown only for a pull request the user authored; the review button is shown for every pull request, which is the point of it.
-- [ ] 6.3 Build the review sheet: each finding with its file and line, its remark editable, and a discard control; the discarded findings listed separately with their reasons; a Publish control and a Discard control. Publish is offered only when at least one finding remains.
-- [ ] 6.4 Present the sheet from both entry points, and show the running state on the button that started the review.
-- [ ] 6.5 Run `xcodegen generate`, build, and run the whole app suite. Commit.
+- [x] 6.1 Add a review button to `PrTableRow` in `app/Workbench/Views/PRsScreen.swift`, beside the existing pin and agent buttons, with an accessibility label.
+- [x] 6.2 Add a review button to the header of `app/Workbench/Views/PrDetailScreen.swift`, beside Merge. Note that Merge is shown only for a pull request the user authored; the review button is shown for every pull request, which is the point of it.
+- [x] 6.3 Build the review sheet: each finding with its file and line, its remark editable, and a discard control; the discarded findings listed separately with their reasons; a Publish control and a Discard control. Publish is offered only when at least one finding remains.
+- [x] 6.4 Present the sheet from both entry points, and show the running state on the button that started the review.
+- [x] 6.5 Run `xcodegen generate`, build, and run the whole app suite. Commit.
 
 ## 7. Verify for real
 
