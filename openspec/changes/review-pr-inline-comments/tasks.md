@@ -81,10 +81,10 @@ Supersedes the sheet. `app/Workbench/Views/PrReviewSheet.swift` is deleted, and 
 
 ## 7. App: the notification
 
-- [ ] 7.1 Write failing tests for the rule deciding when to notify: a pull request whose review has finished with postable findings is announced once; it is not announced again on the next poll; a review that produced nothing to post is not announced; a review still running is not announced; a pull request whose findings have all been posted or discarded is not announced.
-- [ ] 7.2 Implement that rule as pure logic, and drive it from the polling loop that already exists in `ContentView`. **Do not route it through `needsInput`**: `getTodayView` filters review-requested pull requests out of that list on purpose, and hanging this off it would drag them back into the badge. See design.md.
-- [ ] 7.3 Send the notification through the existing `AppDelegate.notify(title:body:)`, naming the pull request.
-- [ ] 7.4 Run `xcodegen generate`, build, and run the whole app suite. Commit.
+- [x] 7.1 Write failing tests for the rule deciding when to notify: a pull request whose review has finished with postable findings is announced once; it is not announced again on the next poll; a review that produced nothing to post is not announced; a review still running is not announced; a pull request whose findings have all been posted or discarded is not announced.
+- [x] 7.2 Implement that rule as pure logic, and drive it from the polling loop that already exists in `ContentView`. **Do not route it through `needsInput`**: `getTodayView` filters review-requested pull requests out of that list on purpose, and hanging this off it would drag them back into the badge. See design.md.
+- [x] 7.3 Send the notification through the existing `AppDelegate.notify(title:body:)`, naming the pull request.
+- [x] 7.4 Run `xcodegen generate`, build, and run the whole app suite. Commit.
 
 ## 8. Verify for real
 
