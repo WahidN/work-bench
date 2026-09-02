@@ -12,10 +12,15 @@ to be added up.
 Counted rather than added up by hand, so it can be checked:
 
 ```
-grep -rho "@Test" app/WorkbenchTests/ | wc -l      # 457
-cd client && pnpm test                             # 230
+# 457. Against 47f6e85^, the last commit that still had the Swift tests: the SwiftUI app
+# was removed in 47f6e85 once this client reached parity.
+git grep -ho "@Test" 47f6e85^ -- app/WorkbenchTests/ | wc -l
+cd client && pnpm test                             # 236
 cd client/src-tauri && cargo test --lib            # 18
 ```
+
+Every `app/` path below is read the same way: gone from the working tree, present in
+history before that commit.
 
 The gap is almost entirely one thing, and it is the thing the port set out to remove: 100
 of those Swift tests exist to check hand-written `Codable` structs and the `URLSession`
