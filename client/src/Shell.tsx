@@ -68,7 +68,13 @@ export function Shell() {
   const [sheet, setSheet] = useState<ProjectSheetMode | null>(null)
   const [alert, setAlert] = useState<string | null>(null)
   const data = useShellData()
+  /*
+   * Every todo, done ones included, read by three surfaces: the sidebar's Jira count, the
+   * project cards, and the Jira screen. ContentView.swift loads it once at that level for
+   * the same three, rather than per screen.
+   */
   const allTodos = useAllTodos()
+  const everyTodo = allTodos.data ?? []
   const lastBadge = useRef<number | null>(null)
 
   const createTodo = useCreateTodo()
@@ -88,6 +94,17 @@ export function Shell() {
   const isDetailOpen = openPr !== undefined
   const isProjectOpen = openProject !== undefined
 
+  /*
+   * `today.todos`, not `/todos`, which is what ContentView.swift hands the project screen.
+   *
+   * The engine's `listTodayTodos` is `(source = 'manual' OR pinned = 1) AND (done = 0 OR
+   * done_at = today)`, so it carries the tasks finished today; `/todos` carries only open
+   * ones. Reading the wrong list made a task vanish from a project's Tasks tab the moment
+   * it was ticked, with no way to untick it, which is also why `projectTaskRows` bothers
+   * to sort the done ones last.
+   */
+  const projectTodos = data.today?.todos ?? []
+
   /** The Tasks tab's checkbox routes exactly as Today's does: complete, or unpin. */
   function toggleProjectTask(row: TaskRowModel) {
     const id = Number(row.id.split('-')[1])
@@ -95,7 +112,7 @@ export function Shell() {
       setTodoPinned.mutate({ id, pinned: false }, { onError })
       return
     }
-    const todo = data.todos.find((candidate) => candidate.id === id)
+    const todo = projectTodos.find((candidate) => candidate.id === id)
     if (todo) setTodoDone.mutate({ id, done: !todo.done }, { onError })
   }
 
@@ -196,7 +213,7 @@ export function Shell() {
           setOpenProjectId(project.id)
         }}
         todos={data.today?.todos ?? []}
-        jiraTodos={data.todos}
+        jiraTodos={everyTodo}
         tickets={data.tickets}
         prs={data.prs}
         projects={data.projects}
@@ -268,7 +285,7 @@ export function Shell() {
                 key={openProject.id}
                 project={openProject}
                 projects={data.projects}
-                todos={data.todos}
+                todos={projectTodos}
                 tickets={data.tickets}
                 prs={data.prs}
                 onBack={() => setOpenProjectId(null)}
@@ -294,7 +311,11 @@ export function Shell() {
               <ProjectsScreen
                 cards={projectCards({
                   projects: data.projects,
-                  todos: data.todos,
+                  // ProjectsLogic.cards is fed `jiraViewModel.todos` in the Swift, so the
+                  // full list. It matters for `activityText`, which reads every todo's
+                  // createdAt: leaving the done ones out made a project's last activity
+                  // read older than it was.
+                  todos: everyTodo,
                   tickets: data.tickets,
                   prs: data.prs,
                   now: new Date(),
@@ -303,7 +324,7 @@ export function Shell() {
               />
             )
           ) : (
-            <JiraScreen todos={allTodos.data ?? []} projects={data.projects} tickets={data.tickets} />
+            <JiraScreen todos={everyTodo} projects={data.projects} tickets={data.tickets} />
           )}
         </div>
       </main>

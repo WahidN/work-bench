@@ -19,7 +19,15 @@ import {
   jiraStatusGroups,
   type JiraRow,
 } from './jiraLogic'
-import { useCreatePr, usePromoteTodo, useSetTodoPinned, type Project, type Ticket, type Todo } from './queries'
+import {
+  EngineError,
+  useCreatePr,
+  usePromoteTodo,
+  useSetTodoPinned,
+  type Project,
+  type Ticket,
+  type Todo,
+} from './queries'
 
 function IconButton({
   symbol,
@@ -225,9 +233,11 @@ export function JiraScreen({
     void run()
       .catch((error: Error) => {
         // The engine answers a second analysis with 409, and "already working on this" is
-        // not the same message as a failure.
+        // not the same thing as a failure. Read off the status, never out of the message:
+        // the message carries the path, so searching it for "409" called every failure on
+        // todo 409 a conflict.
         setAlert(
-          String(error).includes('409')
+          error instanceof EngineError && error.status === 409
             ? 'An analysis is already running for this issue.'
             : String(error),
         )
@@ -240,9 +250,17 @@ export function JiraScreen({
       id="jira-screen"
       style={{
         display: 'flex',
-        alignItems: 'flex-start',
+        alignItems: 'stretch',
         gap: 'var(--wb-s8)',
         maxWidth: 1180,
+        /*
+         * The two columns scroll separately, because JiraScreen.swift is an HStack of two
+         * ScrollViews rather than one around the pair. With 19 projects and 178 issues,
+         * scrolling as one page carried the project picker out of view, and then there was
+         * no way to change project without scrolling back up.
+         */
+        height: '100%',
+        minHeight: 0,
         background: 'var(--wb-bg)',
       }}
     >
@@ -256,6 +274,7 @@ export function JiraScreen({
           flexDirection: 'column',
           gap: 2,
           padding: 'var(--wb-s8) 0 var(--wb-s8) var(--wb-s8)',
+          overflowY: 'auto',
           boxSizing: 'border-box',
         }}
       >
@@ -324,6 +343,7 @@ export function JiraScreen({
           display: 'flex',
           flexDirection: 'column',
           padding: 'var(--wb-s8) var(--wb-s8) var(--wb-s8) 0',
+          overflowY: 'auto',
           boxSizing: 'border-box',
         }}
       >
@@ -381,8 +401,9 @@ export function JiraScreen({
                   isBusy={busyTodoId === row.id}
                   onPromote={() => runBusy(row.id, () => promote.mutateAsync({ id: row.id }))}
                   onCreatePr={() => {
-                    if (row.ticketId === null) return
-                    runBusy(row.id, () => createPr.mutateAsync({ ticketId: row.ticketId! }))
+                    const ticketId = row.ticketId
+                    if (ticketId === null) return
+                    runBusy(row.id, () => createPr.mutateAsync({ ticketId }))
                   }}
                   onTogglePin={() =>
                     setPinned.mutate({ id: row.id, pinned: !row.isPinned }, { onError })

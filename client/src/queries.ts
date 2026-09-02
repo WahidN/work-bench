@@ -221,13 +221,20 @@ export const usePromoteTodo = () =>
   )
 
 /**
- * Every open todo, done ones included.
+ * Every todo, done ones included.
  *
  * `JiraViewModel.load` asks for completed todos too, and says why: promoting sets done = 1,
  * and a promoted issue must keep its place in the list with its pipeline state. So this is
  * a different query from `useTodos`, not the same one with a flag.
+ *
+ * Not polled, which is the one place a list query here differs from the rest. This is the
+ * largest payload the app has, 695 rows against 4 projects and 14 pull requests, and the
+ * Swift loads it once from ContentView's `.task` and then only after a mutation or a
+ * manual refresh. Re-reading it every 30 seconds would be the port inventing a cost the
+ * app does not pay. The mutations that change it invalidate it by name.
  */
-export const useAllTodos = () => list<Todo[]>(keys.allTodos, '/todos?done=any')
+export const useAllTodos = () =>
+  list<Todo[]>(keys.allTodos, '/todos?done=any', { refetchInterval: false })
 
 /* ------------------------------------------------------------- Projects */
 
