@@ -163,6 +163,17 @@ export function reconcileGithubPrs(
 
   const doomed = rows.filter((row) => !keep.has(`${row.project_id}#${row.number}`));
   const deleteMessages = db.prepare('DELETE FROM pr_messages WHERE pr_id = ?');
+  // A stored review's remarks go with the pull request they are about. Their
+  // `pr_id` is NOT NULL, so unlike a ticket's link this one cannot be cleared and
+  // left behind, and a remark with no pull request could never be posted or read
+  // anyway: the path, the line and the commit only mean something against it.
+  //
+  // Missing this is what broke every poll cycle for a day. Three tables reference
+  // prs(id), two were handled here, and the third refused the delete. Because the
+  // loop below is one transaction, that one row rolled back all the others, so
+  // nine merged pull requests stayed in the inbox and `POST /poll` answered
+  // `githubPrs: FOREIGN KEY constraint failed` with no clue which table.
+  const deleteFindings = db.prepare('DELETE FROM pr_review_findings WHERE pr_id = ?');
   // A ticket keeps pointing at the PR the fix pipeline opened for it, and
   // foreign keys are enforced, so the reference has to go before the row does.
   // The ticket itself stays: its history is worth more than the link.
@@ -171,6 +182,7 @@ export function reconcileGithubPrs(
   db.transaction(() => {
     for (const row of doomed) {
       deleteMessages.run(row.id);
+      deleteFindings.run(row.id);
       clearTicketLink.run(row.id);
       deletePr.run(row.id);
     }
