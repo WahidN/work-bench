@@ -11,6 +11,8 @@ import { useIsFetching } from '@tanstack/react-query'
 import { AgentChatPanel } from './AgentChatPanel'
 import { chatTargetForTodo, targetProjectId, type AgentChatTarget } from './agentChatLogic'
 import { AppHeader } from './AppHeader'
+import { CommandPalette } from './CommandPalette'
+import type { PaletteAction } from './commandPaletteLogic'
 import { EngineDownBanner } from './EngineDownBanner'
 import { ErrorAlert } from './ErrorAlert'
 import { JiraScreen } from './JiraScreen'
@@ -43,6 +45,7 @@ import {
 } from './queries'
 import { projectCards } from './projectsLogic'
 import { prListRef, type SidebarSection, type TaskRow as TaskRowModel } from './logic'
+import { isTypingIn, matchShortcut, shortcutForMenuId, type Shortcut } from './shortcuts'
 
 const IN_TAURI = '__TAURI_INTERNALS__' in window
 
@@ -73,6 +76,7 @@ export function Shell() {
   const [alert, setAlert] = useState<string | null>(null)
   /** `AgentChatViewModel.target`: null is closed, which is what `isOpen` reads. */
   const [chatTarget, setChatTarget] = useState<AgentChatTarget | null>(null)
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false)
   const data = useShellData()
   /*
    * Every todo, done ones included, read by three surfaces: the sidebar's Jira count, the
@@ -125,6 +129,113 @@ export function Shell() {
     chatTarget?.kind === 'pullRequest'
       ? data.tickets.find((candidate) => candidate.id === chatTarget.pr.ticketId)
       : undefined
+
+  /*
+   * `navigate(to:)` in ContentView, which clears both detail routes: they drive the PR
+   * detail and project detail screens, so leaving them set lands the user on a stale
+   * detail screen instead of the list.
+   */
+  function navigate(next: SidebarSection) {
+    setSection(next)
+    setOpenPrId(null)
+    setOpenProjectId(null)
+  }
+
+  /**
+   * `openProjectChat` in ContentView: the header's Agent button and ⌘J are project-scoped,
+   * and fall back to the first project when none is selected, so a fresh window still has
+   * something to ask about.
+   */
+  function openProjectChat() {
+    const project = openProject ?? data.projects[0]
+    if (project) setChatTarget({ kind: 'project', project })
+  }
+
+  function runShortcut(shortcut: Shortcut) {
+    switch (shortcut.kind) {
+      case 'palette':
+        setIsPaletteOpen(true)
+        return
+      case 'navigate':
+        navigate(shortcut.section)
+        return
+      case 'askAgent':
+        openProjectChat()
+        return
+    }
+  }
+
+  function runPaletteAction(action: PaletteAction) {
+    switch (action.kind) {
+      case 'navigate':
+        navigate(action.section)
+        return
+      case 'askAgent':
+        openProjectChat()
+        return
+      case 'openProject':
+        navigate('Projects')
+        setOpenProjectId(action.project.id)
+        return
+      case 'addTask':
+        /*
+         * And then go to Today, which `runPaletteRow` does after the create lands. Without
+         * it, typing a task into the palette from Pull requests closes the palette and
+         * shows nothing: the task exists, on a screen the user is not looking at.
+         *
+         * On success only, so a failed create does not move anyone for nothing.
+         */
+        createTodo.mutate(
+          { text: action.text },
+          { onSuccess: () => navigate('Today'), onError },
+        )
+        return
+    }
+  }
+
+  /*
+   * The Go menu, as a window key handler. AppKit would route these through the menu bar
+   * and give a focused field first refusal; a webview has neither, so `isTypingIn` is what
+   * stops ⌘1 navigating away in the middle of a sentence. See shortcuts.ts.
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const shortcut = matchShortcut(event, isTypingIn(document.activeElement))
+      if (shortcut === null) return
+      event.preventDefault()
+      runShortcut(shortcut)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+    // Deliberately no dependency array: the handler closes over the open project and the
+    // project list, and re-registering one listener per render is cheaper than the ref
+    // dance that would keep a single registration's closure current.
+  })
+
+  /*
+   * The same actions from the native Go menu, which is the half of AppCommands.swift a
+   * window key handler cannot be: a menu is where a macOS user looks to find out what an
+   * app can do. See src-tauri/src/menu.rs.
+   */
+  useEffect(() => {
+    if (!IN_TAURI) return
+    let stop: (() => void) | undefined
+    let cancelled = false
+    void import('@tauri-apps/api/event').then(({ listen }) =>
+      listen<string>('go-menu', (event) => {
+        const shortcut = shortcutForMenuId(event.payload)
+        if (shortcut !== null) runShortcut(shortcut)
+      }).then((unlisten) => {
+        // The listener is async to register, so an unmount can beat it here.
+        if (cancelled) unlisten()
+        else stop = unlisten
+      }),
+    )
+    return () => {
+      cancelled = true
+      stop?.()
+    }
+  })
 
   /** The Tasks tab's checkbox routes exactly as Today's does: complete, or unpin. */
   function toggleProjectTask(row: TaskRowModel) {
@@ -234,16 +345,8 @@ export function Shell() {
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       <Sidebar
         selection={section}
-        /*
-         * Clearing the detail route is not optional, and ContentView.swift's `navigate`
-         * says why: it drives the PR detail screen, so leaving it set lands the user on a
-         * stale detail screen instead of the list.
-         */
-        onSelect={(next) => {
-          setSection(next)
-          setOpenPrId(null)
-          setOpenProjectId(null)
-        }}
+        onSelect={navigate}
+        onOpenPalette={() => setIsPaletteOpen(true)}
         /* `openProject` opens the project's page rather than only selecting the row. */
         selectedProjectId={openProjectId}
         onSelectProject={(project) => {
@@ -271,10 +374,7 @@ export function Shell() {
            * project when none is selected, so a fresh window still has something to ask
            * about.
            */
-          onOpenAgent={() => {
-            const project = openProject ?? data.projects[0]
-            if (project) setChatTarget({ kind: 'project', project })
-          }}
+          onOpenAgent={openProjectChat}
         />
 
         {/*
@@ -459,6 +559,14 @@ export function Shell() {
                 }
               : null
           }
+        />
+      )}
+
+      {isPaletteOpen && (
+        <CommandPalette
+          projects={data.projects}
+          onRun={runPaletteAction}
+          onClose={() => setIsPaletteOpen(false)}
         />
       )}
 

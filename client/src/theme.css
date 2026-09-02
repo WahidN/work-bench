@@ -120,6 +120,18 @@
   }
 }
 
+/* The handoff's `wbIn`, which CommandPalette.swift applies: translateY 6 to 0, 130ms. */
+@keyframes wb-in {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 body {
   margin: 0;
   background: var(--wb-bg);

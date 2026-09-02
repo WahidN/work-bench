@@ -1,9 +1,8 @@
 /*
  * Port of app/Workbench/Views/Sidebar.swift.
  *
- * Interactively inert on purpose. The spike is read-only against the engine, so the
- * rows, the search button and the gear render and measure exactly as they do in the app
- * but do nothing when clicked. Selection is local state, since it needs no engine call.
+ * The rows, the project list and the search button are all live. The gear opens Settings,
+ * which is task group 7; until then it renders and measures and does nothing.
  */
 
 import type { Pr, Project, Ticket, Todo } from './queries'
@@ -23,6 +22,7 @@ const WIDTH = 228
 export function Sidebar({
   selection,
   onSelect,
+  onOpenPalette,
   selectedProjectId,
   onSelectProject,
   todos,
@@ -33,6 +33,7 @@ export function Sidebar({
 }: {
   selection: SidebarSection
   onSelect: (section: SidebarSection) => void
+  onOpenPalette: () => void
   /** SidebarLogic.isProjectSelected is `project.id == selectedProject?.id`, so an id is enough. */
   selectedProjectId: number | null
   onSelectProject: (project: Project) => void
@@ -97,6 +98,7 @@ export function Sidebar({
       {/* SearchButton */}
       <button
         id="sidebar-search"
+        onClick={onOpenPalette}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -107,7 +109,7 @@ export function Sidebar({
           border: '1px solid var(--wb-n800)',
           borderRadius: 'var(--wb-radius-md)',
           color: 'var(--wb-n400)',
-          font: 'inherit',
+          fontFamily: 'inherit',
           cursor: 'pointer',
           boxSizing: 'border-box',
         }}
