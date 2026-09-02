@@ -363,13 +363,10 @@ struct PrDetailScreen: View {
                                 let commentId = thread.comments.first?.id ?? 0
                                 ReviewThreadView(
                                     thread: thread,
-                                    draft: viewModel.drafts[commentId],
                                     isBusy: viewModel.busyCommentIds.contains(commentId),
-                                    onDraft: { Task { await viewModel.draftReply(prId: pr.id, commentId: commentId) } },
                                     onPost: { text in
-                                        Task { await viewModel.postReply(prId: pr.id, commentId: commentId, text: text) }
-                                    },
-                                    onDiscard: { viewModel.drafts[commentId] = nil }
+                                        await viewModel.postReply(prId: pr.id, commentId: commentId, text: text)
+                                    }
                                 )
                             }
                         )
@@ -399,15 +396,10 @@ struct PrDetailScreen: View {
 
 private struct ReviewThreadView: View {
     let thread: PrReviewThread
-    let draft: String?
     let isBusy: Bool
-    let onDraft: () -> Void
-    let onPost: (String) -> Void
-    let onDiscard: () -> Void
+    let onPost: (String) async -> Bool
 
-    // nil means the user has not touched the box, so show the agent's draft.
-    // An empty string is a real edit and must be respected, not treated as absent.
-    @State private var edited: String?
+    @State private var text = ""
 
     private static let timestampFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
@@ -452,21 +444,10 @@ private struct ReviewThreadView: View {
                         .textSelection(.enabled)
                 }
             }
-            if let draft {
-                replyBox(draft)
-            } else if let commentId = thread.comments.first?.id {
-                Button(action: onDraft) {
-                    HStack(spacing: Theme.Space.s2) {
-                        Image(systemName: "sparkles")
-                        Text(isBusy ? "Drafting…" : "Draft a reply with the agent")
-                    }
-                    .font(.system(size: Theme.FontSize.tableMeta))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(isBusy ? Theme.Neutral.n700 : Theme.nocturneAccent)
-                .disabled(isBusy)
-                .accessibilityLabel("Draft a reply to comment \(commentId)")
+            // A thread GitHub returned without comments has no id to reply to,
+            // and the reply endpoint would 404 on the 0 the parent falls back to.
+            if (thread.comments.first?.id ?? 0) != 0 {
+                replyBox
             }
         }
         .padding(Theme.Space.s4)
@@ -476,18 +457,14 @@ private struct ReviewThreadView: View {
             RoundedRectangle(cornerRadius: Theme.Radius.md)
                 .strokeBorder(Theme.Neutral.n800, lineWidth: 1)
         )
-        // The draft going away means discard or a successful post, and either
-        // way any local edit is stale and must not resurface on the next draft.
-        .onChange(of: draft) { _, new in if new == nil { edited = nil } }
     }
 
-    /// The draft is editable and nothing leaves the machine until Post is
+    /// The reply is written by hand, and nothing leaves the machine until Post is
     /// pressed, because this text lands in a repository other people read.
-    private func replyBox(_ draft: String) -> some View {
-        let text = edited ?? draft
+    private var replyBox: some View {
         let isBlank = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         return VStack(alignment: .leading, spacing: Theme.Space.s2) {
-            TextEditor(text: Binding(get: { edited ?? draft }, set: { edited = $0 }))
+            TextEditor(text: $text)
                 .font(.system(size: Theme.FontSize.secondary))
                 .foregroundStyle(Theme.nocturneText)
                 .scrollContentBackground(.hidden)
@@ -495,25 +472,29 @@ private struct ReviewThreadView: View {
                 .padding(Theme.Space.s2)
                 .background(Theme.nocturneBg)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                .overlay(alignment: .topLeading) {
+                    if isBlank {
+                        Text("Write a reply…")
+                            .font(.system(size: Theme.FontSize.secondary))
+                            .foregroundStyle(Theme.Neutral.n600)
+                            .padding(Theme.Space.s2)
+                            .padding(.leading, 5)
+                            .allowsHitTesting(false)
+                    }
+                }
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.sm)
                         .strokeBorder(Theme.Neutral.n800, lineWidth: 1)
                 )
+                .accessibilityLabel("Reply to \(thread.comments.first?.author ?? "this comment")")
             HStack(spacing: Theme.Space.s3) {
                 Text("This will be posted to GitHub.")
                     .font(.system(size: Theme.FontSize.label))
                     .foregroundStyle(Theme.Neutral.n600)
                 Spacer()
-                Button(action: onDiscard) {
-                    Text("Discard")
-                        .padding(.vertical, Theme.Space.s1)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: Theme.FontSize.tableMeta))
-                .foregroundStyle(Theme.Neutral.n500)
-                .disabled(isBusy)
-                Button(action: { onPost(text) }) {
+                Button {
+                    Task { if await onPost(text) { text = "" } }
+                } label: {
                     Text(isBusy ? "Posting…" : "Post")
                         .padding(.vertical, Theme.Space.s1)
                         .contentShape(Rectangle())

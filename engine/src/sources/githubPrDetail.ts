@@ -127,29 +127,6 @@ export async function fetchPrDetailView(repo: string, number: number): Promise<P
   };
 }
 
-export interface ReviewCommentDetail {
-  id: number;
-  author: string;
-  body: string;
-  path: string;
-  diffHunk: string;
-}
-
-/// Drafting needs the hunk the comment hangs off, which the thread payload does
-/// not carry, so the comment is fetched on its own by its REST id.
-export async function fetchReviewComment(repo: string, commentId: number): Promise<ReviewCommentDetail> {
-  const slug = toRepoSlug(repo);
-  const { stdout } = await execa('gh', ['api', `repos/${slug}/pulls/comments/${commentId}`]);
-  const row = JSON.parse(stdout || '{}');
-  return {
-    id: row.id,
-    author: row.user?.login ?? '',
-    body: row.body ?? '',
-    path: row.path ?? '',
-    diffHunk: row.diff_hunk ?? '',
-  };
-}
-
 export interface LineComment {
   /// The commit the line numbers were read from. See headSha in git.ts.
   commitSha: string;
