@@ -42,13 +42,25 @@ import {
 const WIDTH = 360
 
 /**
- * Every thread query, gated so exactly one runs.
+ * Every thread query, gated so exactly one runs, and the target refreshed from what came
+ * back.
  *
  * All four are called on every render because that is the rule for hooks, and `enabled`
  * is what keeps three of them from fetching. The id passed to a disabled one is never
  * used, so 0 is not a sentinel anyone reads.
+ *
+ * The refreshed target is the important half. `loadThread` does `self.target =
+ * .pullRequest(detail)` and `self.target = .ticket(detail)` for exactly two of the four,
+ * because a message can change a ticket's status and a merge can change a pull request's,
+ * while a chat can change neither a todo nor a project. Reading the target the panel was
+ * opened with instead left Merge on offer after the merge had already happened.
  */
-function useThread(target: AgentChatTarget) {
+function useThread(target: AgentChatTarget): {
+  messages: ChatMessage[]
+  error: Error | null
+  /** The target as the engine now has it, or the one we were opened with. */
+  live: AgentChatTarget
+} {
   const project = useProjectThread(
     target.kind === 'project' ? target.project.id : 0,
     target.kind === 'project',
@@ -65,15 +77,23 @@ function useThread(target: AgentChatTarget) {
 
   switch (target.kind) {
     case 'project':
-      return { messages: project.data ?? [], error: project.error }
+      return { messages: project.data ?? [], error: project.error, live: target }
     // `messages` is optional on the record: a ticket or pull request with no thread yet
     // comes back without the field rather than with an empty array.
     case 'ticket':
-      return { messages: ticket.data?.messages ?? [], error: ticket.error }
+      return {
+        messages: ticket.data?.messages ?? [],
+        error: ticket.error,
+        live: ticket.data ? { kind: 'ticket', ticket: ticket.data } : target,
+      }
     case 'pullRequest':
-      return { messages: pr.data?.messages ?? [], error: pr.error }
+      return {
+        messages: pr.data?.messages ?? [],
+        error: pr.error,
+        live: pr.data ? { kind: 'pullRequest', pr: pr.data } : target,
+      }
     case 'todo':
-      return { messages: todo.data ?? [], error: todo.error }
+      return { messages: todo.data ?? [], error: todo.error, live: target }
   }
 }
 
@@ -160,8 +180,12 @@ export function AgentChatPanel({
   const [alert, setAlert] = useState<string | null>(null)
   const bottom = useRef<HTMLDivElement | null>(null)
 
-  const subject = chatSubject(target, project, linkedTicket)
   const thread = useThread(target)
+  /*
+   * Everything the panel shows reads the refreshed target, never the one it was opened
+   * with: the kicker names a status, and Merge is offered on one.
+   */
+  const subject = chatSubject(thread.live, project, linkedTicket)
 
   const sendProject = useSendProjectMessage(target.kind === 'project' ? target.project.id : 0)
   const sendTicket = useSendTicketMessage(target.kind === 'ticket' ? target.ticket.id : 0)
@@ -175,7 +199,9 @@ export function AgentChatPanel({
    */
   const diff = usePrDiff(
     target.kind === 'pullRequest' ? target.pr.id : 0,
-    target.kind === 'pullRequest' && target.pr.status !== 'merged',
+    // The live status, so a merge stops it being asked for. A merged pull request has no
+    // diff and the route answers 409.
+    thread.live.kind === 'pullRequest' && thread.live.pr.status !== 'merged',
   )
 
   const isSending =
@@ -251,7 +277,7 @@ export function AgentChatPanel({
       >
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--wb-s3)' }}>
           <span style={{ marginTop: 1, color: 'var(--wb-accent)' }}>
-            <Icon name={targetSymbol(target)} size={13} />
+            <Icon name={targetSymbol(thread.live)} size={13} />
           </span>
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'var(--wb-s1)' }}>
             <span
@@ -367,20 +393,20 @@ export function AgentChatPanel({
           boxSizing: 'border-box',
         }}
       >
-        {canMerge(target) && (
+        {canMerge(thread.live) && (
           <button
             id="agent-merge"
             disabled={isSending}
             onClick={() => {
               if (isSending) return
-              merge.mutate(undefined, {
-                onSuccess: (result) => {
-                  // A refusal comes back as 200 with an action, so it is read off the
-                  // result rather than caught.
-                  if (result.action === 'refused') setAlert(result.reply)
-                },
-                onError: (error) => setAlert(String(error)),
-              })
+              /*
+               * The action is deliberately not read here, matching
+               * `AgentChatViewModel.merge`. `sendPrMessage` records the reply as an
+               * assistant message before returning it, refusals included, so the answer
+               * lands in the transcript on its own. PrDetailScreen does read it, because
+               * that page has no transcript to show it in.
+               */
+              merge.mutate(undefined, { onError: (error) => setAlert(String(error)) })
             }}
             style={{
               alignSelf: 'flex-start',

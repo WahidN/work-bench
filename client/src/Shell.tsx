@@ -25,6 +25,8 @@ import { renderTrayIcon } from './trayBadge'
 import {
   runFidelityCheck,
   runPrDetailFidelityCheck,
+  runAgentPanelFidelityCheck,
+  runJiraFidelityCheck,
   runPrFidelityCheck,
   runProjectsFidelityCheck,
 } from './fidelityCheck'
@@ -97,6 +99,7 @@ export function Shell() {
   const openProject = data.projects.find((project) => project.id === openProjectId)
   const isDetailOpen = openPr !== undefined
   const isProjectOpen = openProject !== undefined
+  const isChatOpen = chatTarget !== null
 
   /*
    * `today.todos`, not `/todos`, which is what ContentView.swift hands the project screen.
@@ -179,14 +182,23 @@ export function Shell() {
         // Keyed on what is actually rendered, not on what was asked for. `openPrId` can
         // outlive the row it names, and then the list is on screen while a detail check
         // would be measuring elements that are not there.
+        /*
+         * The panel wins when it is open, because it is the thing that just changed. Every
+         * section otherwise gets its own check: Today's used to be the fallback for all of
+         * them, so opening Jira reported nine of Today's elements as missing.
+         */
         setFidelity(
-          section === 'Pull requests'
-            ? isDetailOpen
-              ? runPrDetailFidelityCheck()
-              : runPrFidelityCheck()
-            : section === 'Projects'
-              ? runProjectsFidelityCheck()
-              : runFidelityCheck(),
+          isChatOpen
+            ? runAgentPanelFidelityCheck()
+            : section === 'Pull requests'
+              ? isDetailOpen
+                ? runPrDetailFidelityCheck()
+                : runPrFidelityCheck()
+              : section === 'Projects'
+                ? runProjectsFidelityCheck()
+                : section === 'Jira'
+                  ? runJiraFidelityCheck()
+                  : runFidelityCheck(),
         )
       })
     })
@@ -195,7 +207,16 @@ export function Shell() {
     }
     // `isProjectOpen`, not `openProjectId`: opening a project fires no query, so nothing
     // else in this list changes and the check would keep reporting the list screen.
-  }, [data.isLoading, data.today, data.prs, section, isDetailOpen, isProjectOpen, inFlight])
+  }, [
+    data.isLoading,
+    data.today,
+    data.prs,
+    section,
+    isDetailOpen,
+    isProjectOpen,
+    isChatOpen,
+    inFlight,
+  ])
 
   const activeProjectCount = data.projects.filter((project) => project.status === 'active').length
 

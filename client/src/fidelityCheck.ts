@@ -206,6 +206,53 @@ export function runProjectsFidelityCheck(): string {
   return report(isDetail ? 'PROJECT DETAIL FIDELITY' : 'PROJECTS FIDELITY', checks)
 }
 
+/**
+ * The Jira screen.
+ *
+ * This exists because Today's check was the fallback for every section without one, so
+ * opening Jira reported nine of Today's elements as missing. A harness that complains
+ * about the wrong screen is worse than one that says nothing.
+ */
+export function runJiraFidelityCheck(): string {
+  const checks: Check[] = []
+  const add = (label: string, want: number, got: number | null) =>
+    checks.push({ label, want, got })
+
+  // JiraScreen.swift: picker .frame(width: 232), HStack spacing s8, row padding s3 / s4,
+  // status header .padding(.horizontal, s4) .padding(.top, s6) .padding(.bottom, s2).
+  add('jira picker width', 232, box('#jira-picker')?.width ?? null)
+  add('jira column gap', S.s8, px('#jira-screen', 'column-gap'))
+  add('jira row padding-top', S.s3, px('[data-jira-row]', 'padding-top'))
+  add('jira row padding-left', S.s4, px('[data-jira-row]', 'padding-left'))
+  add('jira row rule', 1, px('[data-jira-row]', 'border-top-width'))
+  add('status header padding-top', S.s6, px('[data-status-header]', 'padding-top'))
+  add('status header padding-left', S.s4, px('[data-status-header]', 'padding-left'))
+  add('status header padding-bottom', S.s2, px('[data-status-header]', 'padding-bottom'))
+
+  return report('JIRA FIDELITY', checks)
+}
+
+/**
+ * The agent panel, measured on its own because it can be open over any screen.
+ *
+ * AgentChatPanel.swift: .frame(width: 360), a 1px leading rule, and s6 padding on the
+ * header, the transcript and the composer alike.
+ */
+export function runAgentPanelFidelityCheck(): string {
+  const checks: Check[] = []
+  const add = (label: string, want: number, got: number | null) =>
+    checks.push({ label, want, got })
+
+  add('panel width', 360, box('#agent-panel')?.width ?? null)
+  add('panel left rule', 1, px('#agent-panel', 'border-left-width'))
+  add('messages padding', S.s6, px('#agent-messages', 'padding-top'))
+  add('messages gap', S.s6, px('#agent-messages', 'row-gap'))
+  add('composer padding', S.s6, px('#agent-composer', 'padding-top'))
+  add('composer gap', S.s3, px('#agent-composer', 'row-gap'))
+
+  return report('AGENT PANEL FIDELITY', checks)
+}
+
 /** One report, so the checks cannot drift in how they say PASS. */
 function report(title: string, checks: Check[]): string {
   const failures = checks

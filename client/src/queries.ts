@@ -455,6 +455,13 @@ export function useMergePr(id: number) {
   return useMutation<PrChatResult, Error, void>({
     mutationFn: () => engine.post<PrChatResult>(`/prs/${id}/merge`),
     onSuccess: (result) => {
+      /*
+       * The thread refreshes whatever the answer was, because a refusal is itself a
+       * message: `sendPrMessage` records the reply before returning it. That is why
+       * `AgentChatViewModel.merge` reloads unconditionally while `PrDetailViewModel.merge`
+       * reloads only on a merge that happened, and both are right for what they show.
+       */
+      void client.invalidateQueries({ queryKey: keys.pr(id) })
       if (result.action === 'refused') return
       for (const key of [keys.prDetail(id), keys.prs, keys.today]) {
         void client.invalidateQueries({ queryKey: key })
