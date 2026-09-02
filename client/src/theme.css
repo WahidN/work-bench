@@ -1,0 +1,116 @@
+/*
+ * A direct port of app/Workbench/Views/Theme.swift. Every value here is copied from
+ * that file rather than re-picked, because the point of the spike is to find out
+ * whether CSS can hold the Nocturne tokens exactly, not to redesign them.
+ *
+ * SwiftUI points and CSS px are the same unit at 1x logical scale, so the Space,
+ * Radius and FontSize numbers carry over unchanged, fractions included.
+ */
+
+@font-face {
+  font-family: 'Inter';
+  font-weight: 400;
+  font-style: normal;
+  src: url('/fonts/Inter-Regular.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-weight: 500;
+  font-style: normal;
+  src: url('/fonts/Inter-Medium.ttf') format('truetype');
+}
+
+:root {
+  /* Theme.Neutral */
+  --wb-n100: #f3f5fe;
+  --wb-n200: #e4e7f5;
+  --wb-n300: #cfd3e5;
+  --wb-n400: #b2b6ca;
+  --wb-n500: #9397ab;
+  --wb-n600: #75798c;
+  --wb-n700: #595d6c;
+  --wb-n800: #3f424d;
+  --wb-n900: #292b31;
+
+  /* Theme.Accent */
+  --wb-a100: #f5f4ff;
+  --wb-a200: #e7e5fe;
+  --wb-a300: #d2cefd;
+  --wb-a400: #b5abfc;
+  --wb-a500: #968ae0;
+  --wb-a600: #796cbf;
+  --wb-a700: #5d5294;
+  --wb-a800: #423a6a;
+  --wb-a900: #2b2741;
+
+  /* Theme.Status. needsReview and draft alias the ramps, exactly as in Swift. */
+  --wb-status-needs-review: var(--wb-a400);
+  --wb-status-changes-requested: #c49ab0;
+  --wb-status-approved: #8fbf9f;
+  --wb-status-blocked: #c4b18a;
+  --wb-status-draft: var(--wb-n500);
+
+  /* Theme.negative. Deliberately a different hue from changesRequested. */
+  --wb-negative: #c49a9a;
+
+  /* Surfaces */
+  --wb-sidebar-gradient-top: #1a1c2b;
+  --wb-panel-background: var(--wb-sidebar-gradient-top);
+  --wb-bg: #161826;
+  --wb-surface: #232532;
+  --wb-text: #e9e9ed;
+  --wb-accent: #9184d9;
+  --wb-divider: rgb(233 233 237 / 0.16);
+  --wb-palette-surface: #1c1e2c;
+  --wb-palette-backdrop: rgb(10 11 18 / 0.6);
+
+  /* Theme.Space */
+  --wb-s1: 2.8px;
+  --wb-s2: 5.6px;
+  --wb-s3: 8.4px;
+  --wb-s4: 11.2px;
+  --wb-s6: 16.8px;
+  --wb-s8: 22.4px;
+
+  /* Theme.Radius */
+  --wb-radius-sm: 4px;
+  --wb-radius-md: 8px;
+  --wb-radius-lg: 14px;
+
+  /* Theme.FontSize */
+  --wb-fs-screen-title: 22px;
+  --wb-fs-card-title: 15px;
+  --wb-fs-body: 14px;
+  --wb-fs-secondary: 13px;
+  --wb-fs-table-meta: 12px;
+  --wb-fs-label: 11px;
+  --wb-fs-tag: 10px;
+
+  /* Theme.heading uses Inter-Medium, Theme.body uses Inter-Regular. */
+  --wb-font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --wb-weight-heading: 500;
+  --wb-weight-body: 400;
+}
+
+/* Theme.projectDotColors, in order. */
+:root {
+  --wb-dot-0: var(--wb-accent);
+  --wb-dot-1: #7ea8c4;
+  --wb-dot-2: #c49ab0;
+  --wb-dot-3: #8fbf9f;
+  --wb-dot-4: #c4b18a;
+  --wb-dot-5: #a79ad9;
+  --wb-dot-6: #8aa6c4;
+  --wb-dot-7: #c49a9a;
+}
+
+body {
+  margin: 0;
+  background: var(--wb-bg);
+  color: var(--wb-text);
+  font-family: var(--wb-font);
+  font-weight: var(--wb-weight-body);
+  font-size: var(--wb-fs-body);
+  -webkit-font-smoothing: antialiased;
+}

@@ -1,0 +1,6 @@
+# pnpm 11 reads settings from here, not from a "pnpm" field in package.json, and
+# the key is allowBuilds rather than the older onlyBuiltDependencies. esbuild needs
+# its postinstall to place the platform binary, and without this entry pnpm treats
+# the ignored build script as a fatal dependency-status error, which fails vite.
+allowBuilds:
+  esbuild: true
