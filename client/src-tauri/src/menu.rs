@@ -36,6 +36,11 @@ const ITEMS: [(&str, &str, &str); 6] = [
 /// `Menu::default` is what keeps the standard macOS menus, so Quit, Copy and Paste all
 /// still work. Building a menu from scratch would silently take those away, and a webview
 /// with no Edit menu has no ⌘C.
+///
+/// Known difference: Go lands after Window and Help, because `Menu::default` already holds
+/// those and `append` adds to the end. SwiftUI's `CommandMenu` inserts before Window. It is
+/// cosmetic, only visible in the packaged app, and not worth rebuilding the whole menu bar
+/// by hand to fix.
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let menu = Menu::default(app)?;
 

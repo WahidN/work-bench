@@ -178,7 +178,17 @@ export function Shell() {
         setOpenProjectId(action.project.id)
         return
       case 'addTask':
-        createTodo.mutate({ text: action.text }, { onError })
+        /*
+         * And then go to Today, which `runPaletteRow` does after the create lands. Without
+         * it, typing a task into the palette from Pull requests closes the palette and
+         * shows nothing: the task exists, on a screen the user is not looking at.
+         *
+         * On success only, so a failed create does not move anyone for nothing.
+         */
+        createTodo.mutate(
+          { text: action.text },
+          { onSuccess: () => navigate('Today'), onError },
+        )
         return
     }
   }
