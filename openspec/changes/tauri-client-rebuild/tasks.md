@@ -74,15 +74,15 @@
 
 ## 7. Settings and the engine lifecycle
 
-- [ ] 7.1 Add the Rust keychain **write** and delete commands, separate from the read
-- [ ] 7.2 Port `SettingsSheet.swift` and `SettingsViewModel`, including the Jira
+- [x] 7.1 Add the Rust keychain **write** and delete commands, separate from the read
+- [x] 7.2 Port `SettingsSheet.swift` and `SettingsViewModel`, including the Jira
       connection flow
-- [ ] 7.3 Promote the launchd probe into a real feature: install, remove, start and the
+- [x] 7.3 Promote the launchd probe into a real feature: install, remove, start and the
       state reporting from `EngineAgentInstaller`, against the real label and port 4173
-- [ ] 7.4 Port the refusal ordering so a rejected install leaves the machine unchanged,
+- [x] 7.4 Port the refusal ordering so a rejected install leaves the machine unchanged,
       with tests behind an environment seam like `AgentEnvironment`
-- [ ] 7.5 Add the folder picker for the engine directory via the Tauri dialog plugin
-- [ ] 7.6 Handle the `bootout` race the spike found: do not report loaded state straight
+- [x] 7.5 Add the folder picker for the engine directory via the Tauri dialog plugin
+- [x] 7.6 Handle the `bootout` race the spike found: do not report loaded state straight
       after a bootout
 
 ## 8. Native surface

@@ -320,6 +320,59 @@ export const usePromoteTodo = () =>
 export const useAllTodos = () =>
   list<Todo[]>(keys.allTodos, '/todos?done=any', { refetchInterval: false })
 
+/* ------------------------------------------------------------- Settings */
+
+export type JiraSite = { id: string; url: string; name: string }
+
+export type JiraConnection = {
+  hasClientCredentials: boolean
+  connected: boolean
+  siteUrl: string | null
+  siteName: string | null
+  /** Non-empty only while a site still has to be chosen. */
+  availableSites: JiraSite[]
+  /** The exact value to paste into the Atlassian console. */
+  callbackUrl: string
+}
+
+/**
+ * The Jira connection.
+ *
+ * `refetchInterval` is a parameter because the connect flow polls: the user is sent to
+ * Atlassian in a browser, and the only way back is asking the engine whether the callback
+ * has landed. `SettingsViewModel.pollUntilConnected` does the same at 2 seconds, and stops
+ * on either end of the trip, connected or a site to choose.
+ */
+export const useJiraConnection = (pollMs: number | false) =>
+  useQuery<JiraConnection>({
+    queryKey: keys.jiraSettings,
+    queryFn: () => engine.get<JiraConnection>('/settings/jira'),
+    refetchInterval: pollMs,
+  })
+
+const JIRA_KEYS = [keys.jiraSettings] as const
+
+export const useSaveJiraClient = () =>
+  useEngineMutation(
+    (args: { clientId: string; clientSecret: string }) =>
+      engine.put<{ ok: boolean }>('/settings/jira/client', args),
+    JIRA_KEYS,
+  )
+
+/** Answers the URL to open. Opening a browser is the caller's job. */
+export const useAuthorizeJira = () =>
+  useEngineMutation(() => engine.post<{ url: string }>('/settings/jira/authorize'), JIRA_KEYS)
+
+export const useChooseJiraSite = () =>
+  useEngineMutation(
+    (args: { cloudId: string }) => engine.post<{ ok: boolean }>('/settings/jira/site', args),
+    // A site choice is what makes the mirrored issues appear, so the lists move with it.
+    [keys.jiraSettings, keys.todos, keys.allTodos, keys.today] as const,
+  )
+
+export const useDisconnectJira = () =>
+  useEngineMutation(() => engine.delete<{ ok: boolean }>('/settings/jira'), JIRA_KEYS)
+
 /* ------------------------------------------------------------- Projects */
 
 const PROJECT_KEYS = [keys.projects] as const
