@@ -109,6 +109,13 @@ number, for the reason the spike gave: getting one means instrumenting `app/`.
 ## Bundle identity
 
 - Name `Workbench`, version `1.0.0`, minimum macOS 14.0, matching `project.yml`.
+- Window 1440 by 900. `WorkbenchApp.swift` declares no size at all and lets SwiftUI size
+  the window to its content, which a webview cannot do; 1440 is the first round width at
+  which the 228 sidebar and the content's own 1180 cap both fit, so nothing is clipped and
+  nothing is stretched past what the design allows.
+- Minimum 949 by 600. The floor is countable rather than picked: 228 sidebar, 360 agent
+  panel, 360 for the content beside them, and the sidebar's 1px rule. Below that the panel
+  and the content are fighting over the same space.
 - Identifier `com.linku.workbench.client`, deliberately **not** the Swift app's
   `com.linku.workbench`. Two apps sharing an identifier cannot be told apart by
   LaunchServices, notification permissions or keychain ACLs, and both are installed while

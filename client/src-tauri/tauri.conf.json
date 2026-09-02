@@ -15,8 +15,8 @@
         "title": "Workbench",
         "width": 1440,
         "height": 900,
-        "minWidth": 1000,
-        "minHeight": 640
+        "minWidth": 949,
+        "minHeight": 600
       }
     ],
     "security": {

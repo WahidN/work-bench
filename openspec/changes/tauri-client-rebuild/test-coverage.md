@@ -7,7 +7,15 @@ Counts are `@Test` declarations on the Swift side and assertion blocks on the po
 They are not comparable one to one, and are here to show where the weight sits rather than
 to be added up.
 
-**Totals: 429 Swift tests, against 230 vitest and 18 Rust.**
+**Totals: 457 Swift tests, against 230 vitest and 18 Rust.**
+
+Counted rather than added up by hand, so it can be checked:
+
+```
+grep -rho "@Test" app/WorkbenchTests/ | wc -l      # 457
+cd client && pnpm test                             # 230
+cd client/src-tauri && cargo test --lib            # 18
+```
 
 The gap is almost entirely one thing, and it is the thing the port set out to remove: 100
 of those Swift tests exist to check hand-written `Codable` structs and the `URLSession`

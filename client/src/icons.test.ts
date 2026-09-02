@@ -36,7 +36,9 @@ function referencedIcons(): Set<string> {
   const names = new Set<string>()
   for (const file of readdirSync(SOURCE)) {
     if (!file.endsWith('.tsx') && !file.endsWith('.ts')) continue
-    if (file.endsWith('.test.ts')) continue
+    // Both extensions: a fixture in a component test naming a made-up symbol would
+    // otherwise fail this and send the reader looking for a PNG no screen asks for.
+    if (file.includes('.test.')) continue
     const text = readFileSync(join(SOURCE, file), 'utf8')
     for (const match of text.matchAll(/<Icon\s+name="([a-z0-9-]+)"/g)) names.add(match[1])
     for (const match of text.matchAll(/(?:symbol|refSymbol):\s*'([a-z0-9-]+)'/g)) names.add(match[1])
