@@ -168,6 +168,9 @@ export function reconcileGithubPrs(
   // left behind, and a remark with no pull request could never be posted or read
   // anyway: the path, the line and the commit only mean something against it.
   //
+  // Including the ones already posted. Those live on GitHub now, which is the
+  // durable record; the row here is only the local draft they were sent from.
+  //
   // Missing this is what broke every poll cycle for a day. Three tables reference
   // prs(id), two were handled here, and the third refused the delete. Because the
   // loop below is one transaction, that one row rolled back all the others, so

@@ -216,7 +216,9 @@ describe('reconciling github PRs', () => {
     const db = openDb(':memory:');
     const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
     const reviewed = recordPr(db, { ticketId: null, projectId: project.id, branch: 'a', number: 1, url: 'u1', status: 'open' });
-    const alsoDoomed = recordPr(db, { ticketId: null, projectId: project.id, branch: 'b', number: 2, url: 'u2', status: 'open' });
+    // A second doomed row, so the assertions below also prove the transaction no longer
+    // rolls back the deletions that were fine.
+    recordPr(db, { ticketId: null, projectId: project.id, branch: 'b', number: 2, url: 'u2', status: 'open' });
     replaceReviewFindings(db, reviewed.id, [{ path: 'src/a.ts', line: 1, body: 'this drops the error' }], 'abc123');
 
     const removed = reconcileGithubPrs(db, [project.id], [{ projectId: project.id, number: 99 }]);
@@ -225,7 +227,6 @@ describe('reconciling github PRs', () => {
     expect(listPrs(db)).toEqual([]);
     // And the remarks went with it, rather than being left pointing at nothing.
     expect(listReviewFindings(db, reviewed.id)).toEqual([]);
-    expect(alsoDoomed.id).not.toBe(reviewed.id);
   });
 
   it('does not touch a reviewed PR that github still returns', () => {
