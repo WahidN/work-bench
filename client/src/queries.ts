@@ -49,6 +49,8 @@ export const keys = {
   tickets: ['/tickets'] as const,
   ticket: (id: number) => ['/tickets', id] as const,
   todos: ['/todos'] as const,
+  /** Distinct from `todos`: the Jira screen needs done ones too. See `useAllTodos`. */
+  allTodos: ['/todos', 'any'] as const,
   todoMessages: (id: number) => ['/todos', id, 'messages'] as const,
   jiraSettings: ['/settings/jira'] as const,
 }
@@ -174,9 +176,9 @@ export function useEngineMutation<TArgs, TResult>(
  * unpinning a Jira todo removes it from Today's list entirely, so the whole list is
  * reloaded rather than the row patched in place.
  */
-const TODO_KEYS = [keys.today, keys.todos] as const
+const TODO_KEYS = [keys.today, keys.todos, keys.allTodos] as const
 /** A promote turns a todo into a ticket, so both lists move. */
-const PROMOTE_KEYS = [keys.today, keys.todos, keys.tickets] as const
+const PROMOTE_KEYS = [keys.today, keys.todos, keys.allTodos, keys.tickets] as const
 
 export const useCreateTodo = () =>
   useEngineMutation(
@@ -216,6 +218,75 @@ export const usePromoteTodo = () =>
   useEngineMutation(
     (args: { id: number }) => engine.post<Ticket>(`/todos/${args.id}/promote`),
     PROMOTE_KEYS,
+  )
+
+/**
+ * Every open todo, done ones included.
+ *
+ * `JiraViewModel.load` asks for completed todos too, and says why: promoting sets done = 1,
+ * and a promoted issue must keep its place in the list with its pipeline state. So this is
+ * a different query from `useTodos`, not the same one with a flag.
+ */
+export const useAllTodos = () => list<Todo[]>(keys.allTodos, '/todos?done=any')
+
+/* ------------------------------------------------------------- Projects */
+
+const PROJECT_KEYS = [keys.projects] as const
+
+export type ProjectInput = {
+  name: string
+  repoPath: string
+  defaultBranch: string
+  githubRepo: string | null
+  jiraProjectKey: string | null
+  sentryProjectSlug: string | null
+  status: Project['status']
+  blurb: string
+}
+
+export const useCreateProject = () =>
+  useEngineMutation(
+    (input: ProjectInput) => engine.post<Project>('/projects', input),
+    PROJECT_KEYS,
+  )
+
+export const useUpdateProject = () =>
+  useEngineMutation(
+    (args: { id: number; input: ProjectInput }) =>
+      engine.patch<Project>(`/projects/${args.id}`, args.input),
+    PROJECT_KEYS,
+  )
+
+export const useDeleteProject = () =>
+  useEngineMutation(
+    (args: { id: number }) => engine.delete<void>(`/projects/${args.id}`),
+    // Deleting a project changes every count the sidebar and Today draw, so this
+    // invalidates more than the list it removed a row from.
+    [keys.projects, keys.today, keys.todos, keys.allTodos, keys.tickets, keys.prs] as const,
+  )
+
+/**
+ * Notes, as a bare call rather than a hook.
+ *
+ * `ProjectNotesSaver` owns when a write happens, and it is not a component: the debounce,
+ * the chaining and the id checks are its job precisely because a hook cannot express them.
+ * So this hands it a function and lets it decide.
+ */
+export const updateProjectNotes = (id: number, notes: string) =>
+  engine.put<Project>(`/projects/${id}/notes`, { notes })
+
+/* ------------------------------------------------------------- Tickets */
+
+/**
+ * Creates the pull request for an analysed issue.
+ *
+ * Invalidates the pull request list as well as the tickets: the whole point is that a new
+ * pull request now exists.
+ */
+export const useCreatePr = () =>
+  useEngineMutation(
+    (args: { ticketId: number }) => engine.post<unknown>(`/tickets/${args.ticketId}/create-pr`),
+    [keys.tickets, keys.prs, keys.today] as const,
   )
 
 export const useSetTicketPinned = () =>
