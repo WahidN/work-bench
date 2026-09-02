@@ -1,13 +1,18 @@
 /*
- * Pixel-diffs the canvas tray icon against the Swift app's real output.
+ * Pixel-diffs the canvas tray icon against the SwiftUI app's real output.
  *
- * The reference PNGs in public/tray/reference were produced by compiling the
- * production `app/Workbench/MenuBarIconRenderer.swift` and calling it, not by
- * transcribing it, which is what makes this a comparison rather than a tautology. See
- * tools/render-swift-icons/main.swift.
+ * The reference PNGs in public/tray/reference were produced by compiling the production
+ * `MenuBarIconRenderer.swift` and calling it, not by transcribing it, which is what makes
+ * this a comparison rather than a tautology.
  *
- * This exists because the menu bar cannot be photographed on this machine, so the
- * usual "screenshot both and look" is unavailable. A pixel diff is stronger anyway.
+ * That renderer is gone: the SwiftUI app was removed once this client reached parity. The
+ * PNGs stay, because they are the recorded output of the thing this has to match, and a
+ * baseline does not stop being a baseline when its source is retired. Regenerating them
+ * would mean checking out the commit before the removal and rebuilding
+ * `tools/render-swift-icons`, which went with it.
+ *
+ * This exists because the menu bar cannot be photographed on this machine, so the usual
+ * "screenshot both and look" is unavailable. A pixel diff is stronger anyway.
  */
 
 import { renderTrayIcon } from './trayBadge'

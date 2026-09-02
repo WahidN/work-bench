@@ -116,11 +116,16 @@ number, for the reason the spike gave: getting one means instrumenting `app/`.
 - Minimum 949 by 600. The floor is countable rather than picked: 228 sidebar, 360 agent
   panel, 360 for the content beside them, and the sidebar's 1px rule. Below that the panel
   and the content are fighting over the same space.
-- Identifier `com.linku.workbench.client`, deliberately **not** the Swift app's
-  `com.linku.workbench`. Two apps sharing an identifier cannot be told apart by
-  LaunchServices, notification permissions or keychain ACLs, and both are installed while
-  this question is open. Taking the plain identifier is part of retiring `app/`, not part
-  of shipping alongside it.
+- Identifier `com.linku.workbench`, the Swift app's own. It shipped briefly as
+  `com.linku.workbench.client`, because two apps sharing an identifier cannot be told apart
+  by LaunchServices, notification permissions or keychain ACLs, and both were installed
+  while the retirement question was open. Answered: `app/` was removed, so the plain
+  identifier is free.
+
+  **This means macOS sees the client as the same app the SwiftUI build was.** Notification
+  permission carries over, which is what you want. So does the old app's LaunchServices
+  registration, so delete any copy of the SwiftUI `Workbench.app` you still have around,
+  or the two will fight over which one a launch opens.
 - The icon is rendered from the app's own mark, the badge in `Sidebar.swift`'s `brandRow`,
   by `tools/render-app-icon.swift`. The Swift app has no icon asset at all, so there was
   nothing to copy; the alternative was shipping Tauri's default logo, which would claim in
@@ -173,18 +178,28 @@ platforms and which therefore does not travel to Linux or Windows. The cross-pla
 argument for Tauri does not survive that, so the honest reason to keep going is the one
 language, not the reach.
 
-Two things would need doing before `app/` could go:
+**Answered: `app/` was removed.** Wahid decided it on 2026-09-02, against the advice above,
+which was to run both for a week first. That advice stands as advice and is recorded here
+rather than quietly dropped: the port is verified but it has not been *lived in*, and the
+memory doubling is the one number that might matter in practice.
 
-1. Signing and notarisation, which needs credentials only the user has.
-2. The identifier moving to `com.linku.workbench`, which can only happen once the Swift app
-   is gone.
+What went with it: 69 Swift sources, 39 test files, the XcodeGen project, and
+`client/tools/render-swift-icons`, which existed only to compile the Swift tray renderer for
+the pixel diff and cannot run without it. The reference PNGs it produced stay, because a
+recorded baseline does not stop being one when its source is retired.
 
-Refresh was the third and is now ported. Wiring it up surfaced an engine bug on the first
-click: `POST /poll` answers `sourceErrors: ["githubPrs: FOREIGN KEY constraint failed"]`,
-reproducible with `curl -X POST localhost:4173/poll`. It is not the client's, and it was
-invisible before, because the engine logs those to its own console and nowhere else.
+What is still open:
 
-Recommendation: keep both installed for a week of real use. The port is verified but it has
-not been *lived in*, and the difference between those two is exactly what a week finds. The
-memory doubling is the one number that might matter in practice, and a week of having it
-open alongside everything else is the only way to know whether it does.
+1. **Signing and notarisation.** The build is ad-hoc signed. This needs a Developer ID
+   certificate and an App Store Connect key, both of which only Wahid has. Until then the
+   client runs locally and cannot be handed to anyone.
+2. **An engine bug**, found by wiring Refresh up. `POST /poll` answers
+   `sourceErrors: ["githubPrs: FOREIGN KEY constraint failed"]`, reproducible with
+   `curl -X POST localhost:4173/poll`. It is the poller's, not the client's, and it was
+   invisible before, because the engine logs those to its own console and nowhere else.
+
+Refresh itself was the third blocker and is now ported.
+
+One consequence of the removal worth acting on: the client now carries
+`com.linku.workbench`, the identifier the SwiftUI build used. Delete any copy of the old
+`Workbench.app` still on disk, or macOS has two apps claiming to be the same one.
