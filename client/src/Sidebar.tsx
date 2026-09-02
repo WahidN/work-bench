@@ -1,12 +1,12 @@
 /*
  * Port of app/Workbench/Views/Sidebar.swift.
  *
- * The rows, the project list and the search button are all live. The gear opens Settings,
- * which is task group 7; until then it renders and measures and does nothing.
+ * Everything here is live: the rows, the project list, the search button and the gear.
  */
 
 import type { Pr, Project, Ticket, Todo } from './queries'
 import { Icon } from './Icon'
+import { SettingsButton } from './SettingsSheet'
 import {
   SECTIONS,
   SECTION_SYMBOL,
@@ -23,6 +23,7 @@ export function Sidebar({
   selection,
   onSelect,
   onOpenPalette,
+  onOpenSettings,
   selectedProjectId,
   onSelectProject,
   todos,
@@ -34,6 +35,7 @@ export function Sidebar({
   selection: SidebarSection
   onSelect: (section: SidebarSection) => void
   onOpenPalette: () => void
+  onOpenSettings: () => void
   /** SidebarLogic.isProjectSelected is `project.id == selectedProject?.id`, so an id is enough. */
   selectedProjectId: number | null
   onSelectProject: (project: Project) => void
@@ -263,8 +265,8 @@ export function Sidebar({
         <span style={{ fontSize: 'var(--wb-fs-table-meta)', color: 'var(--wb-n400)' }}>
           {ACCOUNT_NAME}
         </span>
-        <span style={{ marginLeft: 'auto', color: 'var(--wb-n600)', padding: 'var(--wb-s2)' }}>
-          <Icon name="gearshape" size={14} />
+        <span style={{ marginLeft: 'auto', padding: 'var(--wb-s2)' }}>
+          <SettingsButton onClick={onOpenSettings} />
         </span>
       </div>
     </div>

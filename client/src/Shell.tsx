@@ -21,6 +21,7 @@ import { PRsScreen } from './PRsScreen'
 import { ProjectDetailScreen } from './ProjectDetailScreen'
 import { ProjectFormSheet, type ProjectSheetMode } from './ProjectFormSheet'
 import { ProjectsScreen } from './ProjectsScreen'
+import { SettingsSheet } from './SettingsSheet'
 import { Sidebar } from './Sidebar'
 import { TodayScreen } from './TodayScreen'
 import { renderTrayIcon } from './trayBadge'
@@ -43,6 +44,13 @@ import {
   useShellData,
   useUpdateProject,
 } from './queries'
+import {
+  UNKNOWN_AGENT,
+  agentStart,
+  agentState,
+  canManageAgent,
+  type AgentState,
+} from './engineAgent'
 import { projectCards } from './projectsLogic'
 import { prListRef, type SidebarSection, type TaskRow as TaskRowModel } from './logic'
 import { isTypingIn, matchShortcut, shortcutForMenuId, type Shortcut } from './shortcuts'
@@ -77,6 +85,14 @@ export function Shell() {
   /** `AgentChatViewModel.target`: null is closed, which is what `isOpen` reads. */
   const [chatTarget, setChatTarget] = useState<AgentChatTarget | null>(null)
   const [isPaletteOpen, setIsPaletteOpen] = useState(false)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  /*
+   * The agent's state, held here rather than in the sheet because the unreachable banner
+   * shows it too. `EngineViewModel` is one type on purpose, so the Settings sheet and the
+   * banner cannot disagree about whether the engine is up.
+   */
+  const [agent, setAgent] = useState<AgentState>(UNKNOWN_AGENT)
+  const [isStartingAgent, setIsStartingAgent] = useState(false)
   const data = useShellData()
   /*
    * Every todo, done ones included, read by three surfaces: the sidebar's Jira count, the
@@ -237,6 +253,26 @@ export function Shell() {
     }
   })
 
+  /*
+   * Read once at launch, so the banner can offer Start rather than only pointing at
+   * Settings. Unreachable in a browser, where it stays at UNKNOWN_AGENT and the banner
+   * falls back to the Settings link.
+   */
+  useEffect(() => {
+    if (!canManageAgent) return
+    void agentState()
+      .then(setAgent)
+      .catch((error: unknown) => console.error('could not read the agent state', error))
+  }, [])
+
+  function startAgent() {
+    setIsStartingAgent(true)
+    void agentStart()
+      .then(setAgent)
+      .catch((error: unknown) => setAlert(String(error)))
+      .finally(() => setIsStartingAgent(false))
+  }
+
   /** The Tasks tab's checkbox routes exactly as Today's does: complete, or unpin. */
   function toggleProjectTask(row: TaskRowModel) {
     const id = Number(row.id.split('-')[1])
@@ -347,6 +383,7 @@ export function Shell() {
         selection={section}
         onSelect={navigate}
         onOpenPalette={() => setIsPaletteOpen(true)}
+        onOpenSettings={() => setIsSettingsOpen(true)}
         /* `openProject` opens the project's page rather than only selecting the row. */
         selectedProjectId={openProjectId}
         onSelectProject={(project) => {
@@ -378,17 +415,16 @@ export function Shell() {
         />
 
         {/*
-          An engine that does not answer says so, rather than rendering empty lists. The
-          install state and the start action are wired in task group 7; until then the
-          banner reports the failure and points at Settings.
+          An engine that does not answer says so, rather than rendering empty lists. Sits
+          between the header and the content, so it is visible on every screen.
         */}
         {data.error && (
           <EngineDownBanner
-            isAgentInstalled={false}
+            isAgentInstalled={agent.isInstalled}
             errorMessage={String(data.error)}
-            isBusy={false}
-            onStart={() => {}}
-            onOpenSettings={() => {}}
+            isBusy={isStartingAgent}
+            onStart={startAgent}
+            onOpenSettings={() => setIsSettingsOpen(true)}
           />
         )}
 
@@ -559,6 +595,13 @@ export function Shell() {
                 }
               : null
           }
+        />
+      )}
+
+      {isSettingsOpen && (
+        <SettingsSheet
+          isEngineDown={data.error !== null}
+          onClose={() => setIsSettingsOpen(false)}
         />
       )}
 
