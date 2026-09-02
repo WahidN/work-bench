@@ -43,7 +43,7 @@ import {
   useSetTodoPinned,
   useShellData,
   useUpdateProject,
-  keys,
+  fetchPrReview,
 } from './queries'
 import {
   UNKNOWN_AGENT,
@@ -68,6 +68,15 @@ import { prListRef, type SidebarSection, type TaskRow as TaskRowModel } from './
 import { isTypingIn, matchShortcut, shortcutForMenuId, type Shortcut } from './shortcuts'
 
 const IN_TAURI = '__TAURI_INTERNALS__' in window
+
+/**
+ * How often the review notification looks again.
+ *
+ * The Swift's loop is 15 seconds and reloads Today in the same turn; here that reload is
+ * the query layer's own 30-second poll, so this matches it. Half a minute late for a review
+ * that took minutes is not a difference anyone feels.
+ */
+const REVIEW_BEAT_MS = 30_000
 
 /** The badge count is Today's `needsInput`, which is what the Swift app's badge counts. */
 async function pushBadge(count: number): Promise<void> {
@@ -320,33 +329,64 @@ export function Shell() {
   }, [items])
 
   /*
-   * A finished review, announced once per pull request. The reviews are read from the query
-   * cache rather than fetched: `usePrReview` already holds whatever the pull request pages
-   * and the list's Review buttons have loaded, and firing a request per pull request every
-   * cycle to find out whether one of them has news is a poll the app does not need.
+   * A finished review, announced once per pull request.
    *
-   * `announcedReviews` is a ref so a re-render cannot reannounce.
+   * Fetched rather than read out of the query cache, which is what `announceFinishedReviews`
+   * does and for the reason it has to: `usePrReview` only holds a pull request whose page was
+   * opened or whose Review button was pressed, and `ReviewStarter` stops the moment the user
+   * leaves the list. Reading the cache meant the one case this exists for, a review finishing
+   * while the user is elsewhere, was exactly the case it missed.
+   *
+   * The cost is what the Swift accepts, and its comment says why it is small: a pull request
+   * whose review is already announced needs no fetching, and one that has never been reviewed
+   * answers with an empty list. `announcedReviews` is a ref, so a re-render cannot reannounce
+   * and cannot refetch what has been said.
    */
   const client = useQueryClient()
   const announcedReviews = useRef<Set<number>>(new Set())
+  /*
+   * The pull requests, in a ref, so the interval below can read the current list without
+   * being torn down and restarted every time a poll hands back a new array.
+   */
+  const currentPrs = useRef(data.prs)
+  currentPrs.current = data.prs
+
   useEffect(() => {
-    const reviews = new Map<number, PrReviewView>()
-    for (const pr of data.prs) {
-      if (announcedReviews.current.has(pr.id)) continue
-      const review = client.getQueryData<PrReviewView>(keys.prReview(pr.id))
-      if (review !== undefined) reviews.set(pr.id, review)
+    let cancelled = false
+
+    async function look() {
+      const reviews = new Map<number, PrReviewView>()
+      for (const pr of currentPrs.current) {
+        if (announcedReviews.current.has(pr.id)) continue
+        try {
+          reviews.set(pr.id, await fetchPrReview(client, pr.id, REVIEW_BEAT_MS - 5_000))
+        } catch {
+          // One pull request the engine will not answer for is no reason to stop looking
+          // at the rest, and not something to interrupt anyone about.
+        }
+      }
+      if (cancelled) return
+
+      for (const prId of reviewsToAnnounce(reviews, announcedReviews.current)) {
+        const pr = currentPrs.current.find((candidate) => candidate.id === prId)
+        const review = reviews.get(prId)
+        if (pr === undefined || review === undefined) continue
+        void notify(REVIEW_TITLE, reviewBody(pr.title, unpostedCount(review)))
+        announcedReviews.current.add(prId)
+      }
     }
-    for (const prId of reviewsToAnnounce(reviews, announcedReviews.current)) {
-      const pr = data.prs.find((candidate) => candidate.id === prId)
-      const review = reviews.get(prId)
-      if (pr === undefined || review === undefined) continue
-      void notify(REVIEW_TITLE, reviewBody(pr.title, unpostedCount(review)))
-      announcedReviews.current.add(prId)
+
+    // An interval rather than a dependency, because a review finishing changes nothing
+    // this component renders: the pull request list is identical, so an effect keyed on it
+    // would never look again. `announceFinishedReviews` runs on its own loop for the same
+    // reason.
+    const timer = setInterval(() => void look(), REVIEW_BEAT_MS)
+    void look()
+    return () => {
+      cancelled = true
+      clearInterval(timer)
     }
-    // Keyed on the pull request list, so this looks again on every 30-second poll. The
-    // Swift's loop is 15 seconds; up to half a minute late for a review that has been
-    // waiting minutes is not a difference anyone can feel, and it costs no extra request.
-  }, [client, data.prs])
+  }, [client])
 
   /** The Tasks tab's checkbox routes exactly as Today's does: complete, or unpin. */
   function toggleProjectTask(row: TaskRowModel) {

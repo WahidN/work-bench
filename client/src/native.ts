@@ -9,6 +9,16 @@
 const IN_TAURI = '__TAURI_INTERNALS__' in window
 
 /**
+ * The answer to the permission prompt, remembered.
+ *
+ * Asked once and then read from here, because a notification arrives in bursts: everything
+ * that newly appeared in one cycle notifies in a loop, and asking the plugin per item made
+ * that two round trips each where one would do. The answer does not change while the app
+ * runs, so there is nothing to invalidate.
+ */
+let mayNotify = false
+
+/**
  * Asks for notification permission once, at launch.
  *
  * `applicationDidFinishLaunching` does the same with `requestAuthorization`. Asking at the
@@ -20,8 +30,8 @@ export async function requestNotificationPermission(): Promise<boolean> {
   const { isPermissionGranted, requestPermission } = await import(
     '@tauri-apps/plugin-notification'
   )
-  if (await isPermissionGranted()) return true
-  return (await requestPermission()) === 'granted'
+  mayNotify = (await isPermissionGranted()) || (await requestPermission()) === 'granted'
+  return mayNotify
 }
 
 /**
@@ -29,11 +39,8 @@ export async function requestNotificationPermission(): Promise<boolean> {
  * an error to report back to them.
  */
 export async function notify(title: string, body: string): Promise<void> {
-  if (!IN_TAURI) return
-  const { isPermissionGranted, sendNotification } = await import(
-    '@tauri-apps/plugin-notification'
-  )
-  if (!(await isPermissionGranted())) return
+  if (!IN_TAURI || !mayNotify) return
+  const { sendNotification } = await import('@tauri-apps/plugin-notification')
   sendNotification({ title, body })
 }
 

@@ -1,5 +1,5 @@
 use tauri::image::Image;
-use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, Runtime};
 
 pub const TRAY_ID: &str = "workbench";
@@ -18,7 +18,16 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         // no tray menu, so without this the click would be swallowed opening nothing.
         .show_menu_on_left_click(false)
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click { .. } = event {
+            // On the left button's release, not on any Click: the event carries a
+            // `button_state` and fires for both press and release, so matching the variant
+            // alone raised the window twice per click. `statusItemClicked` is wired to the
+            // status item button's action, which is the left one.
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
                 bring_forward(tray.app_handle());
             }
         })
