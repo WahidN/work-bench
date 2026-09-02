@@ -136,21 +136,13 @@ export const usePrReview = (id: number, enabled = true) =>
     refetchInterval: (query) => (isRunning(query.state.data) ? 5_000 : false),
   })
 
-/**
- * The raw unified diff, fetched only when asked for.
- *
- * `enabled` is not a nicety here. The route opens and force-removes the pull request's
- * worktree under the PR job lock, so a fetch nobody asked for would contend with the fix
- * pipeline and with review itself, and answer 409 when it lost.
+/*
+ * There is deliberately no `usePrDiff` yet. `GET /prs/:id/diff` opens and force-removes
+ * the pull request's worktree under the PR job lock, and the only screen that wants it is
+ * the agent panel in task group 5. A hook standing ready for a caller that does not exist
+ * is the kind that gets called by accident, and this one costs a worktree and a 409
+ * against the fix pipeline when it does.
  */
-export const usePrDiff = (id: number, enabled: boolean) =>
-  useQuery<{ diff: string }>({
-    queryKey: keys.prDiff(id),
-    queryFn: () => engine.get<{ diff: string }>(`/prs/${id}/diff`),
-    enabled,
-    // A worktree per refetch is too expensive to repeat on a window focus.
-    staleTime: Infinity,
-  })
 
 /* ------------------------------------------------------------- Mutations */
 

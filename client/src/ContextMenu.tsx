@@ -14,6 +14,37 @@ import { useEffect, useState, type ReactNode } from 'react'
 
 export type MenuItem = { label: string; run: () => void }
 
+const MENU_WIDTH = 168
+/** s2 top and bottom, plus one row per item at s2 vertical padding on a 13px line. */
+const ITEM_HEIGHT = 24.6
+const EDGE_MARGIN = 8
+
+/**
+ * Keeps the menu inside the window, flipping it up or left when the pointer is near an
+ * edge, which is what SwiftUI's `.contextMenu` does on its own. Without it a right-click
+ * on the last row put "Delete task" below the bottom of the window.
+ *
+ * The viewport is a parameter rather than read from `window`, so the rule can be tested
+ * without one. A right-click cannot be driven from the browser CLI this project verifies
+ * with, so a unit test is the only proof this gets.
+ */
+export function menuPosition(
+  x: number,
+  y: number,
+  itemCount: number,
+  viewport: { width: number; height: number },
+): { left: number; top: number } {
+  const height = itemCount * ITEM_HEIGHT + 5.6
+  const overflowsBottom = y + height + EDGE_MARGIN > viewport.height
+  const overflowsRight = x + MENU_WIDTH + EDGE_MARGIN > viewport.width
+  return {
+    // Clamped as well as flipped: a menu taller than the window has to start at the top
+    // rather than at a negative offset.
+    left: Math.max(EDGE_MARGIN, overflowsRight ? x - MENU_WIDTH : x),
+    top: Math.max(EDGE_MARGIN, overflowsBottom ? y - height : y),
+  }
+}
+
 export function useContextMenu(items: MenuItem[]) {
   const [at, setAt] = useState<{ x: number; y: number } | null>(null)
 
@@ -23,7 +54,11 @@ export function useContextMenu(items: MenuItem[]) {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setAt(null)
     }
-    // Capture, so a click that also lands on a menu item still closes the menu.
+    /*
+     * On `window`, in the bubble phase, and an item's own `onMouseDown` still wins:
+     * React attaches its handlers to the root container, which sits below `window`, so
+     * the item runs first and this only closes what it left open.
+     */
     window.addEventListener('mousedown', dismiss)
     window.addEventListener('keydown', onKey)
     return () => {
@@ -45,10 +80,12 @@ export function useContextMenu(items: MenuItem[]) {
         role="menu"
         style={{
           position: 'fixed',
-          left: at.x,
-          top: at.y,
+          ...menuPosition(at.x, at.y, items.length, {
+            width: window.innerWidth,
+            height: window.innerHeight,
+          }),
           zIndex: 40,
-          minWidth: 168,
+          width: MENU_WIDTH,
           display: 'flex',
           flexDirection: 'column',
           padding: 'var(--wb-s1)',

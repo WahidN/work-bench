@@ -17,21 +17,37 @@
 
 import { useEffect, useState } from 'react'
 import { Icon } from './Icon'
-import { isRunning } from './prReviewLogic'
+import { shouldReleaseReview } from './prReviewLogic'
 import { usePrReview, useStartPrReview } from './queries'
 
 export function ReviewStarter({ prId, onError }: { prId: number; onError: (error: Error) => void }) {
-  const [started, setStarted] = useState(false)
+  /*
+   * The `dataUpdatedAt` the review query had at the moment of starting, or null when no
+   * review has been started from this row. Null and 0 are different answers, which is why
+   * this is not a boolean plus a number.
+   *
+   * A plain boolean released the row immediately. The query hands back whatever is cached
+   * under this pull request's key even while it is disabled, so once the user has opened
+   * this pull request's page there is a `{running: false}` sitting there from before the
+   * click. Releasing on "the engine says not running" then fired on that stale answer,
+   * before the refetch the start had triggered landed, and the row came straight back to
+   * "Review" while a review was in fact running.
+   *
+   * Comparing against the baseline rather than against the clock is what makes it exact:
+   * `dataUpdatedAt` changes when, and only when, a fetch resolves, so a changed value is
+   * an answer about this review and an unchanged one is the answer from before it.
+   */
+  const [baseline, setBaseline] = useState<number | null>(null)
   const start = useStartPrReview(prId)
-  const review = usePrReview(prId, started)
+  const review = usePrReview(prId, baseline !== null)
 
   useEffect(() => {
     // Released on the engine's answer, not on a timer: an interrupted review reports no
     // running job, and this is what brings the row back rather than leaving it dead.
-    if (started && review.dataUpdatedAt !== 0 && !isRunning(review.data)) setStarted(false)
-  }, [started, review.dataUpdatedAt, review.data])
+    if (shouldReleaseReview(baseline, review.dataUpdatedAt, review.data)) setBaseline(null)
+  }, [baseline, review.dataUpdatedAt, review.data])
 
-  const isBusy = started || start.isPending
+  const isBusy = baseline !== null || start.isPending
 
   return (
     <button
@@ -43,9 +59,12 @@ export function ReviewStarter({ prId, onError }: { prId: number; onError: (error
         // The whole row navigates on click, and reviewing is not navigating.
         event.stopPropagation()
         start.mutate(undefined, {
-          onSuccess: () => setStarted(true),
+          // The stale timestamp, deliberately: it is the thing the next fetch has to
+          // differ from. 0 when this pull request's review has never been read.
+          onSuccess: () => setBaseline(review.dataUpdatedAt),
           onError: (error) => {
-            setStarted(false)
+            // Nothing was started, so the row has to come back.
+            setBaseline(null)
             onError(error)
           },
         })

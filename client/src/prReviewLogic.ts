@@ -28,6 +28,28 @@ export function isRunning(review: PrReviewView | undefined): boolean {
 }
 
 /**
+ * Whether a row that started a review may go back to offering one.
+ *
+ * `baseline` is the review query's `dataUpdatedAt` at the moment of starting, or null when
+ * this row started nothing. The comparison is against that rather than against a clock,
+ * because the query serves whatever is cached under the pull request's key even while it
+ * is switched off: after the user has once opened the pull request's page, a stale
+ * `{running: false}` is sitting there from before the click. Reading that as the engine's
+ * answer released the row while the review it had just started was still running.
+ *
+ * `dataUpdatedAt` changes when, and only when, a fetch resolves. So a changed value is an
+ * answer about this review, and an unchanged one is the answer from before it.
+ */
+export function shouldReleaseReview(
+  baseline: number | null,
+  dataUpdatedAt: number,
+  review: PrReviewView | undefined,
+): boolean {
+  if (baseline === null) return false
+  return dataUpdatedAt !== baseline && !isRunning(review)
+}
+
+/**
  * A remark already on GitHub is not offered again. Posting it twice would duplicate the
  * comment, and the engine refuses it anyway.
  */

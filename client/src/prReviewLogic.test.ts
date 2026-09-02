@@ -4,6 +4,7 @@ import {
   isDone,
   isRunning,
   outdatedLabel,
+  shouldReleaseReview,
   summary,
   unposted,
   type StoredReviewFinding,
@@ -85,5 +86,42 @@ describe('isRunning', () => {
     expect(isRunning({ findings: [], outdated: false })).toBe(false)
     expect(isRunning(undefined)).toBe(false)
     expect(isRunning({ findings: [], outdated: false, running: true })).toBe(true)
+  })
+})
+
+describe('shouldReleaseReview', () => {
+  const idle = { findings: [], outdated: false, running: false }
+  const busy = { findings: [], outdated: false, running: true }
+
+  it('does not release a row that started nothing', () => {
+    expect(shouldReleaseReview(null, 5000, idle)).toBe(false)
+  })
+
+  it('does not release on the answer from before the start', () => {
+    // The bug this exists for. The query serves the cached `{running: false}` from an
+    // earlier visit to the pull request's page even while it is switched off, so the
+    // stale answer arrived before the refetch the start had triggered. Releasing on it
+    // put the row back to "Review" with a review actually running behind it.
+    expect(shouldReleaseReview(5000, 5000, idle)).toBe(false)
+  })
+
+  it('does not release while the engine still reports work', () => {
+    expect(shouldReleaseReview(5000, 6000, busy)).toBe(false)
+  })
+
+  it('releases on a newer answer that reports no work', () => {
+    expect(shouldReleaseReview(5000, 6000, idle)).toBe(true)
+  })
+
+  it('releases an interrupted review, which reports no work and never comes back', () => {
+    expect(shouldReleaseReview(5000, 6000, { findings: [], outdated: false })).toBe(true)
+  })
+
+  it('handles a first-ever start, where there was nothing cached to compare against', () => {
+    // `dataUpdatedAt` is 0 until a fetch resolves, so 0 is a real baseline and not a
+    // stand-in for "not started". That is what null is for.
+    expect(shouldReleaseReview(0, 0, undefined)).toBe(false)
+    expect(shouldReleaseReview(0, 6000, busy)).toBe(false)
+    expect(shouldReleaseReview(0, 6000, idle)).toBe(true)
   })
 })

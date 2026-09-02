@@ -275,8 +275,14 @@ export function PRsScreen({
                     setPinned.mutate({ id: row.id, pinned: !row.pinned }, { onError })
                   }}
                 />
-                {/* Opens the agent panel, which is task group 5. */}
+                {/*
+                  Opens the agent panel, which is task group 5. It still takes the click,
+                  because without one it renders as a span and the click reaches the row,
+                  which navigates. The Swift's button opens the panel and never navigates,
+                  so doing nothing is the closer stand-in of the two.
+                */}
                 <RowAction
+                  onClick={(event) => event.stopPropagation()}
                   label={row.messageCount > 0 ? `Chat · ${row.messageCount}` : 'Agent'}
                   symbol={row.messageCount > 0 ? 'bubble-left-fill' : 'sparkles'}
                   color={row.messageCount > 0 ? 'var(--wb-text)' : 'var(--wb-n400)'}
