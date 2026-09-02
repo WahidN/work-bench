@@ -3,10 +3,19 @@
 import { Icon } from './Icon'
 import { headerKicker, todayDateString, type SidebarSection } from './logic'
 
-function HeaderActionButton({ title, symbol }: { title: string; symbol: string }) {
+function HeaderActionButton({
+  title,
+  symbol,
+  onClick,
+}: {
+  title: string
+  symbol: string
+  onClick?: () => void
+}) {
   return (
     <button
       data-action={title}
+      onClick={onClick}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -31,6 +40,7 @@ export function AppHeader({
   activeProjectCount,
   kickerOverride,
   headingOverride,
+  onAddProject,
 }: {
   section: SidebarSection
   activeProjectCount: number
@@ -41,6 +51,11 @@ export function AppHeader({
    */
   kickerOverride?: string
   headingOverride?: string
+  /*
+   * On Projects the second action is Add project rather than Agent, which is a different
+   * action and not the same one relabelled. Refresh and Agent are task groups 6 and 5.
+   */
+  onAddProject?: () => void
 }) {
   return (
     <header
@@ -83,6 +98,7 @@ export function AppHeader({
         <HeaderActionButton
           title={section === 'Projects' ? 'Add project' : 'Agent'}
           symbol={section === 'Projects' ? 'plus' : 'sparkles'}
+          onClick={section === 'Projects' ? onAddProject : undefined}
         />
       </div>
     </header>

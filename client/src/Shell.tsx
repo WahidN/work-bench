@@ -10,14 +10,35 @@ import { useEffect, useRef, useState } from 'react'
 import { useIsFetching } from '@tanstack/react-query'
 import { AppHeader } from './AppHeader'
 import { EngineDownBanner } from './EngineDownBanner'
+import { ErrorAlert } from './ErrorAlert'
+import { JiraScreen } from './JiraScreen'
 import { PrDetailScreen } from './PrDetailScreen'
 import { PRsScreen } from './PRsScreen'
+import { ProjectDetailScreen } from './ProjectDetailScreen'
+import { ProjectFormSheet, type ProjectSheetMode } from './ProjectFormSheet'
+import { ProjectsScreen } from './ProjectsScreen'
 import { Sidebar } from './Sidebar'
 import { TodayScreen } from './TodayScreen'
 import { renderTrayIcon } from './trayBadge'
-import { runFidelityCheck, runPrDetailFidelityCheck, runPrFidelityCheck } from './fidelityCheck'
-import { useShellData } from './queries'
-import { prListRef, type SidebarSection } from './logic'
+import {
+  runFidelityCheck,
+  runPrDetailFidelityCheck,
+  runPrFidelityCheck,
+  runProjectsFidelityCheck,
+} from './fidelityCheck'
+import {
+  useAllTodos,
+  useCreateProject,
+  useCreateTodo,
+  useDeleteProject,
+  useDeleteTodo,
+  useSetTodoDone,
+  useSetTodoPinned,
+  useShellData,
+  useUpdateProject,
+} from './queries'
+import { projectCards } from './projectsLogic'
+import { prListRef, type SidebarSection, type TaskRow as TaskRowModel } from './logic'
 
 const IN_TAURI = '__TAURI_INTERNALS__' in window
 
@@ -42,13 +63,58 @@ export function Shell() {
    * the detail screen the new row instead of one frozen at the moment of the click.
    */
   const [openPrId, setOpenPrId] = useState<number | null>(null)
+  /** ContentView.swift's `openProjectId`, held for the same reason `openPrId` is. */
+  const [openProjectId, setOpenProjectId] = useState<number | null>(null)
+  const [sheet, setSheet] = useState<ProjectSheetMode | null>(null)
+  const [alert, setAlert] = useState<string | null>(null)
   const data = useShellData()
+  /*
+   * Every todo, done ones included, read by three surfaces: the sidebar's Jira count, the
+   * project cards, and the Jira screen. ContentView.swift loads it once at that level for
+   * the same three, rather than per screen.
+   */
+  const allTodos = useAllTodos()
+  const everyTodo = allTodos.data ?? []
   const lastBadge = useRef<number | null>(null)
 
+  const createTodo = useCreateTodo()
+  const deleteTodo = useDeleteTodo()
+  const setTodoDone = useSetTodoDone()
+  const setTodoPinned = useSetTodoPinned()
+  const createProject = useCreateProject()
+  const updateProject = useUpdateProject()
+  const deleteProject = useDeleteProject()
+
+  const onError = (error: Error) => setAlert(String(error))
+
   // A pull request that left the list, merged or closed, closes its page rather than
-  // leaving a screen backed by a row that no longer exists.
+  // leaving a screen backed by a row that no longer exists. Same for a deleted project.
   const openPr = data.prs.find((pr) => pr.id === openPrId)
+  const openProject = data.projects.find((project) => project.id === openProjectId)
   const isDetailOpen = openPr !== undefined
+  const isProjectOpen = openProject !== undefined
+
+  /*
+   * `today.todos`, not `/todos`, which is what ContentView.swift hands the project screen.
+   *
+   * The engine's `listTodayTodos` is `(source = 'manual' OR pinned = 1) AND (done = 0 OR
+   * done_at = today)`, so it carries the tasks finished today; `/todos` carries only open
+   * ones. Reading the wrong list made a task vanish from a project's Tasks tab the moment
+   * it was ticked, with no way to untick it, which is also why `projectTaskRows` bothers
+   * to sort the done ones last.
+   */
+  const projectTodos = data.today?.todos ?? []
+
+  /** The Tasks tab's checkbox routes exactly as Today's does: complete, or unpin. */
+  function toggleProjectTask(row: TaskRowModel) {
+    const id = Number(row.id.split('-')[1])
+    if (row.source === 'pinnedTodo') {
+      setTodoPinned.mutate({ id, pinned: false }, { onError })
+      return
+    }
+    const todo = projectTodos.find((candidate) => candidate.id === id)
+    if (todo) setTodoDone.mutate({ id, done: !todo.done }, { onError })
+  }
 
   // Only pushed when it changes: re-rasterising an identical icon every 30 seconds is
   // work for nothing.
@@ -96,18 +162,22 @@ export function Shell() {
         // outlive the row it names, and then the list is on screen while a detail check
         // would be measuring elements that are not there.
         setFidelity(
-          section !== 'Pull requests'
-            ? runFidelityCheck()
-            : isDetailOpen
+          section === 'Pull requests'
+            ? isDetailOpen
               ? runPrDetailFidelityCheck()
-              : runPrFidelityCheck(),
+              : runPrFidelityCheck()
+            : section === 'Projects'
+              ? runProjectsFidelityCheck()
+              : runFidelityCheck(),
         )
       })
     })
     return () => {
       cancelled = true
     }
-  }, [data.isLoading, data.today, data.prs, section, isDetailOpen, inFlight])
+    // `isProjectOpen`, not `openProjectId`: opening a project fires no query, so nothing
+    // else in this list changes and the check would keep reporting the list screen.
+  }, [data.isLoading, data.today, data.prs, section, isDetailOpen, isProjectOpen, inFlight])
 
   const activeProjectCount = data.projects.filter((project) => project.status === 'active').length
 
@@ -133,9 +203,17 @@ export function Shell() {
         onSelect={(next) => {
           setSection(next)
           setOpenPrId(null)
+          setOpenProjectId(null)
+        }}
+        /* `openProject` opens the project's page rather than only selecting the row. */
+        selectedProjectId={openProjectId}
+        onSelectProject={(project) => {
+          setSection('Projects')
+          setOpenPrId(null)
+          setOpenProjectId(project.id)
         }}
         todos={data.today?.todos ?? []}
-        jiraTodos={data.todos}
+        jiraTodos={everyTodo}
         tickets={data.tickets}
         prs={data.prs}
         projects={data.projects}
@@ -147,6 +225,7 @@ export function Shell() {
           activeProjectCount={activeProjectCount}
           kickerOverride={prHeaderKicker}
           headingOverride={prHeaderHeading}
+          onAddProject={() => setSheet({ kind: 'create' })}
         />
 
         {/*
@@ -198,13 +277,91 @@ export function Shell() {
               projects={data.projects}
               tickets={data.tickets}
             />
+          ) : section === 'Projects' ? (
+            openProject !== undefined ? (
+              <ProjectDetailScreen
+                // Keyed on the id for the same reason the pull request page is: the notes
+                // saver, the open tab and the quick-add draft all belong to one project.
+                key={openProject.id}
+                project={openProject}
+                projects={data.projects}
+                todos={projectTodos}
+                tickets={data.tickets}
+                prs={data.prs}
+                onBack={() => setOpenProjectId(null)}
+                onEdit={() => setSheet({ kind: 'edit', project: openProject })}
+                onAddTask={(text) =>
+                  createTodo.mutate({ text, projectId: openProject.id }, { onError })
+                }
+                onToggleTask={(row) => toggleProjectTask(row)}
+                onDeleteTodo={(todo) => deleteTodo.mutate({ id: todo.id }, { onError })}
+                onOpenWork={(item) => {
+                  // A pull request opens its own page; an issue has no page of its own, so
+                  // the Swift's ticket case navigates to the Jira screen.
+                  if (item.kind === 'pullRequest') {
+                    setSection('Pull requests')
+                    setOpenPrId(item.targetId)
+                  } else {
+                    setSection('Jira')
+                  }
+                  setOpenProjectId(null)
+                }}
+              />
+            ) : (
+              <ProjectsScreen
+                cards={projectCards({
+                  projects: data.projects,
+                  // ProjectsLogic.cards is fed `jiraViewModel.todos` in the Swift, so the
+                  // full list. It matters for `activityText`, which reads every todo's
+                  // createdAt: leaving the done ones out made a project's last activity
+                  // read older than it was.
+                  todos: everyTodo,
+                  tickets: data.tickets,
+                  prs: data.prs,
+                  now: new Date(),
+                })}
+                onSelect={(card) => setOpenProjectId(card.id)}
+              />
+            )
           ) : (
-            <p style={{ padding: 'var(--wb-s8)', color: 'var(--wb-n500)' }}>
-              Not ported yet. Task groups 4 to 7 cover this screen.
-            </p>
+            <JiraScreen todos={everyTodo} projects={data.projects} tickets={data.tickets} />
           )}
         </div>
       </main>
+
+      {sheet !== null && (
+        <ProjectFormSheet
+          mode={sheet}
+          errorMessage={null}
+          onCancel={() => setSheet(null)}
+          onSave={(input) => {
+            const done = { onSuccess: () => setSheet(null), onError }
+            if (sheet.kind === 'create') createProject.mutate(input, done)
+            else updateProject.mutate({ id: sheet.project.id, input }, done)
+          }}
+          /* Only an existing project can be removed, so create offers nothing. */
+          onDelete={
+            sheet.kind === 'edit'
+              ? () => {
+                  const id = sheet.project.id
+                  deleteProject.mutate(
+                    { id },
+                    {
+                      onSuccess: () => {
+                        setSheet(null)
+                        // The page it was opened from is gone with it.
+                        setOpenProjectId((current) => (current === id ? null : current))
+                      },
+                      onError,
+                    },
+                  )
+                }
+              : null
+          }
+        />
+      )}
+
+      {alert !== null && <ErrorAlert message={alert} onDismiss={() => setAlert(null)} />}
 
       {/* Read by the checks rather than shown for its own sake. */}
       <pre

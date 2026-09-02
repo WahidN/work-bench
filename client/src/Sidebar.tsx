@@ -23,6 +23,8 @@ const WIDTH = 228
 export function Sidebar({
   selection,
   onSelect,
+  selectedProjectId,
+  onSelectProject,
   todos,
   jiraTodos,
   tickets,
@@ -31,6 +33,9 @@ export function Sidebar({
 }: {
   selection: SidebarSection
   onSelect: (section: SidebarSection) => void
+  /** SidebarLogic.isProjectSelected is `project.id == selectedProject?.id`, so an id is enough. */
+  selectedProjectId: number | null
+  onSelectProject: (project: Project) => void
   todos: Todo[]
   jiraTodos: Todo[]
   tickets: Ticket[]
@@ -169,10 +174,13 @@ export function Sidebar({
           <span style={{ marginLeft: 'auto', color: 'var(--wb-n700)' }}>{projects.length}</span>
         </div>
         <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {projects.map((project, index) => (
+          {projects.map((project, index) => {
+            const isSelected = project.id === selectedProjectId
+            return (
             <button
               key={project.id}
               data-project={project.id}
+              onClick={() => onSelectProject(project)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -180,8 +188,10 @@ export function Sidebar({
                 padding: 'var(--wb-s2) var(--wb-s3)',
                 borderRadius: 'var(--wb-radius-md)',
                 border: 'none',
-                background: 'transparent',
-                color: 'var(--wb-n500)',
+                // WBRowButtonStyle with `selectedBackground: Theme.Neutral.n900`, which is
+                // a different selected tone from the nav rows above.
+                background: isSelected ? 'var(--wb-n900)' : 'transparent',
+                color: isSelected ? 'var(--wb-text)' : 'var(--wb-n500)',
                 font: 'inherit',
                 cursor: 'pointer',
                 textAlign: 'left',
@@ -217,7 +227,8 @@ export function Sidebar({
                 {projectOpenCount(project, todos)}
               </span>
             </button>
-          ))}
+            )
+          })}
         </div>
       </div>
 

@@ -46,6 +46,9 @@ let symbolNames = [
     "arrow.left",
     "doc.text",
     "bubble.left",
+    // ProjectDetailScreen and JiraScreen.
+    "chevron.left",
+    "arrow.up.right.square",
 ]
 
 let outputDirectory = "public/icons"

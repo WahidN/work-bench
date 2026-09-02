@@ -154,7 +154,59 @@ export function runPrDetailFidelityCheck(): string {
   return report('PR DETAIL FIDELITY', checks)
 }
 
-/** One report, so the three checks cannot drift in how they say PASS. */
+/**
+ * The Projects section, list or detail. Both are measured by one function because both can
+ * be on screen under the same section and only one set of selectors will match; the checks
+ * for the other side are skipped rather than reported missing.
+ */
+export function runProjectsFidelityCheck(): string {
+  const checks: Check[] = []
+  const add = (label: string, want: number, got: number | null) =>
+    checks.push({ label, want, got })
+
+  const isDetail = document.querySelector('#project-detail-screen') !== null
+
+  if (!isDetail) {
+    // ProjectsScreen.swift: LazyVGrid adaptive minimum 280, spacing s4, .padding(s8).
+    // ProjectCardView: .padding(s6), minHeight 140, radius md, 1px border.
+    add('projects padding', S.s8, px('#projects-screen', 'padding-top'))
+    add('projects grid gap', S.s4, px('#projects-screen', 'row-gap'))
+    add('project card padding', S.s6, px('[data-project-card]', 'padding-top'))
+    add('project card radius', 8, px('[data-project-card]', 'border-top-left-radius'))
+    add('project card border', 1, px('[data-project-card]', 'border-top-width'))
+    add(
+      'project card min height',
+      140,
+      px('[data-project-card]', 'min-height'),
+    )
+    add('card footer rule', 1, px('[data-card-footer]', 'border-top-width'))
+    add('card footer padding', S.s3, px('[data-card-footer]', 'padding-top'))
+
+    const card = document.querySelector('[data-project-card]')
+    add(
+      'project card at least 280 wide',
+      1,
+      card === null ? null : card.getBoundingClientRect().width >= 280 ? 1 : 0,
+    )
+  } else {
+    // ProjectDetailScreen.swift: HStack spacing s8, .padding(s8), right column 300 wide,
+    // tabs .padding(3) with items s2 / s6, quickAdd s3 / s4, facts card .padding(s6).
+    add('detail padding', S.s8, px('#project-detail-screen', 'padding-top'))
+    add('detail column gap', S.s8, px('#project-detail-screen', 'column-gap'))
+    add('right column width', 300, box('#project-facts')?.width ?? null)
+    add('right column gap', S.s6, px('#project-facts', 'row-gap'))
+    add('tabs padding', 3, px('#project-tabs', 'padding-top'))
+    add('tab padding-top', S.s2, px("[data-project-tab='Tasks']", 'padding-top'))
+    add('tab padding-left', S.s6, px("[data-project-tab='Tasks']", 'padding-left'))
+    add('tab radius', 6, px("[data-project-tab='Tasks']", 'border-top-left-radius'))
+    add('quick add padding-top', S.s3, px('#project-quick-add', 'padding-top'))
+    add('quick add padding-left', S.s4, px('#project-quick-add', 'padding-left'))
+  }
+
+  return report(isDetail ? 'PROJECT DETAIL FIDELITY' : 'PROJECTS FIDELITY', checks)
+}
+
+/** One report, so the checks cannot drift in how they say PASS. */
 function report(title: string, checks: Check[]): string {
   const failures = checks
     .filter(({ want, got }) => got === null || Math.abs(got - want) > LAYOUT_UNIT)
