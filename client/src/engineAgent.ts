@@ -69,3 +69,20 @@ export async function chooseEngineDirectory(current: string): Promise<string | n
 
 /** Whether the launchd side can be reached at all. Settings says so rather than pretending. */
 export const canManageAgent = IN_TAURI
+
+/**
+ * Opens a URL in the user's own browser.
+ *
+ * `window.open` inside a Tauri window opens it in that window, so the Atlassian consent
+ * screen would replace the app and leave no way back. `NSWorkspace.shared.open` is what
+ * the Swift uses, and the opener plugin is the same call. In a browser `window.open` is
+ * already correct.
+ */
+export async function openInBrowser(url: string): Promise<void> {
+  if (!IN_TAURI) {
+    window.open(url, '_blank', 'noopener')
+    return
+  }
+  const { openUrl } = await import('@tauri-apps/plugin-opener')
+  await openUrl(url)
+}

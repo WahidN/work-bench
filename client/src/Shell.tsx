@@ -601,6 +601,8 @@ export function Shell() {
       {isSettingsOpen && (
         <SettingsSheet
           isEngineDown={data.error !== null}
+          agent={agent}
+          onAgentChange={setAgent}
           onClose={() => setIsSettingsOpen(false)}
         />
       )}

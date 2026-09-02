@@ -11,14 +11,14 @@
 import { useEffect, useState } from 'react'
 import { Icon } from './Icon'
 import {
-  UNKNOWN_AGENT,
   agentInstall,
   agentRemove,
-  agentState,
   canManageAgent,
   chooseEngineDirectory,
+  openInBrowser,
   type AgentState,
 } from './engineAgent'
+import { readSavedDirectory, saveDirectory, truncateHead } from './settingsStore'
 import {
   useAuthorizeJira,
   useChooseJiraSite,
@@ -124,6 +124,7 @@ function Field({
 function Mono({ text, muted }: { text: string; muted?: boolean }) {
   return (
     <span
+      title={text}
       style={{
         flex: 1,
         minWidth: 0,
@@ -131,14 +132,10 @@ function Mono({ text, muted }: { text: string; muted?: boolean }) {
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
         color: muted ? 'var(--wb-n600)' : 'var(--wb-text)',
         overflow: 'hidden',
-        // `.truncationMode(.head)`: the tail of a path is the part that identifies it.
-        textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
-        direction: 'rtl',
-        textAlign: 'left',
       }}
     >
-      {text}
+      {truncateHead(text)}
     </span>
   )
 }
@@ -147,28 +144,28 @@ function Mono({ text, muted }: { text: string; muted?: boolean }) {
 
 function EngineSection({
   isEngineDown,
+  agent,
+  onAgentChange,
   onError,
 }: {
   isEngineDown: boolean
+  /*
+   * From the Shell, never read again here. `EngineViewModel` is one type on purpose, so
+   * the Settings sheet and the unreachable banner cannot disagree about whether the engine
+   * is up; a second copy here meant installing from the sheet left the banner still
+   * offering Start.
+   */
+  agent: AgentState
+  onAgentChange: (state: AgentState) => void
   onError: (message: string) => void
 }) {
-  const [agent, setAgent] = useState<AgentState>(UNKNOWN_AGENT)
-  const [directory, setDirectory] = useState('')
+  const [directory, setDirectory] = useState(readSavedDirectory)
   const [isBusy, setIsBusy] = useState(false)
-
-  useEffect(() => {
-    if (!canManageAgent) return
-    void agentState()
-      .then(setAgent)
-      .catch((error: unknown) => onError(String(error)))
-    // Read once when the sheet opens, as `.task` does.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   function run(action: () => Promise<AgentState>) {
     setIsBusy(true)
     void action()
-      .then(setAgent)
+      .then(onAgentChange)
       .catch((error: unknown) => onError(String(error)))
       .finally(() => setIsBusy(false))
   }
@@ -206,7 +203,9 @@ function EngineSection({
               label="Choose…"
               onClick={() => {
                 void chooseEngineDirectory(directory).then((chosen) => {
-                  if (chosen !== null) setDirectory(chosen)
+                  if (chosen === null) return
+                  setDirectory(chosen)
+                  saveDirectory(chosen)
                 })
               }}
             />
@@ -306,9 +305,13 @@ function JiraSection({ onError }: { onError: (message: string) => void }) {
     authorize.mutate(undefined, {
       onSuccess: (result) => {
         setIsWaiting(true)
-        // A real browser, not the webview: the Atlassian consent screen is not something
-        // to render inside the app, and the callback goes to the engine either way.
-        window.open(result.url, '_blank', 'noopener')
+        /*
+         * A real browser, not the webview. `window.open` inside a Tauri window opens the
+         * consent screen in that window and the app's own UI is gone behind a login page
+         * with no back button. The Swift uses `NSWorkspace.shared.open`, and the opener
+         * plugin is the same thing.
+         */
+        void openInBrowser(result.url).catch((error: unknown) => onError(String(error)))
       },
       onError: (error) => {
         setIsWaiting(false)
@@ -464,9 +467,13 @@ function JiraSection({ onError }: { onError: (message: string) => void }) {
 
 export function SettingsSheet({
   isEngineDown,
+  agent,
+  onAgentChange,
   onClose,
 }: {
   isEngineDown: boolean
+  agent: AgentState
+  onAgentChange: (state: AgentState) => void
   onClose: () => void
 }) {
   const [error, setError] = useState<string | null>(null)
@@ -514,7 +521,12 @@ export function SettingsSheet({
           Settings
         </span>
 
-        <EngineSection isEngineDown={isEngineDown} onError={setError} />
+        <EngineSection
+          isEngineDown={isEngineDown}
+          agent={agent}
+          onAgentChange={onAgentChange}
+          onError={setError}
+        />
 
         <span style={{ height: 1, background: 'var(--wb-n900)' }} />
 
