@@ -138,13 +138,97 @@ export const usePrReview = (id: number, enabled = true) =>
     refetchInterval: (query) => (isRunning(query.state.data) ? 5_000 : false),
   })
 
-/*
- * There is deliberately no `usePrDiff` yet. `GET /prs/:id/diff` opens and force-removes
- * the pull request's worktree under the PR job lock, and the only screen that wants it is
- * the agent panel in task group 5. A hook standing ready for a caller that does not exist
- * is the kind that gets called by accident, and this one costs a worktree and a 409
- * against the fix pipeline when it does.
+/**
+ * The raw unified diff, for the agent panel's `DiffView`.
+ *
+ * `enabled` is not a nicety. The route opens and force-removes the pull request's worktree
+ * under the PR job lock, so a fetch nobody asked for would contend with the fix pipeline
+ * and with review itself, and answer 409 when it lost.
+ *
+ * A failure is not surfaced anywhere, matching `loadDiff`'s `try?`: a merged pull request
+ * has no diff, and a 409 means another job holds the lock. Neither is worth interrupting a
+ * conversation for.
  */
+export const usePrDiff = (id: number, enabled: boolean) =>
+  useQuery<{ diff: string }>({
+    queryKey: keys.prDiff(id),
+    queryFn: () => engine.get<{ diff: string }>(`/prs/${id}/diff`),
+    enabled,
+    // A worktree per refetch is too expensive to repeat on a window focus.
+    staleTime: Infinity,
+    retry: false,
+  })
+
+/* ------------------------------------------------------------ Agent chat */
+
+export type ChatMessage = { id: number; role: 'user' | 'assistant'; content: string }
+
+/**
+ * One target's thread.
+ *
+ * The four shapes are not one hook with a switch, because they are four different paths
+ * and two of them come wrapped in the target itself: `GET /tickets/:id` and `GET /prs/:id`
+ * answer the record with its `messages` on it, which is also why `AgentChatViewModel`
+ * refreshes its target from those two and not from the other two. A message can change a
+ * ticket's status or a pull request's, and a chat cannot change a todo or a project.
+ */
+export const useProjectThread = (id: number, enabled: boolean) =>
+  useQuery<ChatMessage[]>({
+    queryKey: keys.projectMessages(id),
+    queryFn: () => engine.get<ChatMessage[]>(`/projects/${id}/messages`),
+    enabled,
+  })
+
+export const useTodoThread = (id: number, enabled: boolean) =>
+  useQuery<ChatMessage[]>({
+    queryKey: keys.todoMessages(id),
+    queryFn: () => engine.get<ChatMessage[]>(`/todos/${id}/messages`),
+    enabled,
+  })
+
+/** The ticket with its thread, so a status the agent changed comes back with it. */
+export const useTicketThread = (id: number, enabled: boolean) =>
+  useQuery<Ticket & { messages?: ChatMessage[] }>({
+    queryKey: keys.ticket(id),
+    queryFn: () => engine.get<Ticket & { messages?: ChatMessage[] }>(`/tickets/${id}`),
+    enabled,
+  })
+
+export const usePrThread = (id: number, enabled: boolean) =>
+  useQuery<Pr & { messages?: ChatMessage[] }>({
+    queryKey: keys.pr(id),
+    queryFn: () => engine.get<Pr & { messages?: ChatMessage[] }>(`/prs/${id}`),
+    enabled,
+  })
+
+/*
+ * Sending a message runs a headless Claude session, so these requests are held open for
+ * minutes. There is no polling to do and nothing to time out against: the engine answers
+ * when the agent has answered, which is what `AgentChatViewModel.send` awaits.
+ */
+export const useSendProjectMessage = (id: number) =>
+  useEngineMutation(
+    (args: { text: string }) => engine.post<unknown>(`/projects/${id}/messages`, args),
+    [keys.projectMessages(id), keys.projects],
+  )
+
+export const useSendTicketMessage = (id: number) =>
+  useEngineMutation(
+    (args: { text: string }) => engine.post<unknown>(`/tickets/${id}/messages`, args),
+    [keys.ticket(id), keys.tickets, keys.today],
+  )
+
+export const useSendTodoMessage = (id: number) =>
+  useEngineMutation(
+    (args: { text: string }) => engine.post<unknown>(`/todos/${id}/messages`, args),
+    [keys.todoMessages(id), keys.todos, keys.allTodos, keys.today],
+  )
+
+export const useSendPrMessage = (id: number) =>
+  useEngineMutation(
+    (args: { text: string }) => engine.post<PrChatResult>(`/prs/${id}/messages`, args),
+    [keys.pr(id), keys.prs, keys.today],
+  )
 
 /* ------------------------------------------------------------- Mutations */
 
@@ -371,6 +455,13 @@ export function useMergePr(id: number) {
   return useMutation<PrChatResult, Error, void>({
     mutationFn: () => engine.post<PrChatResult>(`/prs/${id}/merge`),
     onSuccess: (result) => {
+      /*
+       * The thread refreshes whatever the answer was, because a refusal is itself a
+       * message: `sendPrMessage` records the reply before returning it. That is why
+       * `AgentChatViewModel.merge` reloads unconditionally while `PrDetailViewModel.merge`
+       * reloads only on a merge that happened, and both are right for what they show.
+       */
+      void client.invalidateQueries({ queryKey: keys.pr(id) })
       if (result.action === 'refused') return
       for (const key of [keys.prDetail(id), keys.prs, keys.today]) {
         void client.invalidateQueries({ queryKey: key })

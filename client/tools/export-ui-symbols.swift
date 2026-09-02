@@ -49,6 +49,10 @@ let symbolNames = [
     // ProjectDetailScreen and JiraScreen.
     "chevron.left",
     "arrow.up.right.square",
+    // AgentChatPanel.
+    "xmark",
+    "arrow.up",
+    "folder",
 ]
 
 let outputDirectory = "public/icons"

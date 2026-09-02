@@ -8,6 +8,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useIsFetching } from '@tanstack/react-query'
+import { AgentChatPanel } from './AgentChatPanel'
+import { chatTargetForTodo, targetProjectId, type AgentChatTarget } from './agentChatLogic'
 import { AppHeader } from './AppHeader'
 import { EngineDownBanner } from './EngineDownBanner'
 import { ErrorAlert } from './ErrorAlert'
@@ -23,6 +25,8 @@ import { renderTrayIcon } from './trayBadge'
 import {
   runFidelityCheck,
   runPrDetailFidelityCheck,
+  runAgentPanelFidelityCheck,
+  runJiraFidelityCheck,
   runPrFidelityCheck,
   runProjectsFidelityCheck,
 } from './fidelityCheck'
@@ -67,6 +71,8 @@ export function Shell() {
   const [openProjectId, setOpenProjectId] = useState<number | null>(null)
   const [sheet, setSheet] = useState<ProjectSheetMode | null>(null)
   const [alert, setAlert] = useState<string | null>(null)
+  /** `AgentChatViewModel.target`: null is closed, which is what `isOpen` reads. */
+  const [chatTarget, setChatTarget] = useState<AgentChatTarget | null>(null)
   const data = useShellData()
   /*
    * Every todo, done ones included, read by three surfaces: the sidebar's Jira count, the
@@ -93,6 +99,7 @@ export function Shell() {
   const openProject = data.projects.find((project) => project.id === openProjectId)
   const isDetailOpen = openPr !== undefined
   const isProjectOpen = openProject !== undefined
+  const isChatOpen = chatTarget !== null
 
   /*
    * `today.todos`, not `/todos`, which is what ContentView.swift hands the project screen.
@@ -104,6 +111,20 @@ export function Shell() {
    * to sort the done ones last.
    */
   const projectTodos = data.today?.todos ?? []
+
+  /*
+   * The project the open chat belongs to, and for a pull request the issue that supplies
+   * its title. Both are looked up here rather than carried on the target, so a poll that
+   * refreshes the lists feeds the panel the current record.
+   */
+  const chatProject =
+    chatTarget === null
+      ? undefined
+      : data.projects.find((candidate) => candidate.id === targetProjectId(chatTarget))
+  const chatLinkedTicket =
+    chatTarget?.kind === 'pullRequest'
+      ? data.tickets.find((candidate) => candidate.id === chatTarget.pr.ticketId)
+      : undefined
 
   /** The Tasks tab's checkbox routes exactly as Today's does: complete, or unpin. */
   function toggleProjectTask(row: TaskRowModel) {
@@ -161,14 +182,23 @@ export function Shell() {
         // Keyed on what is actually rendered, not on what was asked for. `openPrId` can
         // outlive the row it names, and then the list is on screen while a detail check
         // would be measuring elements that are not there.
+        /*
+         * The panel wins when it is open, because it is the thing that just changed. Every
+         * section otherwise gets its own check: Today's used to be the fallback for all of
+         * them, so opening Jira reported nine of Today's elements as missing.
+         */
         setFidelity(
-          section === 'Pull requests'
-            ? isDetailOpen
-              ? runPrDetailFidelityCheck()
-              : runPrFidelityCheck()
-            : section === 'Projects'
-              ? runProjectsFidelityCheck()
-              : runFidelityCheck(),
+          isChatOpen
+            ? runAgentPanelFidelityCheck()
+            : section === 'Pull requests'
+              ? isDetailOpen
+                ? runPrDetailFidelityCheck()
+                : runPrFidelityCheck()
+              : section === 'Projects'
+                ? runProjectsFidelityCheck()
+                : section === 'Jira'
+                  ? runJiraFidelityCheck()
+                  : runFidelityCheck(),
         )
       })
     })
@@ -177,7 +207,16 @@ export function Shell() {
     }
     // `isProjectOpen`, not `openProjectId`: opening a project fires no query, so nothing
     // else in this list changes and the check would keep reporting the list screen.
-  }, [data.isLoading, data.today, data.prs, section, isDetailOpen, isProjectOpen, inFlight])
+  }, [
+    data.isLoading,
+    data.today,
+    data.prs,
+    section,
+    isDetailOpen,
+    isProjectOpen,
+    isChatOpen,
+    inFlight,
+  ])
 
   const activeProjectCount = data.projects.filter((project) => project.status === 'active').length
 
@@ -226,6 +265,16 @@ export function Shell() {
           kickerOverride={prHeaderKicker}
           headingOverride={prHeaderHeading}
           onAddProject={() => setSheet({ kind: 'create' })}
+          /*
+           * The header's Agent button is project-scoped, unlike the one on a pull
+           * request's own page. `openProjectChat` in ContentView falls back to the first
+           * project when none is selected, so a fresh window still has something to ask
+           * about.
+           */
+          onOpenAgent={() => {
+            const project = openProject ?? data.projects[0]
+            if (project) setChatTarget({ kind: 'project', project })
+          }}
         />
 
         {/*
@@ -261,13 +310,14 @@ export function Shell() {
                 key={openPr.id}
                 pr={openPr}
                 onBack={() => setOpenPrId(null)}
-                onOpenAgent={() => {}}
+                onOpenAgent={() => setChatTarget({ kind: 'pullRequest', pr: openPr })}
               />
             ) : (
               <PRsScreen
                 prs={data.prs}
                 projects={data.projects}
                 onSelectPr={(pr) => setOpenPrId(pr.id)}
+                onOpenAgent={(pr) => setChatTarget({ kind: 'pullRequest', pr })}
               />
             )
           ) : section === 'Today' ? (
@@ -276,6 +326,7 @@ export function Shell() {
               prs={data.prs}
               projects={data.projects}
               tickets={data.tickets}
+              onOpenAgent={setChatTarget}
             />
           ) : section === 'Projects' ? (
             openProject !== undefined ? (
@@ -295,6 +346,18 @@ export function Shell() {
                 }
                 onToggleTask={(row) => toggleProjectTask(row)}
                 onDeleteTodo={(todo) => deleteTodo.mutate({ id: todo.id }, { onError })}
+                onChatTodo={(todo) => setChatTarget(chatTargetForTodo(todo, data.tickets))}
+                onChatWork={(item) => {
+                  // `chatTarget(for:)` in ContentView: an open work row is a pull request
+                  // or a ticket, and the panel takes whichever it is.
+                  if (item.kind === 'pullRequest') {
+                    const pr = data.prs.find((candidate) => candidate.id === item.targetId)
+                    if (pr) setChatTarget({ kind: 'pullRequest', pr })
+                  } else {
+                    const ticket = data.tickets.find((candidate) => candidate.id === item.targetId)
+                    if (ticket) setChatTarget({ kind: 'ticket', ticket })
+                  }
+                }}
                 onOpenWork={(item) => {
                   // A pull request opens its own page; an issue has no page of its own, so
                   // the Swift's ticket case navigates to the Jira screen.
@@ -324,10 +387,48 @@ export function Shell() {
               />
             )
           ) : (
-            <JiraScreen todos={everyTodo} projects={data.projects} tickets={data.tickets} />
+            <JiraScreen
+              todos={everyTodo}
+              projects={data.projects}
+              tickets={data.tickets}
+              onChat={(todo) => setChatTarget(chatTargetForTodo(todo, data.tickets))}
+            />
           )}
         </div>
       </main>
+
+      {/*
+        A sibling of `main`, so the panel takes width from the content rather than covering
+        it. ContentView.swift attaches it as an `.overlay(alignment: .trailing)` on the
+        content column, and on a 1440 window either reads the same; a narrow window is
+        where they differ, and pushing beats hiding what the user is looking at.
+      */}
+      {chatTarget !== null && (
+        <AgentChatPanel
+          // Keyed on the target, so switching from one issue to another resets the draft
+          // and the transcript instead of showing the previous thread under a new title.
+          // That is what `loadToken` guards in the ViewModel.
+          key={`${chatTarget.kind}-${
+            chatTarget.kind === 'project'
+              ? chatTarget.project.id
+              : chatTarget.kind === 'ticket'
+                ? chatTarget.ticket.id
+                : chatTarget.kind === 'pullRequest'
+                  ? chatTarget.pr.id
+                  : chatTarget.todo.id
+          }`}
+          target={chatTarget}
+          project={chatProject}
+          linkedTicket={chatLinkedTicket}
+          onClose={() => setChatTarget(null)}
+          onBackToProject={(project) => {
+            setChatTarget(null)
+            setSection('Projects')
+            setOpenPrId(null)
+            setOpenProjectId(project.id)
+          }}
+        />
+      )}
 
       {sheet !== null && (
         <ProjectFormSheet
