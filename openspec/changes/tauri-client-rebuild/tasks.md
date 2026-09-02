@@ -67,10 +67,10 @@
 
 ## 6. Commands, palette and shortcuts
 
-- [ ] 6.1 Port `CommandPalette.swift` and `CommandPaletteLogic`
-- [ ] 6.2 Port `AppCommands.swift`: Cmd-K, Cmd-1 to Cmd-4 and Cmd-J, as a Tauri menu plus
+- [x] 6.1 Port `CommandPalette.swift` and `CommandPaletteLogic`
+- [x] 6.2 Port `AppCommands.swift`: Cmd-K, Cmd-1 to Cmd-4 and Cmd-J, as a Tauri menu plus
       in-window key handling
-- [ ] 6.3 Confirm the shortcuts do not fire while a text field has focus
+- [x] 6.3 Confirm the shortcuts do not fire while a text field has focus
 
 ## 7. Settings and the engine lifecycle
 
