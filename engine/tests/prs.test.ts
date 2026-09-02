@@ -4,6 +4,7 @@ import { openDb } from '../src/db.js';
 import { createProject } from '../src/projects.js';
 import { createTicket, getTicket, updateTicketStatus } from '../src/tickets.js';
 import { recordPr, getPr, listPrs, updatePrStatus, addPrMessage, listPrMessages, setPrPinned, upsertGithubPr, reconcileGithubPrs } from '../src/prs.js';
+import { replaceReviewFindings, listReviewFindings } from '../src/prReviewStore.js';
 
 let db: Database.Database;
 let ticketId: number;
@@ -201,6 +202,45 @@ describe('reconciling github PRs', () => {
     expect(removed).toBe(1);
     expect(listPrs(db)).toEqual([]);
     expect(getTicket(db, ticket.id)!.prId).toBeNull();
+  });
+
+  it('deletes a PR that has a stored review waiting on it', () => {
+    /*
+     * The regression. `pr_review_findings.pr_id` is the third foreign key into
+     * prs(id) and the only one this function did not handle, so deleting a
+     * reviewed pull request failed with `FOREIGN KEY constraint failed`. One
+     * transaction wraps the whole loop, so that single row rolled back every
+     * other deletion and `POST /poll` reported the error with no clue which
+     * table caused it. Nine merged pull requests sat in the inbox for a day.
+     */
+    const db = openDb(':memory:');
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+    const reviewed = recordPr(db, { ticketId: null, projectId: project.id, branch: 'a', number: 1, url: 'u1', status: 'open' });
+    // A second doomed row, so the assertions below also prove the transaction no longer
+    // rolls back the deletions that were fine.
+    recordPr(db, { ticketId: null, projectId: project.id, branch: 'b', number: 2, url: 'u2', status: 'open' });
+    replaceReviewFindings(db, reviewed.id, [{ path: 'src/a.ts', line: 1, body: 'this drops the error' }], 'abc123');
+
+    const removed = reconcileGithubPrs(db, [project.id], [{ projectId: project.id, number: 99 }]);
+
+    expect(removed).toBe(2);
+    expect(listPrs(db)).toEqual([]);
+    // And the remarks went with it, rather than being left pointing at nothing.
+    expect(listReviewFindings(db, reviewed.id)).toEqual([]);
+  });
+
+  it('does not touch a reviewed PR that github still returns', () => {
+    // The other half: the delete is what takes the findings, so a pull request
+    // that stays keeps its review.
+    const db = openDb(':memory:');
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+    const kept = recordPr(db, { ticketId: null, projectId: project.id, branch: 'a', number: 1, url: 'u1', status: 'open' });
+    replaceReviewFindings(db, kept.id, [{ path: 'src/a.ts', line: 1, body: 'x' }], 'abc123');
+
+    reconcileGithubPrs(db, [project.id], [{ projectId: project.id, number: 1 }]);
+
+    expect(listPrs(db)).toHaveLength(1);
+    expect(listReviewFindings(db, kept.id)).toHaveLength(1);
   });
 
   it('skips reconciliation entirely when the fetch came back empty', () => {
