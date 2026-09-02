@@ -29,7 +29,6 @@ function project(over: Partial<Project> = {}): Project {
     status: 'active',
     blurb: '',
     notes: '',
-    createdAt: '2026-01-01T00:00:00.000Z',
     ...over,
   } as Project
 }
