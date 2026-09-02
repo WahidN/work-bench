@@ -150,8 +150,44 @@ export async function fetchReviewComment(repo: string, commentId: number): Promi
   };
 }
 
-/// The only write in this file. in_reply_to is what makes GitHub thread the
-/// reply under the original comment instead of starting a new one.
+export interface LineComment {
+  /// The commit the line numbers were read from. See headSha in git.ts.
+  commitSha: string;
+  path: string;
+  line: number;
+  body: string;
+}
+
+/// Posts a standalone comment on one line of the pull request.
+///
+/// The same endpoint as postReviewCommentReply, and the difference is entirely
+/// in what is left out: without in_reply_to this starts its own thread on a
+/// line instead of continuing someone else's.
+///
+/// side is always RIGHT, so the line is a number in the new version of the file.
+/// Commenting on a deleted line would need LEFT and a line counted against the
+/// old file, which is deliberately unsupported.
+///
+/// `line` goes through -F rather than -f because GitHub rejects it as a string.
+export async function postLineComment(
+  repo: string,
+  number: number,
+  comment: LineComment
+): Promise<{ id: number }> {
+  const slug = toRepoSlug(repo);
+  const { stdout } = await execa('gh', [
+    'api', `repos/${slug}/pulls/${number}/comments`,
+    '-f', `body=${comment.body}`,
+    '-f', `commit_id=${comment.commitSha}`,
+    '-f', `path=${comment.path}`,
+    '-F', `line=${comment.line}`,
+    '-f', 'side=RIGHT',
+  ]);
+  return JSON.parse(stdout || '{}');
+}
+
+/// in_reply_to is what makes GitHub thread the reply under the original comment
+/// instead of starting a new one.
 export async function postReviewCommentReply(
   repo: string,
   number: number,

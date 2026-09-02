@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { execa } from 'execa';
-import { worktreePathFor, mergePr, openDetachedWorktree, pushDetachedHead, createFixWorktree } from '../src/git.js';
+import { worktreePathFor, mergePr, openDetachedWorktree, pushDetachedHead, createFixWorktree, headSha } from '../src/git.js';
 
 vi.mock('execa');
 afterEach(() => vi.clearAllMocks());
@@ -61,6 +61,22 @@ describe('createFixWorktree', () => {
     expect(path).toBe('/repos/demo/.worktrees/fix-lin-7');
     expect(execa).toHaveBeenCalledWith('git', ['worktree', 'add', '-B', 'fix/lin-7', path, 'origin/main'], {
       cwd: '/repos/demo',
+    });
+  });
+});
+
+// The commit an inline comment anchors to has to be the one the diff was taken
+// from, or the line numbers describe code the comment is not attached to.
+// Reading it from the worktree is what keeps those two in step.
+describe('headSha', () => {
+  it('reads the checked-out commit of the worktree', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: 'a1b2c3d4\n' } as any);
+
+    const sha = await headSha('/repos/demo/.worktrees/feat-header');
+
+    expect(sha).toBe('a1b2c3d4');
+    expect(execa).toHaveBeenCalledWith('git', ['rev-parse', 'HEAD'], {
+      cwd: '/repos/demo/.worktrees/feat-header',
     });
   });
 });

@@ -13,6 +13,22 @@ export function getJob(db: Database.Database, id: number): Job | null {
   return row ? rowToJob(row) : null;
 }
 
+/// Whether anything is working on this target right now.
+///
+/// The same condition `acquireJob` refuses on, which is what makes it the honest
+/// answer to "can a review be started". It covers any job on the target, not only
+/// a review: a chat revision holds the same lock, and a review could not start
+/// during one either.
+export function isJobRunning(
+  db: Database.Database,
+  targetType: JobTargetType,
+  targetId: number
+): boolean {
+  return !!db
+    .prepare(`SELECT id FROM jobs WHERE target_type = ? AND target_id = ? AND status = 'running'`)
+    .get(targetType, targetId);
+}
+
 export function acquireJob(
   db: Database.Database,
   type: JobType,

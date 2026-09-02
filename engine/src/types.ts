@@ -145,6 +145,37 @@ export interface ReviewScore {
   findings: string[];
 }
 
+/// A remark about one line of a pull request, ready to be posted there.
+///
+/// Distinct from `ReviewScore` on purpose: that one answers "is this good enough
+/// to merge" and its output is a verdict, this one answers "what should I say and
+/// where" and its output is anchored text. `line` is the number on the right-hand
+/// side of the diff, which is the only side a comment can be anchored to.
+export interface ReviewFinding {
+  path: string;
+  line: number;
+  body: string;
+}
+
+/// A finding that cannot be posted, with the reason it was dropped. Shown to the
+/// user so a trimmed review is visible rather than silent.
+export interface DiscardedFinding extends ReviewFinding {
+  reason: string;
+}
+
+/// A finding on disk, waiting to be posted or discarded.
+///
+/// `commitSha` is the commit its line numbers were read from. It anchors the
+/// comment when posted, and comparing it against the pull request's current head
+/// is what says whether the remark has gone stale.
+export interface StoredReviewFinding extends ReviewFinding {
+  id: number;
+  prId: number;
+  commitSha: string;
+  posted: boolean;
+  createdAt: string;
+}
+
 /// The three Atlassian status categories, as stable tokens rather than Atlassian's
 /// own keys: `new` reads as nothing useful at a call site, `todo` does.
 export type JiraStatusCategory = 'todo' | 'in_progress' | 'done';

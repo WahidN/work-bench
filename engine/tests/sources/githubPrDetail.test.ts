@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { execa } from 'execa';
-import { fetchPrDetailView, reviewStateFrom, postReviewCommentReply } from '../../src/sources/githubPrDetail.js';
+import { fetchPrDetailView, reviewStateFrom, postReviewCommentReply, postLineComment } from '../../src/sources/githubPrDetail.js';
 
 vi.mock('execa');
 afterEach(() => vi.clearAllMocks());
@@ -177,5 +177,65 @@ describe('postReviewCommentReply', () => {
     vi.mocked(execa).mockResolvedValue({ stdout: '{"id":1}' } as any);
     await postReviewCommentReply('workbench-test-does-not-exist/demo', 23, 7, 'line one\nline two');
     expect(vi.mocked(execa).mock.calls[0][1]).toContain('body=line one\nline two');
+  });
+});
+
+describe('postLineComment', () => {
+  it('posts a new comment anchored to a line on the right-hand side', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: JSON.stringify({ id: 42 }) } as any);
+
+    const created = await postLineComment(
+      'https://github.com/workbench-test-does-not-exist/demo',
+      23,
+      { commitSha: 'abc123', path: 'src/a.ts', line: 12, body: 'formatDate is duplicated.' }
+    );
+
+    expect(created).toEqual({ id: 42 });
+    expect(vi.mocked(execa).mock.calls[0][1]).toEqual([
+      'api', 'repos/workbench-test-does-not-exist/demo/pulls/23/comments',
+      '-f', 'body=formatDate is duplicated.',
+      '-f', 'commit_id=abc123',
+      '-f', 'path=src/a.ts',
+      '-F', 'line=12',
+      '-f', 'side=RIGHT',
+    ]);
+  });
+
+  // in_reply_to is what makes GitHub thread a comment under an existing one.
+  // Its absence is what makes this a new comment on a line instead.
+  it('sends no in_reply_to, so the comment stands on its own', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: '{"id":1}' } as any);
+
+    await postLineComment('linku/demo', 23, { commitSha: 'abc', path: 'a.ts', line: 1, body: 'x' });
+
+    expect((vi.mocked(execa).mock.calls[0][1] as string[]).join(' ')).not.toContain('in_reply_to');
+  });
+
+  // gh needs -F for a value that must arrive as a number. Sending the line with
+  // -f makes it a string and GitHub rejects the comment.
+  it('sends the line as a number and the rest as strings', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: '{"id":1}' } as any);
+
+    await postLineComment('linku/demo', 23, { commitSha: 'abc', path: 'a.ts', line: 7, body: 'x' });
+
+    const args = vi.mocked(execa).mock.calls[0][1] as string[];
+    expect(args[args.indexOf('line=7') - 1]).toBe('-F');
+    expect(args[args.indexOf('path=a.ts') - 1]).toBe('-f');
+  });
+
+  it('keeps newlines in the body intact', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: '{"id":1}' } as any);
+
+    await postLineComment('linku/demo', 23, { commitSha: 'abc', path: 'a.ts', line: 1, body: 'one\ntwo' });
+
+    expect(vi.mocked(execa).mock.calls[0][1]).toContain('body=one\ntwo');
+  });
+
+  it('lets a failure from gh surface rather than swallowing it', async () => {
+    vi.mocked(execa).mockRejectedValue(new Error('422 Unprocessable Entity'));
+
+    await expect(
+      postLineComment('linku/demo', 23, { commitSha: 'abc', path: 'a.ts', line: 1, body: 'x' })
+    ).rejects.toThrow('422');
   });
 });

@@ -126,6 +126,26 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_target ON jobs(target_type, target_id, status);
+
+-- A review's remarks, waiting to be posted. Stored rather than held in memory
+-- because the review runs in the background: it finishes while the user is on
+-- another screen, announces itself, and is read later, possibly after a restart.
+--
+-- commit_sha is the commit the line numbers were read from. It travels with the
+-- comment when it is posted, and comparing it to the pull request's head is what
+-- says whether the remark has gone stale.
+CREATE TABLE IF NOT EXISTS pr_review_findings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  pr_id INTEGER NOT NULL REFERENCES prs(id),
+  path TEXT NOT NULL,
+  line INTEGER NOT NULL,
+  body TEXT NOT NULL,
+  commit_sha TEXT NOT NULL,
+  posted INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pr_review_findings_pr ON pr_review_findings(pr_id);
 `;
 
 // SQLite has no "ADD COLUMN IF NOT EXISTS", so every change to a table that
@@ -202,6 +222,22 @@ const MIGRATIONS: string[] = [
   // says nothing about who was asked. Defaults to 0, so every existing row reads
   // as not awaiting review until the first poll after this fills it in.
   `ALTER TABLE prs ADD COLUMN review_requested_by_me INTEGER NOT NULL DEFAULT 0;`,
+
+  // 9: where a pull request review's remarks wait between being written and being
+  // posted. IF NOT EXISTS because SCHEMA already creates it on a fresh file, and a
+  // database stamped back to an earlier version replays this over a table that is
+  // already there.
+  `CREATE TABLE IF NOT EXISTS pr_review_findings (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     pr_id INTEGER NOT NULL REFERENCES prs(id),
+     path TEXT NOT NULL,
+     line INTEGER NOT NULL,
+     body TEXT NOT NULL,
+     commit_sha TEXT NOT NULL,
+     posted INTEGER NOT NULL DEFAULT 0,
+     created_at TEXT NOT NULL
+   );
+   CREATE INDEX IF NOT EXISTS idx_pr_review_findings_pr ON pr_review_findings(pr_id);`,
 ];
 
 function isEmptyDatabase(db: Database.Database): boolean {

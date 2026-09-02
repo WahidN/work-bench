@@ -7,7 +7,8 @@ struct EngineAgentPlistTests {
     private let engineDir = "/Users/someone/Projecten/workbench/engine"
     private let toolchain = EngineToolchain(
         nodePath: "/Users/someone/.vite-plus/js_runtime/node/24.20.0/bin/node",
-        pnpmPath: "/opt/homebrew/bin/pnpm"
+        pnpmPath: "/opt/homebrew/bin/pnpm",
+        claudePath: "/Users/someone/.local/bin/claude"
     )
 
     private func plist() -> [String: Any] {
@@ -56,6 +57,36 @@ struct EngineAgentPlistTests {
         #expect(path.hasPrefix(toolchain.nodeDirectory + ":"))
         #expect(path.contains(toolchain.pnpmDirectory))
         #expect(path.contains("/usr/bin"))
+    }
+
+    // The engine shells out to `claude` for every agent feature, and launchd's PATH did
+    // not include the ~/.local/bin where it is installed. Measured before this was
+    // fixed: the engine ran fine and `gh`, `git` and `security` all resolved, so the app
+    // looked healthy, while every agent call died with `spawn claude ENOENT` and chat,
+    // analyze, implement and review silently did nothing.
+    @Test func putsClaudeOnThePathSoTheAgentCanRun() throws {
+        let environment = plist()["EnvironmentVariables"] as? [String: String]
+        let path = try #require(environment?["PATH"])
+
+        #expect(path.contains(toolchain.claudeDirectory))
+    }
+
+    // Two tools sharing a directory must not double it up: pnpm and claude are both
+    // commonly in /opt/homebrew/bin.
+    @Test func doesNotRepeatADirectorySharedByTwoTools() throws {
+        let shared = EngineAgent.plist(
+            engineDirectory: engineDir,
+            toolchain: EngineToolchain(
+                nodePath: "/opt/homebrew/bin/node",
+                pnpmPath: "/opt/homebrew/bin/pnpm",
+                claudePath: "/opt/homebrew/bin/claude"
+            ),
+            logPath: "/tmp/log"
+        )
+        let path = try #require((shared["EnvironmentVariables"] as? [String: String])?["PATH"])
+
+        let entries = path.split(separator: ":").map(String.init)
+        #expect(entries.count == Set(entries).count, "PATH has a duplicate entry: \(path)")
     }
 
     // Measured under launchd: killing the engine left it dead, because the supervised

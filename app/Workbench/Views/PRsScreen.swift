@@ -7,9 +7,27 @@ struct PRsScreen: View {
     let onSelectPr: (PullRequest) -> Void
 
     @State private var filter: PrFilter = .assignedToMe
+    @StateObject private var reviewModel = PrReviewViewModel()
+    @State private var startedReviewIds: Set<Int> = []
 
     private var rows: [PrRow] {
         PRsLogic.rows(prs: viewModel.pullRequests, projects: projects, filter: filter, now: Date())
+    }
+
+    /// Starts the review and opens nothing. There is nothing to open yet: the
+    /// review takes minutes, announces itself when it is done, and is read on the
+    /// pull request's own page.
+    ///
+    /// The row is disabled straight away and released when the engine stops
+    /// reporting work on that pull request, so it does not stay dead for the rest
+    /// of the session, and comes back if the review was interrupted.
+    private func startReview(of pr: PullRequest) {
+        startedReviewIds.insert(pr.id)
+        Task {
+            await reviewModel.start(prId: pr.id)
+            await reviewModel.followUntilFinished(prId: pr.id)
+            startedReviewIds.remove(pr.id)
+        }
     }
 
     var body: some View {
@@ -68,7 +86,9 @@ struct PRsScreen: View {
                             row: row,
                             onSelect: { onSelectPr(row.pr) },
                             onOpenAgent: { onOpenAgent(.pullRequest(row.pr)) },
-                            onTogglePin: { Task { await viewModel.togglePin(row.pr) } }
+                            onTogglePin: { Task { await viewModel.togglePin(row.pr) } },
+                            onReview: { startReview(of: row.pr) },
+                            isReviewing: startedReviewIds.contains(row.pr.id)
                         )
                     }
                 }
@@ -104,6 +124,8 @@ private struct PrTableRow: View {
     let onSelect: () -> Void
     let onOpenAgent: () -> Void
     let onTogglePin: () -> Void
+    let onReview: () -> Void
+    let isReviewing: Bool
     @State private var isHovered = false
 
     var body: some View {
@@ -160,6 +182,22 @@ private struct PrTableRow: View {
 
     private var actions: some View {
         HStack(spacing: Theme.Space.s3) {
+            // Offered on every pull request, unlike Merge: reviewing is most often
+            // owed on work the user did not write.
+            Button(action: onReview) {
+                HStack(spacing: 4) {
+                    Image(systemName: "checklist")
+                    Text(isReviewing ? "Reviewing…" : "Review")
+                }
+                .help("Review this pull request in the background")
+                .font(.system(size: Theme.FontSize.tableMeta))
+                .foregroundStyle(isReviewing ? Theme.Neutral.n700 : Theme.Neutral.n400)
+            }
+            .buttonStyle(.plain)
+            .disabled(isReviewing)
+            .help("Review this pull request and draft comments on its lines")
+            .accessibilityLabel("Review this pull request")
+
             Button(action: onTogglePin) {
                 HStack(spacing: 4) {
                     Image(systemName: row.pinned ? "pin.fill" : "pin")

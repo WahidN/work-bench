@@ -49,7 +49,10 @@ final class APIClient {
             throw APIError.transportFailed("No HTTP response")
         }
         switch http.statusCode {
-        case 200, 201, 204:
+        // 202 is what the engine answers when it has taken the work but not done
+        // it, which is how a pull request review starts: accepted now, finished
+        // minutes later.
+        case 200, 201, 202, 204:
             return
         case 400:
             throw APIError.badRequest(errorMessage(from: data))
@@ -237,6 +240,32 @@ extension APIClient {
             "POST", "/prs/\(prId)/review-comments/\(commentId)/reply", body: ["text": text]
         )
     }
+
+    /// Starts a review. Returns as soon as the engine has taken the job, because
+    /// the review itself takes minutes and finishes on its own.
+    func startReview(prId: Int) async throws {
+        try await sendNoContent("POST", "/prs/\(prId)/review", body: nil)
+    }
+
+    /// The stored review for a pull request, which may be from some time ago.
+    func review(prId: Int) async throws -> PrReview {
+        try await send("GET", "/prs/\(prId)/review", body: nil)
+    }
+
+    /// Posts one remark, with whatever the user last had on screen for it.
+    func postReviewFinding(prId: Int, findingId: Int, body: String) async throws {
+        let _: PostedFinding = try await send(
+            "POST", "/prs/\(prId)/review/findings/\(findingId)", body: ["body": body]
+        )
+    }
+
+    func discardReviewFinding(prId: Int, findingId: Int) async throws {
+        try await sendNoContent("DELETE", "/prs/\(prId)/review/findings/\(findingId)", body: nil)
+    }
+}
+
+private struct PostedFinding: Decodable {
+    let posted: Bool
 }
 
 extension APIClient {

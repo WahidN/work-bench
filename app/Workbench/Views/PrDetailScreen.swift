@@ -16,12 +16,14 @@ struct PrDetailScreen: View {
     @State private var viewModel = PrDetailViewModel()
     @State private var tab: PrDetailTab = .files
     @State private var collapsedFiles: Set<String> = []
+    @StateObject private var reviewModel = PrReviewViewModel()
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.s6) {
                 backLink
                 summary
+                reviewSection
                 tabBar
                 content
             }
@@ -31,6 +33,14 @@ struct PrDetailScreen: View {
         }
         .background(Theme.nocturneBg)
         .task { await viewModel.load(prId: pr.id) }
+        // Follows a review that was already running when this page was opened,
+        // including one started from the list, so it fills in on its own.
+        .task {
+            await reviewModel.load(prId: pr.id)
+            if reviewModel.isRunning {
+                await reviewModel.followUntilFinished(prId: pr.id)
+            }
+        }
         .alert(
             "Error",
             isPresented: Binding(
@@ -78,6 +88,9 @@ struct PrDetailScreen: View {
                         .foregroundStyle(Theme.Neutral.n600)
                 }
                 Spacer()
+                // Unlike Merge, offered whoever wrote it: the review queue is
+                // mostly other people's work, and that is what needs reviewing.
+                reviewButton
                 if pr.authoredByMe {
                     mergeButton
                 }
@@ -105,6 +118,120 @@ struct PrDetailScreen: View {
             .font(.system(size: Theme.FontSize.tableMeta))
             .foregroundStyle(Theme.Neutral.n600)
         }
+    }
+
+    private var reviewButton: some View {
+        Button {
+            Task {
+                await reviewModel.start(prId: pr.id)
+                await reviewModel.followUntilFinished(prId: pr.id)
+            }
+        } label: {
+            Text(reviewModel.isBusy ? "Reviewing…" : "Review this PR")
+                .font(Theme.heading(Theme.FontSize.secondary))
+                .padding(.vertical, Theme.Space.s2)
+                .padding(.horizontal, Theme.Space.s4)
+                .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(reviewModel.isBusy ? Theme.Neutral.n600 : Theme.nocturneAccent)
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .strokeBorder(reviewModel.isBusy ? Theme.Neutral.n700 : Theme.nocturneAccent, lineWidth: 1)
+        )
+        .disabled(reviewModel.isBusy)
+    }
+
+    /// The review as part of the pull request, not as a dialog over it. It arrives
+    /// while the user is elsewhere and waits here until they deal with it.
+    @ViewBuilder
+    private var reviewSection: some View {
+        if !reviewModel.findings.isEmpty {
+            VStack(alignment: .leading, spacing: Theme.Space.s3) {
+                HStack(spacing: Theme.Space.s3) {
+                    Text("Review")
+                        .font(Theme.heading(Theme.FontSize.secondary))
+                        .foregroundStyle(Theme.nocturneText)
+                    Text(PrReviewLogic.summary(findings: reviewModel.findings))
+                        .font(.system(size: Theme.FontSize.tableMeta))
+                        .foregroundStyle(Theme.Neutral.n600)
+                    if let outdated = PrReviewLogic.outdatedLabel(outdated: reviewModel.outdated) {
+                        Text(outdated)
+                            .font(.system(size: Theme.FontSize.tableMeta))
+                            .foregroundStyle(Theme.Status.blocked)
+                    }
+                    Spacer()
+                }
+                ForEach(reviewModel.findings) { finding in
+                    findingCard(finding)
+                }
+            }
+            .padding(Theme.Space.s4)
+            .background(Theme.Neutral.n900.opacity(0.5))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        }
+    }
+
+    private func findingCard(_ finding: ReviewFinding) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Space.s2) {
+            HStack(spacing: Theme.Space.s2) {
+                Text("\(finding.path):\(finding.line)")
+                    .font(.system(size: Theme.FontSize.tableMeta, design: .monospaced))
+                    .foregroundStyle(Theme.nocturneAccent)
+                if finding.posted {
+                    Text("Posted")
+                        .font(.system(size: Theme.FontSize.tableMeta))
+                        .foregroundStyle(Theme.Status.approved)
+                }
+                Spacer()
+                if PrReviewLogic.canPost(finding) {
+                    Button("Post") {
+                        Task { await reviewModel.post(prId: pr.id, findingId: finding.id) }
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.Status.approved)
+                    .disabled(reviewModel.postingIds.contains(finding.id))
+
+                    Button {
+                        Task { await reviewModel.discard(prId: pr.id, findingId: finding.id) }
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(Theme.Neutral.n600)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Discard this comment")
+                }
+            }
+            .font(.system(size: Theme.FontSize.tableMeta))
+
+            if finding.posted {
+                Text(finding.body)
+                    .font(.system(size: Theme.FontSize.secondary))
+                    .foregroundStyle(Theme.Neutral.n500)
+            } else {
+                TextEditor(text: Binding(
+                    get: { finding.body },
+                    set: { reviewModel.edit(findingId: finding.id, body: $0) }
+                ))
+                .font(.system(size: Theme.FontSize.secondary))
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 56)
+                .padding(Theme.Space.s2)
+                .background(Theme.nocturneSurface)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            }
+
+            // On the remark that failed, not on the screen: one bad anchor says
+            // nothing about the others.
+            if let error = reviewModel.error(forFinding: finding.id) {
+                Text(error)
+                    .font(.system(size: Theme.FontSize.tableMeta))
+                    .foregroundStyle(Theme.negative)
+            }
+        }
+        .padding(Theme.Space.s3)
+        .background(Theme.nocturneBg)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
     }
 
     /// Only ever shown on a pull request you wrote. The engine refuses anything

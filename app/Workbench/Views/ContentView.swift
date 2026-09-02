@@ -32,6 +32,9 @@ struct ContentView: View {
     @State private var refreshViewModel = RefreshViewModel()
     @State private var settingsViewModel = SettingsViewModel()
     @State private var engineViewModel = EngineViewModel()
+    /// Pull requests already announced, so a waiting review is not re-notified on
+    /// every poll until the user gets to it.
+    @State private var announcedReviews: Set<Int> = []
     @State private var isSettingsOpen = false
     @State private var jiraViewModel = JiraViewModel()
     @State private var projectSheet: ProjectSheetMode?
@@ -212,6 +215,7 @@ struct ContentView: View {
                 }
                 previousKeys = currentKeys
                 isFirstCycle = false
+                await announceFinishedReviews()
                 try? await Task.sleep(for: .seconds(15))
             }
         }
@@ -507,6 +511,35 @@ struct ContentView: View {
         switch item.target {
         case .pullRequest(let pr): .pullRequest(pr)
         case .ticket(let ticket): .ticket(ticket)
+        }
+    }
+
+    /// Notifies once per pull request whose review has finished with something to
+    /// post. Its own signal rather than `needsInput`, which deliberately excludes
+    /// review-requested pull requests. See ReviewNotificationLogic.
+    private func announceFinishedReviews() async {
+        let client = APIClient()
+        var reviews: [Int: PrReview] = [:]
+        for pr in prsViewModel.pullRequests {
+            // A pull request whose review is already announced needs no fetching,
+            // and one that has never been reviewed answers with an empty list.
+            guard !announcedReviews.contains(pr.id) else { continue }
+            if let review = try? await client.review(prId: pr.id) {
+                reviews[pr.id] = review
+            }
+        }
+
+        for prId in ReviewNotificationLogic.toAnnounce(reviews: reviews, alreadyAnnounced: announcedReviews) {
+            guard let pr = prsViewModel.pullRequests.first(where: { $0.id == prId }),
+                  let review = reviews[prId] else { continue }
+            appDelegate.notify(
+                title: ReviewNotificationLogic.title(),
+                body: ReviewNotificationLogic.body(
+                    prTitle: pr.title,
+                    count: PrReviewLogic.unposted(review.findings).count
+                )
+            )
+            announcedReviews.insert(prId)
         }
     }
 
