@@ -7,6 +7,7 @@ import { createTicket } from '../../src/tickets.js';
 import { recordPr } from '../../src/prs.js';
 import * as detail from '../../src/sources/githubPrDetail.js';
 import { createServer } from '../../src/api/server.js';
+import type { PrDetailView } from '../../src/types.js';
 
 vi.mock('../../src/sources/githubPrDetail.js');
 
@@ -17,6 +18,15 @@ let prId: number;
 
 function auth(req: request.Test): request.Test {
   return req.set('Authorization', `Bearer ${TOKEN}`);
+}
+
+function sampleView(): PrDetailView {
+  return {
+    title: 'Retry card capture on 5xx', url: 'u', state: 'OPEN', isDraft: false,
+    reviewState: 'review_required', author: 'wahid', createdAt: '2026-08-12T15:11:00Z',
+    baseRefName: 'main', headRefName: 'fix/x', commitCount: 4, changedFiles: 3,
+    additions: 64, deletions: 7, files: [], threads: [], conversation: [],
+  };
 }
 
 beforeEach(() => {
@@ -68,6 +78,42 @@ describe('GET /prs/:id/detail', () => {
     const res = await auth(request(app).get(`/prs/${prId}/detail`)).expect(502);
     expect(res.body.error).toMatch(/not authenticated/);
   });
+
+  it('serves a second open from the held copy instead of calling gh again', async () => {
+    vi.mocked(detail.fetchPrDetailView).mockResolvedValue(sampleView());
+
+    await auth(request(app).get(`/prs/${prId}/detail`)).expect(200);
+    const second = await auth(request(app).get(`/prs/${prId}/detail`)).expect(200);
+
+    expect(second.body).toMatchObject({ title: 'Retry card capture on 5xx', commitCount: 4 });
+    expect(detail.fetchPrDetailView).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetches again once the held copy has aged out', async () => {
+    // Only Date is faked: supertest still needs real timers to answer a request.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.mocked(detail.fetchPrDetailView).mockResolvedValue(sampleView());
+      await auth(request(app).get(`/prs/${prId}/detail`)).expect(200);
+
+      vi.setSystemTime(Date.now() + 61_000);
+      await auth(request(app).get(`/prs/${prId}/detail`)).expect(200);
+
+      expect(detail.fetchPrDetailView).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('holds on to nothing when the fetch failed', async () => {
+    vi.mocked(detail.fetchPrDetailView).mockRejectedValueOnce(new Error('gh: 503'));
+    await auth(request(app).get(`/prs/${prId}/detail`)).expect(502);
+
+    vi.mocked(detail.fetchPrDetailView).mockResolvedValue(sampleView());
+    await auth(request(app).get(`/prs/${prId}/detail`)).expect(200);
+
+    expect(detail.fetchPrDetailView).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('POST /prs/:id/review-comments/:commentId/reply', () => {
@@ -90,5 +136,18 @@ describe('POST /prs/:id/review-comments/:commentId/reply', () => {
   it('502s when gh fails', async () => {
     vi.mocked(detail.postReviewCommentReply).mockRejectedValue(new Error('gh: 403'));
     await auth(request(app).post(`/prs/${prId}/review-comments/7/reply`)).send({ text: 'hi' }).expect(502);
+  });
+
+  // The screen reloads straight after a reply. Without dropping the held copy it
+  // would show the conversation as it was before the reply existed.
+  it('drops the held detail so the reload shows the reply', async () => {
+    vi.mocked(detail.fetchPrDetailView).mockResolvedValue(sampleView());
+    vi.mocked(detail.postReviewCommentReply).mockResolvedValue({ id: 99 });
+
+    await auth(request(app).get(`/prs/${prId}/detail`)).expect(200);
+    await auth(request(app).post(`/prs/${prId}/review-comments/7/reply`)).send({ text: 'ok' }).expect(200);
+    await auth(request(app).get(`/prs/${prId}/detail`)).expect(200);
+
+    expect(detail.fetchPrDetailView).toHaveBeenCalledTimes(2);
   });
 });
