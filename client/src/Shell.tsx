@@ -42,8 +42,14 @@ export function Shell() {
   const badge = data.today?.needsInput.length ?? null
   useEffect(() => {
     if (badge === null || badge === lastBadge.current) return
-    lastBadge.current = badge
+    // The ref is set after the push succeeds, not before. Setting it first meant a failed
+    // push was remembered as done, so the tray kept the stale count until the number
+    // happened to change again.
     void pushBadge(badge)
+      .then(() => {
+        lastBadge.current = badge
+      })
+      .catch((error: unknown) => console.error('could not push the tray badge', error))
   }, [badge])
 
   /*

@@ -90,29 +90,55 @@ export function runTokenCheck(): TokenCheckResult {
     compare(token, `${want}px`, `${got.toFixed(4)}px`, Math.abs(got - want) <= LAYOUT_UNIT)
   }
 
+  /*
+   * A missing element is reported, never asserted away. These used to be non-null
+   * assertions, which threw instead of failing: the caller runs inside a
+   * `requestAnimationFrame` with no `try`, so one missing element crashed silently and
+   * left the report stuck on "pending" rather than saying what was wrong. Reporting it is
+   * the entire job of this file.
+   */
+  const styleOf = (id: string): CSSStyleDeclaration | null => {
+    const el = document.getElementById(id)
+    return el === null ? null : getComputedStyle(el)
+  }
+
   for (const [token, want] of Object.entries(RADIUS)) {
-    const el = document.getElementById(`radius-${token}`)!
-    const got = parseFloat(getComputedStyle(el).borderTopLeftRadius)
+    const computed = styleOf(`radius-${token}`)
+    if (computed === null) {
+      checked += 1
+      failures.push(`${token}: element missing`)
+      continue
+    }
+    const got = parseFloat(computed.borderTopLeftRadius)
     compare(token, want, got, got === want)
   }
 
   for (const [token, want] of Object.entries(FONT_SIZE)) {
-    const el = document.getElementById(`font-${token}`)!
-    const got = parseFloat(getComputedStyle(el).fontSize)
+    const computed = styleOf(`font-${token}`)
+    if (computed === null) {
+      checked += 1
+      failures.push(`${token}: element missing`)
+      continue
+    }
+    const got = parseFloat(computed.fontSize)
     compare(token, want, got, got === want)
   }
 
-  const heading = getComputedStyle(document.getElementById('face-heading')!)
-  const body = getComputedStyle(document.getElementById('face-body')!)
+  const heading = styleOf('face-heading')
+  const body = styleOf('face-body')
+  if (heading === null || body === null) {
+    checked += 1
+    failures.push('font faces: element missing')
+  }
 
   return {
     checked,
     passed: checked - failures.length,
     failures,
     fonts: {
-      family: heading.fontFamily.split(',')[0].replace(/["']/g, ''),
-      headingWeight: heading.fontWeight,
-      bodyWeight: body.fontWeight,
+      family: heading?.fontFamily.split(',')[0].replace(/["']/g, '') ?? 'missing',
+      headingWeight: heading?.fontWeight ?? 'missing',
+      bodyWeight: body?.fontWeight ?? 'missing',
       interMediumLoaded: String(document.fonts.check('500 15px Inter')),
       interRegularLoaded: String(document.fonts.check('400 15px Inter')),
     },

@@ -188,9 +188,13 @@ export function openedLine(detail: PrDetailView, authoredByMe: boolean): string 
   const who = authoredByMe ? 'you' : detail.author
   const date = new Date(detail.createdAt)
   if (Number.isNaN(date.getTime())) return `opened by ${who}`
-  // "d MMM" with the POSIX locale, matching the Swift formatter.
-  const formatted = date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
-  return `opened ${formatted} by ${who}`
+  // The Swift formatter is "d MMM", which is day-then-month. Asking en-US for both parts
+  // at once gives month-then-day instead: measured side by side, Swift prints "5 Jan" and
+  // `toLocaleDateString('en-US', {day, month})` prints "Jan 5". So the parts are formatted
+  // separately and joined in the order the Swift uses.
+  const day = date.toLocaleDateString('en-US', { day: 'numeric' })
+  const month = date.toLocaleDateString('en-US', { month: 'short' })
+  return `opened ${day} ${month} by ${who}`
 }
 
 export function tabCounts(detail: PrDetailView): { files: number; conversation: number } {

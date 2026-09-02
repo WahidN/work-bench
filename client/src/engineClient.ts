@@ -48,6 +48,9 @@ async function send<T>(verb: Verb, path: string, body?: unknown): Promise<T> {
       })
       return parse<T>(text)
     } catch (error) {
+      // `parse` throws an EngineError of its own, and this catch is around it, so
+      // re-wrapping would put the class name inside the message.
+      if (error instanceof EngineError) throw error
       throw new EngineError(String(error))
     }
   }

@@ -31,7 +31,10 @@ pub fn set_tray_icon<R: Runtime>(
     height: u32,
     is_template: bool,
 ) -> Result<String, String> {
-    let expected = (width * height * 4) as usize;
+    // Cast before multiplying, not after: this is a command any webview JS can call, and
+    // `width * height * 4` in u32 overflows at 65536 square, which panics in debug and
+    // wraps in release, leaving the length check below comparing against a wrong number.
+    let expected = width as usize * height as usize * 4;
     if rgba.len() != expected {
         return Err(format!(
             "expected {expected} bytes for {width}x{height} RGBA, got {}",
