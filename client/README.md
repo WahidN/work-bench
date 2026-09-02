@@ -51,6 +51,10 @@ splits on `@` before looking for signs, `KeepAlive` is a blanket `true`: each of
 reason, each reason was learned the expensive way, and each is written down next to the code
 it explains. A path that needs `git log` to follow is a smaller cost than losing that.
 
+Grepping the repo for `app/Workbench` also turns up the completed change folders under
+`openspec/changes/` from the SwiftUI era. Those are records of work that was done, not
+instructions for work to do, and they are left exactly as they were written.
+
 ## Layout
 
 | Path | What |
