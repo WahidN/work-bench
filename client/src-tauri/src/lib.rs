@@ -1,3 +1,4 @@
+mod account;
 mod agent;
 mod engine;
 mod keychain;
@@ -51,6 +52,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .menu(menu::build)
         .on_menu_event(|app, event| menu::handle(app, event.id().as_ref()))
         .setup(move |app| {
@@ -68,6 +71,7 @@ pub fn run() {
             engine::engine_patch,
             engine::engine_put,
             engine::engine_delete,
+            account::account_name,
             agent::engine_agent_state,
             agent::engine_agent_install,
             agent::engine_agent_start,

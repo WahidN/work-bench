@@ -37,4 +37,7 @@ plist = "1"
 # directory and gives back a sandboxed handle rather than a path, and the engine needs a
 # real path to put in WorkingDirectory.
 tauri-plugin-dialog = "2"
+# Notifications and the clipboard, replacing UNUserNotificationCenter and NSPasteboard.
+tauri-plugin-notification = "2"
+tauri-plugin-clipboard-manager = "2"
 
