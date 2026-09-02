@@ -1,0 +1,10 @@
+{
+  "name": "workbench-launchd-standin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Stand-in for the engine in probe 4. engine/src/config.ts hardcodes ENGINE_PORT to 4173 and the spike may not change engine code, so a second real engine on 4174 is impossible. This binds 4174 instead, launched through the exact same node-then-pnpm-then-start argument chain the real plist uses, so the launchd mechanics under test are unchanged.",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
