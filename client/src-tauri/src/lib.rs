@@ -1,5 +1,6 @@
 mod engine;
 mod keychain;
+mod menu;
 // Public so the launchd_probe binary can drive it from the terminal.
 pub mod launchd;
 mod tray;
@@ -47,6 +48,8 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .menu(menu::build)
+        .on_menu_event(|app, event| menu::handle(app, event.id().as_ref()))
         .setup(move |app| {
             println!(
                 "PROBE startup setup_reached at={}ms",
