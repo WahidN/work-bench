@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { useIsFetching } from '@tanstack/react-query'
+import { useIsFetching, useQueryClient } from '@tanstack/react-query'
 import { AgentChatPanel } from './AgentChatPanel'
 import { chatTargetForTodo, targetProjectId, type AgentChatTarget } from './agentChatLogic'
 import { AppHeader } from './AppHeader'
@@ -43,6 +43,7 @@ import {
   useSetTodoPinned,
   useShellData,
   useUpdateProject,
+  keys,
 } from './queries'
 import {
   UNKNOWN_AGENT,
@@ -51,6 +52,17 @@ import {
   canManageAgent,
   type AgentState,
 } from './engineAgent'
+import { accountName, notify, requestNotificationPermission } from './native'
+import {
+  REVIEW_TITLE,
+  itemKey,
+  needsInputTitle,
+  newlyAppeared,
+  reviewBody,
+  reviewsToAnnounce,
+  unpostedCount,
+} from './notificationLogic'
+import type { PrReviewView } from './prReviewLogic'
 import { projectCards } from './projectsLogic'
 import { prListRef, type SidebarSection, type TaskRow as TaskRowModel } from './logic'
 import { isTypingIn, matchShortcut, shortcutForMenuId, type Shortcut } from './shortcuts'
@@ -93,6 +105,7 @@ export function Shell() {
    */
   const [agent, setAgent] = useState<AgentState>(UNKNOWN_AGENT)
   const [isStartingAgent, setIsStartingAgent] = useState(false)
+  const [account, setAccount] = useState('')
   const data = useShellData()
   /*
    * Every todo, done ones included, read by three surfaces: the sidebar's Jira count, the
@@ -273,6 +286,68 @@ export function Shell() {
       .finally(() => setIsStartingAgent(false))
   }
 
+  /*
+   * The account name and the notification permission, both once at launch.
+   *
+   * Asking for permission here rather than at the first notification is what
+   * `applicationDidFinishLaunching` does, and for the reason it matters: the macOS prompt
+   * appearing at the moment something happened would cover the thing that happened, and
+   * the notification would be dropped while the user read the prompt.
+   */
+  useEffect(() => {
+    void accountName().then(setAccount).catch(() => setAccount(''))
+    void requestNotificationPermission()
+  }, [])
+
+  /*
+   * Notifies for what appeared in `needsInput` since the last look, and for a review that
+   * finished with something to post. Two signals on purpose; see notificationLogic.ts.
+   *
+   * `seenKeys` starts null rather than empty, which is `isFirstCycle`: on launch every item
+   * is new, and a notification per open ticket is not a welcome.
+   */
+  const seenKeys = useRef<Set<string> | null>(null)
+  const items = data.today?.needsInput
+  useEffect(() => {
+    if (items === undefined) return
+    const current = new Set(items.map(itemKey))
+    const previous = seenKeys.current
+    seenKeys.current = current
+    if (previous === null) return
+    for (const item of newlyAppeared(items, previous)) {
+      void notify(needsInputTitle(item), item.title)
+    }
+  }, [items])
+
+  /*
+   * A finished review, announced once per pull request. The reviews are read from the query
+   * cache rather than fetched: `usePrReview` already holds whatever the pull request pages
+   * and the list's Review buttons have loaded, and firing a request per pull request every
+   * cycle to find out whether one of them has news is a poll the app does not need.
+   *
+   * `announcedReviews` is a ref so a re-render cannot reannounce.
+   */
+  const client = useQueryClient()
+  const announcedReviews = useRef<Set<number>>(new Set())
+  useEffect(() => {
+    const reviews = new Map<number, PrReviewView>()
+    for (const pr of data.prs) {
+      if (announcedReviews.current.has(pr.id)) continue
+      const review = client.getQueryData<PrReviewView>(keys.prReview(pr.id))
+      if (review !== undefined) reviews.set(pr.id, review)
+    }
+    for (const prId of reviewsToAnnounce(reviews, announcedReviews.current)) {
+      const pr = data.prs.find((candidate) => candidate.id === prId)
+      const review = reviews.get(prId)
+      if (pr === undefined || review === undefined) continue
+      void notify(REVIEW_TITLE, reviewBody(pr.title, unpostedCount(review)))
+      announcedReviews.current.add(prId)
+    }
+    // Keyed on the pull request list, so this looks again on every 30-second poll. The
+    // Swift's loop is 15 seconds; up to half a minute late for a review that has been
+    // waiting minutes is not a difference anyone can feel, and it costs no extra request.
+  }, [client, data.prs])
+
   /** The Tasks tab's checkbox routes exactly as Today's does: complete, or unpin. */
   function toggleProjectTask(row: TaskRowModel) {
     const id = Number(row.id.split('-')[1])
@@ -384,6 +459,7 @@ export function Shell() {
         onSelect={navigate}
         onOpenPalette={() => setIsPaletteOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        accountName={account}
         /* `openProject` opens the project's page rather than only selecting the row. */
         selectedProjectId={openProjectId}
         onSelectProject={(project) => {

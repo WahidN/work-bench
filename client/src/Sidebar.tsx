@@ -24,6 +24,7 @@ export function Sidebar({
   onSelect,
   onOpenPalette,
   onOpenSettings,
+  accountName,
   selectedProjectId,
   onSelectProject,
   todos,
@@ -36,6 +37,11 @@ export function Sidebar({
   onSelect: (section: SidebarSection) => void
   onOpenPalette: () => void
   onOpenSettings: () => void
+  /**
+   * From Rust, because `ProcessInfo.processInfo.fullUserName` is not something a webview
+   * can see. Empty until it answers, and in a browser always.
+   */
+  accountName: string
   /** SidebarLogic.isProjectSelected is `project.id == selectedProject?.id`, so an id is enough. */
   selectedProjectId: number | null
   onSelectProject: (project: Project) => void
@@ -45,6 +51,8 @@ export function Sidebar({
   prs: Pr[]
   projects: Project[]
 }) {
+  const shownName = accountName === '' ? UNKNOWN_ACCOUNT : accountName
+
   return (
     <div
       id="sidebar"
@@ -260,10 +268,10 @@ export function Sidebar({
             justifyContent: 'center',
           }}
         >
-          {accountInitials(ACCOUNT_NAME)}
+          {accountInitials(shownName)}
         </span>
         <span style={{ fontSize: 'var(--wb-fs-table-meta)', color: 'var(--wb-n400)' }}>
-          {ACCOUNT_NAME}
+          {shownName}
         </span>
         <span style={{ marginLeft: 'auto', padding: 'var(--wb-s2)' }}>
           <SettingsButton onClick={onOpenSettings} />
@@ -273,9 +281,10 @@ export function Sidebar({
   )
 }
 
-/*
- * The Swift sidebar reads `ProcessInfo.processInfo.fullUserName`, which a webview cannot
- * see. A real port would have to expose it from Rust; hard-coded here rather than
- * pretending the problem does not exist. Recorded in findings.md.
+/**
+ * What the footer says before Rust has answered, and always in a browser.
+ *
+ * Not a name: an empty footer with no initials reads as broken, and inventing one would be
+ * worse than saying there is none.
  */
-const ACCOUNT_NAME = 'Wahid'
+const UNKNOWN_ACCOUNT = 'Not signed in'

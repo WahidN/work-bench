@@ -18,6 +18,7 @@ import {
   openInBrowser,
   type AgentState,
 } from './engineAgent'
+import { copyToClipboard } from './native'
 import { readSavedDirectory, saveDirectory, truncateHead } from './settingsStore'
 import {
   useAuthorizeJira,
@@ -420,11 +421,12 @@ function JiraSection({ onError }: { onError: (message: string) => void }) {
           <Button
             label="Copy"
             onClick={() => {
-              // `navigator.clipboard` rather than NSPasteboard, which task 8.3 covers for
-              // the rest of the app. It needs no permission for a write.
-              void navigator.clipboard
-                .writeText(current.callbackUrl)
-                .catch((error: unknown) => onError(String(error)))
+              // The clipboard plugin rather than `navigator.clipboard`, which in a webview
+              // depends on a secure context and on the document having focus and fails
+              // silently when it does not. See native.ts.
+              void copyToClipboard(current.callbackUrl).catch((error: unknown) =>
+                onError(String(error)),
+              )
             }}
           />
         </div>
