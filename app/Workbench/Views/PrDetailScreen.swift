@@ -444,7 +444,11 @@ private struct ReviewThreadView: View {
                         .textSelection(.enabled)
                 }
             }
-            replyBox
+            // A thread GitHub returned without comments has no id to reply to,
+            // and the reply endpoint would 404 on the 0 the parent falls back to.
+            if (thread.comments.first?.id ?? 0) != 0 {
+                replyBox
+            }
         }
         .padding(Theme.Space.s4)
         .background(Theme.nocturneSurface)
