@@ -24,27 +24,27 @@
       matches a new-file line number and lands in `trailingThreads` instead
 - [x] 2.4 Port `missingPatchNote`'s three distinct cases: renamed with no churn, binary or
       empty, and too large
-- [ ] 2.5 Port `DiffView.swift`, the raw prefix-coloured renderer, sharing the same three
+- [x] 2.5 Port `DiffView.swift`, the raw prefix-coloured renderer, sharing the same three
       colour tokens so the two renderers cannot drift
-- [ ] 2.6 Port `PrFileSectionView`: collapsible per-file header, both 44px gutters, churn,
+- [x] 2.6 Port `PrFileSectionView`: collapsible per-file header, both 44px gutters, churn,
       and injected thread content
-- [ ] 2.7 Port `PrDetailScreen.swift`, the largest file in the app at 563 lines: facts
+- [x] 2.7 Port `PrDetailScreen.swift`, the largest file in the app at 563 lines: facts
       header, tab counts, files and conversation tabs
-- [ ] 2.8 Port `PrReviewLogic` and the review findings display
-- [ ] 2.9 Wire the read-only parts against a real pull request and prove the gutters and
+- [x] 2.8 Port `PrReviewLogic` and the review findings display
+- [x] 2.9 Wire the read-only parts against a real pull request and prove the gutters and
       row heights with the fidelity harness
 
 ## 3. Mutations on the two existing screens
 
-- [ ] 3.1 Today: toggle done, cycle priority, quick-add, delete with its context menu, and
+- [x] 3.1 Today: toggle done, cycle priority, quick-add, delete with its context menu, and
       promote, each refetching the way its ViewModel does
-- [ ] 3.2 Today: the checkbox routing from `TaskRow` where a pinned row's checkbox unpins
+- [x] 3.2 Today: the checkbox routing from `TaskRow` where a pinned row's checkbox unpins
       rather than completes
-- [ ] 3.3 Pull requests: pin toggle and the background review action with its
+- [x] 3.3 Pull requests: pin toggle and the background review action with its
       `startedReviewIds` disable-and-release behaviour
-- [ ] 3.4 Pull request detail: revision messages and review comment replies
-- [ ] 3.5 Merge, last and behind an explicit click, with nothing automatic reaching it
-- [ ] 3.6 Verify each mutation against the live engine and confirm the SwiftUI app sees
+- [x] 3.4 Pull request detail: revision messages and review comment replies
+- [x] 3.5 Merge, last and behind an explicit click, with nothing automatic reaching it
+- [x] 3.6 Verify each mutation against the live engine and confirm the SwiftUI app sees
       the same result
 
 ## 4. The remaining list screens

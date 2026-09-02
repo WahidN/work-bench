@@ -1,15 +1,20 @@
 /*
  * Port of PRsScreen.swift, PRsLogic.swift and WorkItemLabels.swift.
  *
- * The filter pills are live, since filtering is pure client-side logic and needs no
- * engine call. Every action in a row (Review, Pin to today, Agent) renders and measures
- * but does nothing: they are all mutations, and the spike is read-only.
+ * Live: the filter pills, the pin toggle, and Review, which starts a background review
+ * and opens nothing. There is nothing to open yet: the review takes minutes, announces
+ * itself when it is done, and is read on the pull request's own page.
+ *
+ * Agent still does nothing. It opens the panel, which is task group 5.
  */
 
 import { useState } from 'react'
 import type { Pr, Project } from './queries'
+import { useSetPrPinned } from './queries'
+import { ErrorAlert } from './ErrorAlert'
 import { Icon } from './Icon'
 import { PR_EMPTY_STATE, PR_FILTERS, prFilterLabel, prRows, type PrFilter } from './logic'
+import { ReviewStarter } from './ReviewStarter'
 
 const COLUMN_WIDTHS = { project: 150, status: 180, updated: 110, actions: 200 }
 
@@ -35,35 +40,60 @@ function RowAction({
   symbol,
   color,
   boxed,
+  background,
+  borderColor,
+  title,
+  onClick,
 }: {
   label: string
   symbol: string
   color: string
   boxed?: boolean
+  background?: string
+  borderColor?: string
+  title?: string
+  onClick?: (event: React.MouseEvent) => void
 }) {
+  const Element = onClick === undefined ? 'span' : 'button'
   return (
-    <span
+    <Element
+      title={title}
+      onClick={onClick}
       style={{
         display: 'flex',
         alignItems: 'center',
         gap: 4,
+        fontFamily: 'inherit',
         fontSize: 'var(--wb-fs-table-meta)',
         color,
-        padding: boxed ? 'var(--wb-s1) var(--wb-s3)' : undefined,
-        border: boxed ? '1px solid var(--wb-n800)' : undefined,
+        padding: boxed ? 'var(--wb-s1) var(--wb-s3)' : 0,
+        background: background ?? 'transparent',
+        border: boxed ? `1px solid ${borderColor ?? 'var(--wb-n800)'}` : 'none',
         borderRadius: boxed ? 'var(--wb-radius-sm)' : undefined,
         whiteSpace: 'nowrap',
+        cursor: onClick === undefined ? undefined : 'pointer',
       }}
     >
       <Icon name={symbol} size={12} />
       {label}
-    </span>
+    </Element>
   )
 }
 
-export function PRsScreen({ prs, projects }: { prs: Pr[]; projects: Project[] }) {
+export function PRsScreen({
+  prs,
+  projects,
+  onSelectPr,
+}: {
+  prs: Pr[]
+  projects: Project[]
+  onSelectPr: (pr: Pr) => void
+}) {
   const [filter, setFilter] = useState<PrFilter>('assignedToMe')
+  const [alert, setAlert] = useState<string | null>(null)
+  const setPinned = useSetPrPinned()
   const rows = prRows(prs, projects, filter, new Date())
+  const onError = (error: Error) => setAlert(String(error))
 
   return (
     <div
@@ -97,12 +127,15 @@ export function PRsScreen({ prs, projects }: { prs: Pr[]; projects: Project[] })
             onClick={() => setFilter(option)}
             style={{
               padding: 'var(--wb-s2) var(--wb-s4)',
+              // `fontFamily`, not the `font` shorthand. `font: inherit` sitting after
+              // `fontSize` rewrote the size back to the inherited 14px, so these pills
+              // were rendering a point larger than PRsScreen.swift's `FontSize.secondary`.
+              fontFamily: 'inherit',
               fontSize: 'var(--wb-fs-secondary)',
               color: option === filter ? 'var(--wb-text)' : 'var(--wb-n500)',
               background: option === filter ? 'var(--wb-surface)' : 'transparent',
               border: 'none',
               borderRadius: 'var(--wb-radius-sm)',
-              font: 'inherit',
               cursor: 'pointer',
             }}
           >
@@ -147,6 +180,10 @@ export function PRsScreen({ prs, projects }: { prs: Pr[]; projects: Project[] })
             <div
               key={row.id}
               data-pr-row={row.id}
+              onClick={() => {
+                const pr = prs.find((candidate) => candidate.id === row.id)
+                if (pr) onSelectPr(pr)
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -154,6 +191,7 @@ export function PRsScreen({ prs, projects }: { prs: Pr[]; projects: Project[] })
                 padding: 'var(--wb-s3) var(--wb-s4)',
                 borderBottom: '1px solid var(--wb-n900)',
                 boxSizing: 'border-box',
+                cursor: 'pointer',
               }}
             >
               <Icon name="arrow-triangle-pull" size={13} color="var(--wb-n600)" />
@@ -226,16 +264,32 @@ export function PRsScreen({ prs, projects }: { prs: Pr[]; projects: Project[] })
                   gap: 'var(--wb-s3)',
                 }}
               >
-                <RowAction label="Review" symbol="checklist" color="var(--wb-n400)" />
+                <ReviewStarter prId={row.id} onError={onError} />
                 <RowAction
                   label="Pin to today"
+                  title="Show this pull request on Today"
                   symbol={row.pinned ? 'pin-fill' : 'pin'}
                   color={row.pinned ? 'var(--wb-accent)' : 'var(--wb-n600)'}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setPinned.mutate({ id: row.id, pinned: !row.pinned }, { onError })
+                  }}
                 />
+                {/*
+                  Opens the agent panel, which is task group 5. It still takes the click,
+                  because without one it renders as a span and the click reaches the row,
+                  which navigates. The Swift's button opens the panel and never navigates,
+                  so doing nothing is the closer stand-in of the two.
+                */}
                 <RowAction
+                  onClick={(event) => event.stopPropagation()}
                   label={row.messageCount > 0 ? `Chat · ${row.messageCount}` : 'Agent'}
                   symbol={row.messageCount > 0 ? 'bubble-left-fill' : 'sparkles'}
                   color={row.messageCount > 0 ? 'var(--wb-text)' : 'var(--wb-n400)'}
+                  background={row.messageCount > 0 ? 'var(--wb-a900)' : undefined}
+                  // A filled pill draws no outline in the Swift, so the border is only
+                  // there to hold the shape of the empty one.
+                  borderColor={row.messageCount > 0 ? 'transparent' : undefined}
                   boxed
                 />
               </span>
@@ -243,6 +297,8 @@ export function PRsScreen({ prs, projects }: { prs: Pr[]; projects: Project[] })
           ))
         )}
       </div>
+
+      {alert !== null && <ErrorAlert message={alert} onDismiss={() => setAlert(null)} />}
     </div>
   )
 }

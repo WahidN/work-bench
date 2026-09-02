@@ -80,17 +80,7 @@ export function runFidelityCheck(): string {
   add('rail card padding', S.s3, px('[data-rail-card]', 'padding-top'))
   add('rail card radius', 8, px('[data-rail-card]', 'border-top-left-radius'))
 
-  const failures = checks
-    .filter(({ want, got }) => got === null || Math.abs(got - want) > LAYOUT_UNIT)
-    .map(({ label, want, got }) =>
-      got === null ? `${label}: element missing` : `${label}: want ${want}, got ${got.toFixed(4)}`,
-    )
-
-  const lines = [
-    `FIDELITY ${failures.length === 0 ? 'PASS' : 'FAIL'} ${checks.length - failures.length}/${checks.length}`,
-    ...failures.map((failure) => `FAILURE ${failure}`),
-  ]
-  return lines.join('\n')
+  return report('FIDELITY', checks)
 }
 
 /** Measured separately: only the Pull requests screen has these. */
@@ -117,15 +107,63 @@ export function runPrFidelityCheck(): string {
   add('pr filter radius', 4, px("[data-filter='mine']", 'border-top-left-radius'))
   add('pr screen padding', S.s8, px('#prs-screen', 'padding-top'))
 
+  return report('PR FIDELITY', checks)
+}
+
+/**
+ * The pull request's own page. Measured separately again, and the interesting numbers are
+ * the two gutters: PrFileSectionView frames each at 44 and then pads 5.6 outside it, so a
+ * gutter measuring 49.6 would mean the padding had been folded into the box.
+ */
+export function runPrDetailFidelityCheck(): string {
+  const checks: Check[] = []
+  const add = (label: string, want: number, got: number | null) =>
+    checks.push({ label, want, got })
+
+  // PrDetailScreen.swift: .padding(s8), VStack spacing s6, title FontSize.screenTitle
+  add('detail padding', S.s8, px('#pr-detail-screen', 'padding-top'))
+  add('detail row gap', S.s6, px('#pr-detail-screen', 'row-gap'))
+  add('detail title font-size', 22, px('#pr-title', 'font-size'))
+  add('detail facts gap', S.s4, px('#pr-facts', 'column-gap'))
+
+  // tabBar: .padding(s1), HStack spacing s1, radius md
+  add('tab bar padding', S.s1, px('#pr-tab-bar', 'padding-top'))
+  add('tab bar gap', S.s1, px('#pr-tab-bar', 'column-gap'))
+  add('tab bar radius', 8, px('#pr-tab-bar', 'border-top-left-radius'))
+  add('tab padding-top', S.s2, px("[data-tab='files']", 'padding-top'))
+  add('tab padding-left', S.s4, px("[data-tab='files']", 'padding-left'))
+
+  // filesTab: VStack spacing s4 between file sections
+  add('files gap', S.s4, px('#pr-files', 'row-gap'))
+
+  // PrFileSectionView: header .padding(.vertical, s3) .padding(.horizontal, s4),
+  // radius md, 1px n900 border, gutters .frame(width: 44) .padding(.trailing, s2)
+  add('file section radius', 8, px('[data-file-section]', 'border-top-left-radius'))
+  add('file section border', 1, px('[data-file-section]', 'border-top-width'))
+  add('file header padding-top', S.s3, px('[data-file-header]', 'padding-top'))
+  add('file header padding-left', S.s4, px('[data-file-header]', 'padding-left'))
+  add('file header gap', S.s3, px('[data-file-header]', 'column-gap'))
+
+  const gutters = document.querySelectorAll('[data-gutter]')
+  add('gutter count', 2, gutters.length === 0 ? null : 2)
+  add('old gutter width', 44, (gutters[0] as HTMLElement | undefined)?.getBoundingClientRect().width ?? null)
+  add('new gutter width', 44, (gutters[1] as HTMLElement | undefined)?.getBoundingClientRect().width ?? null)
+  add('gutter trailing gap', S.s2, px('[data-gutter]', 'margin-right'))
+  add('diff text padding-left', S.s3, px('[data-diff-line] > span:last-child', 'padding-left'))
+
+  return report('PR DETAIL FIDELITY', checks)
+}
+
+/** One report, so the three checks cannot drift in how they say PASS. */
+function report(title: string, checks: Check[]): string {
   const failures = checks
     .filter(({ want, got }) => got === null || Math.abs(got - want) > LAYOUT_UNIT)
     .map(({ label, want, got }) =>
       got === null ? `${label}: element missing` : `${label}: want ${want}, got ${got.toFixed(4)}`,
     )
 
-  const lines = [
-    `PR FIDELITY ${failures.length === 0 ? 'PASS' : 'FAIL'} ${checks.length - failures.length}/${checks.length}`,
+  return [
+    `${title} ${failures.length === 0 ? 'PASS' : 'FAIL'} ${checks.length - failures.length}/${checks.length}`,
     ...failures.map((failure) => `FAILURE ${failure}`),
-  ]
-  return lines.join('\n')
+  ].join('\n')
 }
