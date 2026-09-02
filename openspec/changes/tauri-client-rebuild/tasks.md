@@ -87,14 +87,14 @@
 
 ## 8. Native surface
 
-- [ ] 8.1 Notifications via the Tauri notification plugin, matching
+- [x] 8.1 Notifications via the Tauri notification plugin, matching
       `ReviewNotificationLogic` and the newly-appeared rules
-- [ ] 8.2 Tray badge from the live `needsInput` count, already working, plus the click
+- [x] 8.2 Tray badge from the live `needsInput` count, already working, plus the click
       behaviour that focuses the window
-- [ ] 8.3 Clipboard via the Tauri clipboard plugin, replacing `NSPasteboard`
-- [ ] 8.4 Expose the account name from Rust, replacing the spike's hard-coded constant for
+- [x] 8.3 Clipboard via the Tauri clipboard plugin, replacing `NSPasteboard`
+- [x] 8.4 Expose the account name from Rust, replacing the spike's hard-coded constant for
       `ProcessInfo.processInfo.fullUserName`
-- [ ] 8.5 Export any SF Symbols the remaining screens need, extending
+- [x] 8.5 Export any SF Symbols the remaining screens need, extending
       `tools/export-ui-symbols.swift`
 
 ## 9. Tests

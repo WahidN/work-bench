@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { useIsFetching } from '@tanstack/react-query'
+import { useIsFetching, useQueryClient } from '@tanstack/react-query'
 import { AgentChatPanel } from './AgentChatPanel'
 import { chatTargetForTodo, targetProjectId, type AgentChatTarget } from './agentChatLogic'
 import { AppHeader } from './AppHeader'
@@ -43,6 +43,7 @@ import {
   useSetTodoPinned,
   useShellData,
   useUpdateProject,
+  fetchPrReview,
 } from './queries'
 import {
   UNKNOWN_AGENT,
@@ -51,11 +52,31 @@ import {
   canManageAgent,
   type AgentState,
 } from './engineAgent'
+import { accountName, notify, requestNotificationPermission } from './native'
+import {
+  REVIEW_TITLE,
+  itemKey,
+  needsInputTitle,
+  newlyAppeared,
+  reviewBody,
+  reviewsToAnnounce,
+  unpostedCount,
+} from './notificationLogic'
+import type { PrReviewView } from './prReviewLogic'
 import { projectCards } from './projectsLogic'
 import { prListRef, type SidebarSection, type TaskRow as TaskRowModel } from './logic'
 import { isTypingIn, matchShortcut, shortcutForMenuId, type Shortcut } from './shortcuts'
 
 const IN_TAURI = '__TAURI_INTERNALS__' in window
+
+/**
+ * How often the review notification looks again.
+ *
+ * The Swift's loop is 15 seconds and reloads Today in the same turn; here that reload is
+ * the query layer's own 30-second poll, so this matches it. Half a minute late for a review
+ * that took minutes is not a difference anyone feels.
+ */
+const REVIEW_BEAT_MS = 30_000
 
 /** The badge count is Today's `needsInput`, which is what the Swift app's badge counts. */
 async function pushBadge(count: number): Promise<void> {
@@ -93,6 +114,7 @@ export function Shell() {
    */
   const [agent, setAgent] = useState<AgentState>(UNKNOWN_AGENT)
   const [isStartingAgent, setIsStartingAgent] = useState(false)
+  const [account, setAccount] = useState('')
   const data = useShellData()
   /*
    * Every todo, done ones included, read by three surfaces: the sidebar's Jira count, the
@@ -273,6 +295,99 @@ export function Shell() {
       .finally(() => setIsStartingAgent(false))
   }
 
+  /*
+   * The account name and the notification permission, both once at launch.
+   *
+   * Asking for permission here rather than at the first notification is what
+   * `applicationDidFinishLaunching` does, and for the reason it matters: the macOS prompt
+   * appearing at the moment something happened would cover the thing that happened, and
+   * the notification would be dropped while the user read the prompt.
+   */
+  useEffect(() => {
+    void accountName().then(setAccount).catch(() => setAccount(''))
+    void requestNotificationPermission()
+  }, [])
+
+  /*
+   * Notifies for what appeared in `needsInput` since the last look, and for a review that
+   * finished with something to post. Two signals on purpose; see notificationLogic.ts.
+   *
+   * `seenKeys` starts null rather than empty, which is `isFirstCycle`: on launch every item
+   * is new, and a notification per open ticket is not a welcome.
+   */
+  const seenKeys = useRef<Set<string> | null>(null)
+  const items = data.today?.needsInput
+  useEffect(() => {
+    if (items === undefined) return
+    const current = new Set(items.map(itemKey))
+    const previous = seenKeys.current
+    seenKeys.current = current
+    if (previous === null) return
+    for (const item of newlyAppeared(items, previous)) {
+      void notify(needsInputTitle(item), item.title)
+    }
+  }, [items])
+
+  /*
+   * A finished review, announced once per pull request.
+   *
+   * Fetched rather than read out of the query cache, which is what `announceFinishedReviews`
+   * does and for the reason it has to: `usePrReview` only holds a pull request whose page was
+   * opened or whose Review button was pressed, and `ReviewStarter` stops the moment the user
+   * leaves the list. Reading the cache meant the one case this exists for, a review finishing
+   * while the user is elsewhere, was exactly the case it missed.
+   *
+   * The cost is what the Swift accepts, and its comment says why it is small: a pull request
+   * whose review is already announced needs no fetching, and one that has never been reviewed
+   * answers with an empty list. `announcedReviews` is a ref, so a re-render cannot reannounce
+   * and cannot refetch what has been said.
+   */
+  const client = useQueryClient()
+  const announcedReviews = useRef<Set<number>>(new Set())
+  /*
+   * The pull requests, in a ref, so the interval below can read the current list without
+   * being torn down and restarted every time a poll hands back a new array.
+   */
+  const currentPrs = useRef(data.prs)
+  currentPrs.current = data.prs
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function look() {
+      const reviews = new Map<number, PrReviewView>()
+      for (const pr of currentPrs.current) {
+        if (announcedReviews.current.has(pr.id)) continue
+        try {
+          reviews.set(pr.id, await fetchPrReview(client, pr.id, REVIEW_BEAT_MS - 5_000))
+        } catch {
+          // One pull request the engine will not answer for is no reason to stop looking
+          // at the rest, and not something to interrupt anyone about.
+        }
+      }
+      if (cancelled) return
+
+      for (const prId of reviewsToAnnounce(reviews, announcedReviews.current)) {
+        const pr = currentPrs.current.find((candidate) => candidate.id === prId)
+        const review = reviews.get(prId)
+        if (pr === undefined || review === undefined) continue
+        void notify(REVIEW_TITLE, reviewBody(pr.title, unpostedCount(review)))
+        announcedReviews.current.add(prId)
+      }
+    }
+
+    // An interval rather than a dependency, because a review finishing changes nothing
+    // this component renders: the pull request list is identical, so an effect keyed on it
+    // would never look again. `announceFinishedReviews` runs on its own loop for the same
+    // reason.
+    const timer = setInterval(() => void look(), REVIEW_BEAT_MS)
+    void look()
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [client])
+
   /** The Tasks tab's checkbox routes exactly as Today's does: complete, or unpin. */
   function toggleProjectTask(row: TaskRowModel) {
     const id = Number(row.id.split('-')[1])
@@ -384,6 +499,7 @@ export function Shell() {
         onSelect={navigate}
         onOpenPalette={() => setIsPaletteOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        accountName={account}
         /* `openProject` opens the project's page rather than only selecting the row. */
         selectedProjectId={openProjectId}
         onSelectProject={(project) => {

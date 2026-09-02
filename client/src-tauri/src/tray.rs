@@ -1,16 +1,47 @@
 use tauri::image::Image;
-use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Runtime};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Manager, Runtime};
 
-pub const TRAY_ID: &str = "workbench-spike";
+pub const TRAY_ID: &str = "workbench";
 
 /// Creates the tray with no icon yet. The frontend supplies the pixels, because the
 /// badge is drawn in a canvas: see `set_tray_icon`.
+///
+/// The click handler is `statusItemClicked` in AppDelegate.swift, which calls
+/// `NSApp.activate(ignoringOtherApps: true)` and then brings every window forward. The
+/// point of the badge is that it is read while the app is behind something else, so a
+/// click that does not raise the window makes the count useless.
 pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     TrayIconBuilder::with_id(TRAY_ID)
-        .tooltip("Workbench spike")
+        .tooltip("Workbench")
+        // `show_menu_on_left_click(false)` is what leaves the left click for us. There is
+        // no tray menu, so without this the click would be swallowed opening nothing.
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray, event| {
+            // On the left button's release, not on any Click: the event carries a
+            // `button_state` and fires for both press and release, so matching the variant
+            // alone raised the window twice per click. `statusItemClicked` is wired to the
+            // status item button's action, which is the left one.
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                bring_forward(tray.app_handle());
+            }
+        })
         .build(app)?;
     Ok(())
+}
+
+/// `bringWindowForward`: raise every window and take focus.
+fn bring_forward<R: Runtime>(app: &AppHandle<R>) {
+    for window in app.webview_windows().values() {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
 }
 
 /// Replaces the tray icon with raw RGBA pixels handed over from the webview.

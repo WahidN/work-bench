@@ -16,6 +16,7 @@ import {
   useMutation,
   useQuery,
   useQueryClient,
+  type QueryClient,
   type UseQueryOptions,
 } from '@tanstack/react-query'
 import { engine } from './engineClient'
@@ -137,6 +138,27 @@ export const usePrReview = (id: number, enabled = true) =>
     enabled,
     refetchInterval: (query) => (isRunning(query.state.data) ? 5_000 : false),
   })
+
+/**
+ * One pull request's stored review, fetched on demand rather than watched.
+ *
+ * For the review notification, which has to look at pull requests no screen is holding:
+ * `usePrReview` only exists while something renders it. `staleTime` lets an open pull
+ * request page and this share one answer within a beat instead of asking twice.
+ *
+ * Takes the client rather than being a hook, because the caller is an effect on a timer.
+ */
+export function fetchPrReview(
+  client: QueryClient,
+  id: number,
+  staleTime: number,
+): Promise<PrReviewView> {
+  return client.fetchQuery<PrReviewView>({
+    queryKey: keys.prReview(id),
+    queryFn: () => engine.get<PrReviewView>(`/prs/${id}/review`),
+    staleTime,
+  })
+}
 
 /**
  * The raw unified diff, for the agent panel's `DiffView`.
