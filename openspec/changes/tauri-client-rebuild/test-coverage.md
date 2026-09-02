@@ -102,7 +102,7 @@ Not ported, and this is the deliberate part.
 
 - **`SystemEnvironment::resolve_toolchain`.** It runs the user's shell. The seam exists so
   everything above it is tested without one, and the real path is exercised by
-  `cargo run --bin launchd_probe -- check`, which prints what it resolved.
+  `cargo run --features probe --bin launchd_probe -- check`, which prints what it resolved.
 - **`PrDetailViewModel`'s reply and merge paths.** They are mutation hooks now. The rules
   worth testing, that a failed reply keeps the text and that a refusal is read off the
   result, are one line each and are asserted by neither side.

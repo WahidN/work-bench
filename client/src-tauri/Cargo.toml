@@ -17,6 +17,23 @@ default-run = "tauri-client"
 name = "tauri_client_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[[bin]]
+name = "tauri-client"
+path = "src/main.rs"
+
+# The probe is a developer tool and has no business in a shipped app. Left as a plain
+# second binary in this crate it builds by default, so `tauri build` copied it into
+# Workbench.app/Contents/MacOS next to the real one: 664KB of terminal tooling that can
+# write and bootstrap LaunchAgent plists, handed to users for nothing. The feature gate
+# keeps it a `cargo run --features probe --bin launchd_probe` away and out of the bundle.
+[[bin]]
+name = "launchd_probe"
+path = "src/bin/launchd_probe.rs"
+required-features = ["probe"]
+
+[features]
+probe = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
