@@ -4,8 +4,6 @@ import Testing
 private final class StubPrDetailAPI: PrDetailAPI {
     var detail: PrDetail?
     var detailError: Error?
-    var draft = "suggested reply"
-    var draftError: Error?
     var postedText: String?
     var postError: Error?
     var mergeResult = PrChatResult(action: .merged, reply: "Merged.")
@@ -18,10 +16,6 @@ private final class StubPrDetailAPI: PrDetailAPI {
         prDetailCallCount += 1
         if let detailError { throw detailError }
         return detail!
-    }
-    func draftReviewReply(prId: Int, commentId: Int) async throws -> String {
-        if let draftError { throw draftError }
-        return draft
     }
     func postReviewReply(prId: Int, commentId: Int, text: String) async throws {
         await onPost?()
@@ -64,22 +58,13 @@ struct PrDetailViewModelTests {
         #expect(model.errorMessage != nil)
     }
 
-    @Test func draftingFillsTheBoxWithoutPosting() async {
-        let api = StubPrDetailAPI()
-        let model = PrDetailViewModel(api: api)
-        await model.draftReply(prId: 1, commentId: 7)
-        #expect(model.drafts[7] == "suggested reply")
-        #expect(api.postedText == nil)
-    }
-
-    @Test func postingSendsTheEditedTextAndClearsTheBox() async {
+    @Test func postingSendsTheTypedTextAndReportsSuccess() async {
         let api = StubPrDetailAPI()
         api.detail = makeDetail()
         let model = PrDetailViewModel(api: api)
-        model.drafts[7] = "edited by hand"
-        await model.postReply(prId: 1, commentId: 7, text: "edited by hand")
-        #expect(api.postedText == "edited by hand")
-        #expect(model.drafts[7] == nil)
+        let posted = await model.postReply(prId: 1, commentId: 7, text: "typed by hand")
+        #expect(api.postedText == "typed by hand")
+        #expect(posted)
     }
 
     @Test func mergeReportsARefusalRatherThanClaimingSuccess() async {
@@ -90,30 +75,22 @@ struct PrDetailViewModelTests {
         #expect(model.errorMessage?.contains("only merges") == true)
     }
 
-    @Test func postingKeepsTheDraftWhenPostingFails() async {
+    /// The box is only emptied on a true answer, so a refused post has to report
+    /// failure or the text the user typed is thrown away.
+    @Test func postingReportsFailureAndSurfacesTheError() async {
         let api = StubPrDetailAPI()
         api.postError = APIError.transportFailed("gh down")
         let model = PrDetailViewModel(api: api)
-        model.drafts[7] = "edited by hand"
-        await model.postReply(prId: 1, commentId: 7, text: "edited by hand")
-        #expect(model.drafts[7] == "edited by hand")
+        let posted = await model.postReply(prId: 1, commentId: 7, text: "typed by hand")
+        #expect(!posted)
         #expect(model.errorMessage != nil)
-    }
-
-    @Test func draftReplyClearsBusyCommentIdWhenDraftingFails() async {
-        let api = StubPrDetailAPI()
-        api.draftError = APIError.transportFailed("gh down")
-        let model = PrDetailViewModel(api: api)
-        await model.draftReply(prId: 1, commentId: 7)
-        #expect(!model.busyCommentIds.contains(7))
     }
 
     @Test func postReplyClearsBusyCommentIdWhenPostingFails() async {
         let api = StubPrDetailAPI()
         api.postError = APIError.transportFailed("gh down")
         let model = PrDetailViewModel(api: api)
-        model.drafts[7] = "edited by hand"
-        await model.postReply(prId: 1, commentId: 7, text: "edited by hand")
+        _ = await model.postReply(prId: 1, commentId: 7, text: "typed by hand")
         #expect(!model.busyCommentIds.contains(7))
     }
 
@@ -121,13 +98,13 @@ struct PrDetailViewModelTests {
         let api = StubPrDetailAPI()
         api.postError = APIError.transportFailed("gh down")
         let model = PrDetailViewModel(api: api)
-        model.drafts[7] = "edited by hand"
         var thread7StillBusyWhileThread8Posted = false
         api.onPost = {
-            await model.draftReply(prId: 1, commentId: 8)
+            api.onPost = nil
+            _ = await model.postReply(prId: 1, commentId: 8, text: "other thread")
             thread7StillBusyWhileThread8Posted = model.busyCommentIds.contains(7)
         }
-        await model.postReply(prId: 1, commentId: 7, text: "edited by hand")
+        _ = await model.postReply(prId: 1, commentId: 7, text: "typed by hand")
         #expect(thread7StillBusyWhileThread8Posted)
         #expect(model.busyCommentIds.isEmpty)
     }

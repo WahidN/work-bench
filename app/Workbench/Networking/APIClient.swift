@@ -228,13 +228,6 @@ extension APIClient {
         try await send("GET", "/prs/\(id)/detail", body: nil)
     }
 
-    func draftReviewReply(prId: Int, commentId: Int) async throws -> String {
-        let reply: ReviewReplyDraft = try await send(
-            "POST", "/prs/\(prId)/review-comments/\(commentId)/draft", body: nil
-        )
-        return reply.draft
-    }
-
     func postReviewReply(prId: Int, commentId: Int, text: String) async throws {
         let _: PostedReviewComment = try await send(
             "POST", "/prs/\(prId)/review-comments/\(commentId)/reply", body: ["text": text]

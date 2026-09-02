@@ -2,7 +2,6 @@ import Observation
 
 protocol PrDetailAPI {
     func prDetail(id: Int) async throws -> PrDetail
-    func draftReviewReply(prId: Int, commentId: Int) async throws -> String
     func postReviewReply(prId: Int, commentId: Int, text: String) async throws
     func mergePr(id: Int) async throws -> PrChatResult
 }
@@ -16,8 +15,6 @@ final class PrDetailViewModel {
     private(set) var isLoading = true
     private(set) var isMerging = false
     private(set) var busyCommentIds: Set<Int> = []
-    /// Suggested text per review comment id, editable before it is posted.
-    var drafts: [Int: String] = [:]
     var errorMessage: String?
 
     private let api: any PrDetailAPI
@@ -41,27 +38,19 @@ final class PrDetailViewModel {
         }
     }
 
-    func draftReply(prId: Int, commentId: Int) async {
-        guard !busyCommentIds.contains(commentId) else { return }
-        busyCommentIds.insert(commentId)
-        defer { busyCommentIds.remove(commentId) }
-        do {
-            drafts[commentId] = try await api.draftReviewReply(prId: prId, commentId: commentId)
-        } catch {
-            present(error)
-        }
-    }
-
-    func postReply(prId: Int, commentId: Int, text: String) async {
-        guard !busyCommentIds.contains(commentId) else { return }
+    /// Answers whether the reply reached GitHub, so the box is only emptied on a
+    /// post that actually landed and a failed one leaves the text to retry.
+    func postReply(prId: Int, commentId: Int, text: String) async -> Bool {
+        guard !busyCommentIds.contains(commentId) else { return false }
         busyCommentIds.insert(commentId)
         defer { busyCommentIds.remove(commentId) }
         do {
             try await api.postReviewReply(prId: prId, commentId: commentId, text: text)
-            drafts[commentId] = nil
             await load(prId: prId)
+            return true
         } catch {
             present(error)
+            return false
         }
     }
 

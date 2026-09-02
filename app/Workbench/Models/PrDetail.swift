@@ -64,10 +64,6 @@ struct PrDetail: Codable, Equatable {
     let conversation: [PrConversationItem]
 }
 
-struct ReviewReplyDraft: Codable, Equatable {
-    let draft: String
-}
-
 struct PostedReviewComment: Codable, Equatable {
     let id: Int
 }
