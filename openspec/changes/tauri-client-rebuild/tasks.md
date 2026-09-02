@@ -49,13 +49,13 @@
 
 ## 4. The remaining list screens
 
-- [ ] 4.1 Port `ProjectsLogic` including `relativeTime` and `isOpenTask`, with unit tests
-- [ ] 4.2 Port `ProjectsScreen.swift` and its cards
-- [ ] 4.3 Port `ProjectDetailScreen.swift` and `ProjectDetailLogic`, including the
+- [x] 4.1 Port `ProjectsLogic` including `relativeTime` and `isOpenTask`, with unit tests
+- [x] 4.2 Port `ProjectsScreen.swift` and its cards
+- [x] 4.3 Port `ProjectDetailScreen.swift` and `ProjectDetailLogic`, including the
       debounced save and the in-flight write rules its ViewModel comments describe
-- [ ] 4.4 Port `ProjectFormSheet.swift` and `ProjectDraft`
-- [ ] 4.5 Port `JiraScreen.swift` and `JiraLogic`, including the split-by-status behaviour
-- [ ] 4.6 Sidebar project selection and per-project counts against the real project list
+- [x] 4.4 Port `ProjectFormSheet.swift` and `ProjectDraft`
+- [x] 4.5 Port `JiraScreen.swift` and `JiraLogic`, including the split-by-status behaviour
+- [x] 4.6 Sidebar project selection and per-project counts against the real project list
 
 ## 5. Agent chat panel
 
