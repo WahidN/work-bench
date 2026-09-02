@@ -1,8 +1,10 @@
+mod agent;
 mod engine;
 mod keychain;
 mod menu;
 // Public so the launchd_probe binary can drive it from the terminal.
 pub mod launchd;
+mod token;
 mod tray;
 
 /// Prints the probe results to stdout at startup.
@@ -48,6 +50,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .menu(menu::build)
         .on_menu_event(|app, event| menu::handle(app, event.id().as_ref()))
         .setup(move |app| {
@@ -65,6 +68,13 @@ pub fn run() {
             engine::engine_patch,
             engine::engine_put,
             engine::engine_delete,
+            agent::engine_agent_state,
+            agent::engine_agent_install,
+            agent::engine_agent_start,
+            agent::engine_agent_remove,
+            token::engine_token_state,
+            token::engine_token_write,
+            token::engine_token_delete,
             tray::set_tray_icon
         ])
         .run(tauri::generate_context!())
