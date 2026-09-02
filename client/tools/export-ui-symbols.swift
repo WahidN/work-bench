@@ -20,7 +20,8 @@
 
 import AppKit
 
-// Every symbol used by Sidebar, AppHeader, TodayScreen, TaskRow and PRsScreen.
+// Every symbol used by Sidebar, AppHeader, TodayScreen, TaskRow, PRsScreen and
+// PrDetailScreen.
 let symbolNames = [
     "sun.horizon",
     "exclamationmark.triangle",
@@ -39,6 +40,12 @@ let symbolNames = [
     "pin.fill",
     "checklist",
     "bubble.left.fill",
+    // PrDetailScreen and PrFileSectionView.
+    "chevron.down",
+    "chevron.right",
+    "arrow.left",
+    "doc.text",
+    "bubble.left",
 ]
 
 let outputDirectory = "public/icons"
