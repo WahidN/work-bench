@@ -59,10 +59,10 @@
 
 ## 5. Agent chat panel
 
-- [ ] 5.1 Port `AgentChatLogic` and the chat target routing across todo, ticket, project
+- [x] 5.1 Port `AgentChatLogic` and the chat target routing across todo, ticket, project
       and pull request
-- [ ] 5.2 Port `AgentChatPanel.swift`, the slide-over on the sidebar's raised tone
-- [ ] 5.3 Send a message and poll for the reply, matching how the app waits on a headless
+- [x] 5.2 Port `AgentChatPanel.swift`, the slide-over on the sidebar's raised tone
+- [x] 5.3 Send a message and poll for the reply, matching how the app waits on a headless
       Claude session rather than assuming a fast response
 
 ## 6. Commands, palette and shortcuts
