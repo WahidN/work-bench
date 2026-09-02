@@ -6,7 +6,6 @@ import { sendPrMessage } from '../../prChat.js';
 import { acquireJob, finishJob, isJobRunning } from '../../jobs.js';
 import { openDetachedWorktree, getDiff, removeWorktree, headSha } from '../../git.js';
 import { fetchPrDetailView, postReviewCommentReply, postLineComment } from '../../sources/githubPrDetail.js';
-import { draftReviewReply } from '../../prReplyDraft.js';
 import { reviewPrDiff } from '../../prReview.js';
 import { splitByAnchor } from '../../diffAnchors.js';
 import {
@@ -90,17 +89,6 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
       res.json(view);
     } catch (err) {
       res.status(502).json({ error: String(err) });
-    }
-  });
-
-  app.post('/prs/:id/review-comments/:commentId/draft', async (req, res) => {
-    try {
-      const draft = await draftReviewReply(db, Number(req.params.id), Number(req.params.commentId));
-      res.json({ draft });
-    } catch (err) {
-      const message = String(err);
-      if (message.includes('not found')) res.status(404).json({ error: message });
-      else res.status(500).json({ error: message });
     }
   });
 
