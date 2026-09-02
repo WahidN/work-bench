@@ -1,8 +1,41 @@
 use crate::keychain;
 use reqwest::Method;
 use serde_json::Value;
+use std::sync::OnceLock;
 
 const BASE: &str = "http://127.0.0.1:4173";
+
+/// The bearer token, read once per app run.
+///
+/// `APIClient.makeRequest` in the Swift app reads the keychain on every single request,
+/// and that is fine there because `SecItemCopyMatching` is an in-process call costing
+/// microseconds. This client shells out to `/usr/bin/security`, which forks a process, so
+/// copying that structure literally meant a subprocess per request: the query layer polls
+/// five lists every 30 seconds, which is about 10 spawns a minute for as long as the app
+/// is open.
+///
+/// So this diverges from the Swift on purpose. The observable behaviour is identical, a
+/// bearer token on every request; only the number of processes changes. The cost is that a
+/// token regenerated while the app is running needs a restart, and the engine only
+/// generates one when the keychain has none.
+static TOKEN: OnceLock<String> = OnceLock::new();
+
+/// One client for the process, because the client owns the connection pool.
+///
+/// `reqwest::Client::new()` per request builds a fresh pool every time, so no connection
+/// is ever reused and every request pays for a new TCP handshake. reqwest's own docs say
+/// to hold on to the client.
+static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+/// Cached on success only: a failed read must not be remembered, or an app that started
+/// before the engine had written a token would never recover without a restart.
+fn api_token() -> Result<&'static str, String> {
+    if let Some(token) = TOKEN.get() {
+        return Ok(token);
+    }
+    let token = keychain::read_api_token()?;
+    Ok(TOKEN.get_or_init(|| token))
+}
 
 /// Every engine request goes through Rust rather than through the webview.
 ///
@@ -22,8 +55,9 @@ async fn request(method: Method, path: &str, body: Option<Value>) -> Result<Stri
         return Err(format!("path must start with a slash: {path}"));
     }
 
-    let token = keychain::read_api_token()?;
-    let mut builder = reqwest::Client::new()
+    let token = api_token()?;
+    let mut builder = CLIENT
+        .get_or_init(reqwest::Client::new)
         .request(method.clone(), format!("{BASE}{path}"))
         .bearer_auth(token);
 
