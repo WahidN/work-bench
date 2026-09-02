@@ -147,9 +147,6 @@ variables.
 
 ## Not ported
 
-- **Refresh**, the header button. It renders and measures and does nothing. The engine's
-  `POST /poll` is the call behind it and the query layer's invalidation is the other half,
-  so it is small; it is simply not in this change's task list.
 - **The Jira connect flow past the connected state.** Four of five branches are written and
   none is exercised, because reaching them means disconnecting a real Jira.
 - **Notifications appearing on screen.** The rules have 13 tests; that macOS draws the
@@ -173,12 +170,16 @@ platforms and which therefore does not travel to Linux or Windows. The cross-pla
 argument for Tauri does not survive that, so the honest reason to keep going is the one
 language, not the reach.
 
-Three things would need doing before `app/` could go:
+Two things would need doing before `app/` could go:
 
 1. Signing and notarisation, which needs credentials only the user has.
-2. The Refresh button, which is small.
-3. The identifier moving to `com.linku.workbench`, which can only happen once the Swift app
+2. The identifier moving to `com.linku.workbench`, which can only happen once the Swift app
    is gone.
+
+Refresh was the third and is now ported. Wiring it up surfaced an engine bug on the first
+click: `POST /poll` answers `sourceErrors: ["githubPrs: FOREIGN KEY constraint failed"]`,
+reproducible with `curl -X POST localhost:4173/poll`. It is not the client's, and it was
+invisible before, because the engine logs those to its own console and nowhere else.
 
 Recommendation: keep both installed for a week of real use. The port is verified but it has
 not been *lived in*, and the difference between those two is exactly what a week finds. The
