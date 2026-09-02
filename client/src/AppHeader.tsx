@@ -29,9 +29,18 @@ function HeaderActionButton({ title, symbol }: { title: string; symbol: string }
 export function AppHeader({
   section,
   activeProjectCount,
+  kickerOverride,
+  headingOverride,
 }: {
   section: SidebarSection
   activeProjectCount: number
+  /*
+   * ContentView.swift passes these while a pull request or a project is open, so the
+   * header names what is on screen rather than the section it lives under. Overrides
+   * rather than a separate header, because everything else about it stays the same.
+   */
+  kickerOverride?: string
+  headingOverride?: string
 }) {
   return (
     <header
@@ -54,7 +63,7 @@ export function AppHeader({
             color: 'var(--wb-n600)',
           }}
         >
-          {headerKicker(section, activeProjectCount, todayDateString(new Date()))}
+          {kickerOverride ?? headerKicker(section, activeProjectCount, todayDateString(new Date()))}
         </span>
         <h1
           id="app-heading"
@@ -66,7 +75,7 @@ export function AppHeader({
             color: 'var(--wb-text)',
           }}
         >
-          {section}
+          {headingOverride ?? section}
         </h1>
       </div>
       <div style={{ marginLeft: 'auto', display: 'flex', gap: 'var(--wb-s4)' }}>

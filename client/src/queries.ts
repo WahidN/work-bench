@@ -19,10 +19,12 @@ import {
   type UseQueryOptions,
 } from '@tanstack/react-query'
 import { engine } from './engineClient'
-import type { Pr, Project, Ticket, Todo } from '../../engine/src/types.ts'
+import type { Pr, Project, Ticket, Todo, TodoPriority } from '../../engine/src/types.ts'
 import type { TodayView } from '../../engine/src/todos.ts'
+import type { PrDetailView } from './prDetailLogic'
+import { isRunning, type PrReviewView } from './prReviewLogic'
 
-export type { Pr, Project, Ticket, Todo, TodayView }
+export type { Pr, Project, Ticket, Todo, TodoPriority, TodayView }
 export { EngineError } from './engineClient'
 
 /*
@@ -98,6 +100,60 @@ export function useShellData() {
   }
 }
 
+/* ------------------------------------------------------- One pull request */
+
+/**
+ * The GitHub-backed detail, standing in for `PrDetailViewModel.load`.
+ *
+ * Not polled. The route reaches GitHub behind a short-lived cache, and the Swift screen
+ * loads it once in `.task`; a 30-second poll here would turn opening a page into a
+ * standing cost against someone's API rate limit. It refetches when a mutation on this
+ * pull request invalidates it, which is exactly when the Swift ViewModel reloads.
+ */
+export const usePrDetail = (id: number) =>
+  useQuery<PrDetailView>({
+    queryKey: keys.prDetail(id),
+    queryFn: () => engine.get<PrDetailView>(`/prs/${id}/detail`),
+  })
+
+/**
+ * The stored review, polled only while the engine says it is working.
+ *
+ * This is `PrReviewViewModel.followUntilFinished` expressed as a refetch interval: the
+ * same 5 seconds, and it stops for the same reason, which is the engine no longer
+ * reporting a running job. Doing it here rather than in a loop means two screens watching
+ * one pull request share a single poll.
+ *
+ * `enabled` is what keeps the list screen from opening one of these per row. There it is
+ * true only for a pull request the user actually started a review on, matching
+ * `startedReviewIds` in PRsScreen.swift.
+ */
+export const usePrReview = (id: number, enabled = true) =>
+  useQuery<PrReviewView>({
+    queryKey: keys.prReview(id),
+    queryFn: () => engine.get<PrReviewView>(`/prs/${id}/review`),
+    enabled,
+    refetchInterval: (query) => (isRunning(query.state.data) ? 5_000 : false),
+  })
+
+/**
+ * The raw unified diff, fetched only when asked for.
+ *
+ * `enabled` is not a nicety here. The route opens and force-removes the pull request's
+ * worktree under the PR job lock, so a fetch nobody asked for would contend with the fix
+ * pipeline and with review itself, and answer 409 when it lost.
+ */
+export const usePrDiff = (id: number, enabled: boolean) =>
+  useQuery<{ diff: string }>({
+    queryKey: keys.prDiff(id),
+    queryFn: () => engine.get<{ diff: string }>(`/prs/${id}/diff`),
+    enabled,
+    // A worktree per refetch is too expensive to repeat on a window focus.
+    staleTime: Infinity,
+  })
+
+/* ------------------------------------------------------------- Mutations */
+
 /**
  * A mutation that refetches what it changed, which is the job the ViewModels do by hand.
  *
@@ -114,6 +170,139 @@ export function useEngineMutation<TArgs, TResult>(
     mutationFn: run,
     onSuccess: () => {
       for (const key of invalidates) {
+        void client.invalidateQueries({ queryKey: key })
+      }
+    },
+  })
+}
+
+/*
+ * Which keys each mutation invalidates is copied from what the matching ViewModel
+ * reloads, not from what looks tidy. `TodayViewModel.togglePin` says it plainly:
+ * unpinning a Jira todo removes it from Today's list entirely, so the whole list is
+ * reloaded rather than the row patched in place.
+ */
+const TODO_KEYS = [keys.today, keys.todos] as const
+/** A promote turns a todo into a ticket, so both lists move. */
+const PROMOTE_KEYS = [keys.today, keys.todos, keys.tickets] as const
+
+export const useCreateTodo = () =>
+  useEngineMutation(
+    (args: { text: string; projectId?: number }) =>
+      engine.post<Todo>('/todos', {
+        text: args.text,
+        ...(args.projectId === undefined ? {} : { projectId: args.projectId }),
+      }),
+    TODO_KEYS,
+  )
+
+export const useSetTodoDone = () =>
+  useEngineMutation(
+    (args: { id: number; done: boolean }) =>
+      engine.patch<Todo>(`/todos/${args.id}`, { done: args.done }),
+    TODO_KEYS,
+  )
+
+export const useSetTodoPriority = () =>
+  useEngineMutation(
+    (args: { id: number; priority: TodoPriority }) =>
+      engine.patch<Todo>(`/todos/${args.id}`, { priority: args.priority }),
+    TODO_KEYS,
+  )
+
+export const useSetTodoPinned = () =>
+  useEngineMutation(
+    (args: { id: number; pinned: boolean }) =>
+      engine.patch<Todo>(`/todos/${args.id}/pin`, { pinned: args.pinned }),
+    TODO_KEYS,
+  )
+
+export const useDeleteTodo = () =>
+  useEngineMutation((args: { id: number }) => engine.delete<void>(`/todos/${args.id}`), TODO_KEYS)
+
+export const usePromoteTodo = () =>
+  useEngineMutation(
+    (args: { id: number }) => engine.post<Ticket>(`/todos/${args.id}/promote`),
+    PROMOTE_KEYS,
+  )
+
+export const useSetTicketPinned = () =>
+  useEngineMutation(
+    (args: { id: number; pinned: boolean }) =>
+      engine.patch<Ticket>(`/tickets/${args.id}/pin`, { pinned: args.pinned }),
+    // Today too: a pinned ticket is a row on it.
+    [keys.tickets, keys.today] as const,
+  )
+
+export const useSetPrPinned = () =>
+  useEngineMutation(
+    (args: { id: number; pinned: boolean }) =>
+      engine.patch<Pr>(`/prs/${args.id}/pin`, { pinned: args.pinned }),
+    [keys.prs, keys.today] as const,
+  )
+
+/* ---------------------------------------------------- Pull request review */
+
+/**
+ * Starts a background review. Answers 202 and nothing useful, so the caller learns it
+ * began from the review query starting to report a running job.
+ */
+export const useStartPrReview = (id: number) =>
+  useEngineMutation(() => engine.post<{ started: boolean }>(`/prs/${id}/review`), [
+    keys.prReview(id),
+  ])
+
+/**
+ * Posts one finding to GitHub.
+ *
+ * The body travels with the request because the user may have edited it on screen, which
+ * is the same reason the route accepts one.
+ */
+export const usePostPrFinding = (id: number) =>
+  useEngineMutation(
+    (args: { findingId: number; body: string }) =>
+      engine.post<{ posted: boolean }>(`/prs/${id}/review/findings/${args.findingId}`, {
+        body: args.body,
+      }),
+    [keys.prReview(id), keys.prDetail(id)],
+  )
+
+export const useDiscardPrFinding = (id: number) =>
+  useEngineMutation(
+    (args: { findingId: number }) =>
+      engine.delete<void>(`/prs/${id}/review/findings/${args.findingId}`),
+    [keys.prReview(id)],
+  )
+
+/* ------------------------------------------ Pull request detail mutations */
+
+export const usePostReviewReply = (id: number) =>
+  useEngineMutation(
+    (args: { commentId: number; text: string }) =>
+      engine.post<unknown>(`/prs/${id}/review-comments/${args.commentId}/reply`, {
+        text: args.text,
+      }),
+    [keys.prDetail(id)],
+  )
+
+export type PrChatResult = { action: 'revised' | 'merged' | 'refused'; reply: string }
+
+/**
+ * Merges, last and behind an explicit click.
+ *
+ * The engine answers a refusal with 200 and an action, so a refusal has to be read off
+ * the result rather than caught as an error. `PrDetailViewModel.merge` reloads only when
+ * the merge was not refused, so the invalidation is conditional here too rather than
+ * hung off `useEngineMutation`: a refused merge changed nothing on GitHub, and refetching
+ * the detail would spend a request proving it.
+ */
+export function useMergePr(id: number) {
+  const client = useQueryClient()
+  return useMutation<PrChatResult, Error, void>({
+    mutationFn: () => engine.post<PrChatResult>(`/prs/${id}/merge`),
+    onSuccess: (result) => {
+      if (result.action === 'refused') return
+      for (const key of [keys.prDetail(id), keys.prs, keys.today]) {
         void client.invalidateQueries({ queryKey: key })
       }
     },

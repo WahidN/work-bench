@@ -448,6 +448,18 @@ export function relativeTime(from: Date, now: Date): string {
   return `${Math.floor(days / 7)}w ago`
 }
 
+/**
+ * "acv-website#24", the bare repository name and the number.
+ *
+ * Either half can be missing: no number drops the "#24", no repo drops the repo name, and
+ * both missing gives back an empty string. Shared with the header, which shows the same
+ * ref as its heading while a pull request is open, exactly as `PRsLogic.ref` is shared.
+ */
+export function prListRef(pr: Pr, project: Project | undefined): string {
+  const repo = repoShortName(project?.githubRepo ?? null) ?? ''
+  return pr.number === null ? repo : `${repo}#${pr.number}`
+}
+
 export type PrRow = {
   id: number
   title: string
@@ -486,9 +498,7 @@ export function prRows(prs: Pr[], projects: Project[], filter: PrFilter, now: Da
         id: pr.id,
         title: pr.title,
         // The row shows the bare repository name, so "acv-website#24".
-        ref: pr.number === null
-          ? (repoShortName(project?.githubRepo ?? null) ?? '')
-          : `${repoShortName(project?.githubRepo ?? null) ?? ''}#${pr.number}`,
+        ref: prListRef(pr, project),
         projectName: project?.name ?? '',
         statusLabel: prReviewStateLabel(pr),
         updatedText: pr.githubUpdatedAt
