@@ -1,35 +1,75 @@
 /* Port of app/Workbench/Views/AppHeader.swift. */
 
+import { useState } from 'react'
 import { Icon } from './Icon'
 import { headerKicker, todayDateString, type SidebarSection } from './logic'
 
 function HeaderActionButton({
   title,
   symbol,
+  /*
+   * Passed in rather than derived from the title, which stopped being possible the moment
+   * there was a third button.
+   */
+  help,
+  isBusy = false,
   onClick,
 }: {
   title: string
   symbol: string
+  help: string
+  isBusy?: boolean
   onClick?: () => void
 }) {
+  const [isHovered, setIsHovered] = useState(false)
+  const color = isBusy ? 'var(--wb-n600)' : 'var(--wb-accent)'
+
   return (
     <button
       data-action={title}
+      title={help}
+      disabled={isBusy}
       onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       style={{
         display: 'flex',
         alignItems: 'center',
         gap: 'var(--wb-s2)',
         padding: 'var(--wb-s2) 10.08px',
-        background: 'transparent',
-        color: 'var(--wb-accent)',
-        border: '1px solid var(--wb-accent)',
+        background:
+          isHovered && !isBusy ? 'color-mix(in srgb, var(--wb-accent) 12%, transparent)' : 'transparent',
+        color,
+        border: `1px solid ${color}`,
         borderRadius: 'var(--wb-radius-md)',
-        font: 'inherit',
-        cursor: 'pointer',
+        // `fontFamily`, not the `font` shorthand: `font: inherit` after a `fontSize`
+        // rewrites the size back to the inherited one.
+        fontFamily: 'inherit',
+        cursor: isBusy ? 'default' : 'pointer',
+        whiteSpace: 'nowrap',
       }}
     >
-      <Icon name={symbol} size={14} />
+      {/*
+        A spinner in place of the icon while busy, which is what the Swift swaps in. It is
+        the same 13 by 13 the ProgressView is framed at, so the button does not resize.
+      */}
+      {isBusy ? (
+        <span
+          data-spinner=""
+          style={{
+            width: 13,
+            height: 13,
+            flex: 'none',
+            borderRadius: '50%',
+            border: '2px solid var(--wb-n800)',
+            borderTopColor: 'var(--wb-n500)',
+            animation: 'wb-spin 700ms linear infinite',
+            boxSizing: 'border-box',
+          }}
+        />
+      ) : (
+        <Icon name={symbol} size={14} />
+      )}
       <span style={{ fontSize: 14, fontWeight: 500 }}>{title}</span>
     </button>
   )
@@ -42,6 +82,8 @@ export function AppHeader({
   headingOverride,
   onAddProject,
   onOpenAgent,
+  isRefreshing = false,
+  onRefresh,
 }: {
   section: SidebarSection
   activeProjectCount: number
@@ -54,11 +96,13 @@ export function AppHeader({
   headingOverride?: string
   /*
    * On Projects the second action is Add project rather than Agent, which is a different
-   * action and not the same one relabelled. Refresh and Agent are task groups 6 and 5.
+   * action and not the same one relabelled.
    */
   onAddProject?: () => void
   /** Project-scoped, unlike the Agent button on a pull request's own page. */
   onOpenAgent?: () => void
+  isRefreshing?: boolean
+  onRefresh?: () => void
 }) {
   return (
     <header
@@ -97,10 +141,17 @@ export function AppHeader({
         </h1>
       </div>
       <div style={{ marginLeft: 'auto', display: 'flex', gap: 'var(--wb-s4)' }}>
-        <HeaderActionButton title="Refresh" symbol="arrow-clockwise" />
+        <HeaderActionButton
+          title={isRefreshing ? 'Refreshing' : 'Refresh'}
+          symbol="arrow-clockwise"
+          help="Fetch new Jira issues and pull requests now"
+          isBusy={isRefreshing}
+          onClick={onRefresh}
+        />
         <HeaderActionButton
           title={section === 'Projects' ? 'Add project' : 'Agent'}
           symbol={section === 'Projects' ? 'plus' : 'sparkles'}
+          help={section === 'Projects' ? 'Add a project' : 'Ask the agent about this project'}
           onClick={section === 'Projects' ? onAddProject : onOpenAgent}
         />
       </div>

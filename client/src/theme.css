@@ -132,6 +132,13 @@
   }
 }
 
+/* Stands in for `ProgressView().controlSize(.small)` on the Refresh button. */
+@keyframes wb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 body {
   margin: 0;
   background: var(--wb-bg);
