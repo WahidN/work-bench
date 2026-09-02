@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-client",
-  "version": "0.1.0",
-  "identifier": "com.wahidlinku.tauri-client",
+  "productName": "Workbench",
+  "version": "1.0.0",
+  "identifier": "com.linku.workbench.client",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "tauri-client",
-        "width": 800,
-        "height": 600
+        "title": "Workbench",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1000,
+        "minHeight": 640
       }
     ],
     "security": {
@@ -23,13 +25,16 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["app"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "minimumSystemVersion": "14.0"
+    }
   }
 }
