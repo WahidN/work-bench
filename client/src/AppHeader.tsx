@@ -52,6 +52,10 @@ function HeaderActionButton({
       {/*
         A spinner in place of the icon while busy, which is what the Swift swaps in. It is
         the same 13 by 13 the ProgressView is framed at, so the button does not resize.
+
+        The shape is not the same and cannot be: `ProgressView().controlSize(.small)` is
+        drawn by macOS as a segmented pinwheel, and a webview has no way to ask for it.
+        This is a ring. Recorded in the parity report so nobody goes looking for a fix.
       */}
       {isBusy ? (
         <span
@@ -151,7 +155,7 @@ export function AppHeader({
         <HeaderActionButton
           title={section === 'Projects' ? 'Add project' : 'Agent'}
           symbol={section === 'Projects' ? 'plus' : 'sparkles'}
-          help={section === 'Projects' ? 'Add a project' : 'Ask the agent about this project'}
+          help={section === 'Projects' ? 'Add a project' : 'Open the agent panel'}
           onClick={section === 'Projects' ? onAddProject : onOpenAgent}
         />
       </div>

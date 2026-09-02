@@ -151,6 +151,9 @@ variables.
   none is exercised, because reaching them means disconnecting a real Jira.
 - **Notifications appearing on screen.** The rules have 13 tests; that macOS draws the
   banner is not something a webview test can see.
+- **The native spinner.** Refresh shows a spinning ring while it polls.
+  `ProgressView().controlSize(.small)` is drawn by macOS as a segmented pinwheel and a
+  webview cannot ask for it. Same 13 by 13, different shape, and there is no fix.
 - **The Go menu, the tray click, the folder picker, the clipboard.** Each is a few lines
   over a plugin, each is unreachable in Chrome, and the window can be neither driven nor
   photographed on this machine. The startup probes are the only channel, and they show the

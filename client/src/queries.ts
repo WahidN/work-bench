@@ -367,6 +367,11 @@ export type PollSummary = {
  * Everything is invalidated because a poll can touch everything: `runQuickPoll` syncs Jira
  * and pull requests, and a new Jira issue moves the todo lists, the ticket list and Today's
  * counts with it.
+ *
+ * The engine already guards against two polls at once: `pollOnce` keeps one promise per
+ * database and hands the existing one back, so a click landing during a scheduled cycle
+ * joins that cycle. The disabled button is therefore about not queueing pointless requests
+ * rather than about correctness.
  */
 export const useRefresh = () =>
   useEngineMutation(
