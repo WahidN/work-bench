@@ -1,36 +1,48 @@
 /*!
-Runs probe 4 and prints what happened, one mechanic at a time.
+Drives the launchd installer from the terminal.
 
-A separate binary rather than a Tauri command because probe 4 has nothing to do with the
-window: it writes a file, runs `launchctl`, and checks a port. Making it a CLI means the
-evidence lands in the terminal, which matters here because the app window can be neither
-driven nor photographed on this machine.
+Kept after the spike, and now running the shipped code rather than a copy of it: the
+`Installer` here is the one the app's Settings screen uses, only handed `Config::probe()`
+instead of `Config::engine()`. So exercising it exercises the real refusals, the real plist
+and the real launchctl calls.
 
-    cargo run --bin launchd_probe -- check      # read-only: resolve, serialize, port
+That split is not a nicety. `KeepAlive` plus an occupied port is an endless restart loop, so
+a mistake made against the engine's own label and port 4173 would take the engine down.
+
+    cargo run --bin launchd_probe -- check      # read-only: resolve, serialize, port, state
     cargo run --bin launchd_probe -- install    # write the plist and bootstrap the job
+    cargo run --bin launchd_probe -- start      # bootstrap or kickstart, whichever fits
     cargo run --bin launchd_probe -- remove     # bootout and delete the plist
 
-`check` touches nothing. `install` refuses before writing anything if the port is
-already held, which is the refusal `EngineAgentInstaller` implements and the reason it
-matters: KeepAlive plus an occupied port is an endless restart loop.
+It also reports the real agent's state, because that is the reading Settings shows and this
+is the only channel that can be read on a machine where the app window can be neither
+driven nor photographed. It never installs, starts or removes the real one.
 */
 
-use tauri_client_lib::launchd;
+use tauri_client_lib::launchd::{AgentEnvironment, Config, Installer, SystemEnvironment};
 
 const STANDIN: &str = "../tools/launchd-standin";
 
 fn main() {
     let command = std::env::args().nth(1).unwrap_or_else(|| "check".into());
+    let probe = Installer::new(SystemEnvironment, Config::probe());
 
     match command.as_str() {
-        "check" => check(),
-        "install" => install(),
-        "remove" => remove(),
+        "check" => check(&probe),
+        "install" => act("install", probe.install(&standin_directory())),
+        "start" => act("start", probe.start()),
+        "remove" => act("remove", probe.remove()),
         other => {
-            eprintln!("unknown command {other}, expected check, install or remove");
+            eprintln!("unknown command {other}, expected check, install, start or remove");
             std::process::exit(2);
         }
     }
+
+    report("probe", &probe);
+    report(
+        "engine",
+        &Installer::new(SystemEnvironment, Config::engine()),
+    );
 }
 
 fn standin_directory() -> String {
@@ -42,93 +54,43 @@ fn standin_directory() -> String {
         })
 }
 
-fn resolved() -> launchd::Toolchain {
-    match launchd::resolve_toolchain() {
+/// Read-only. Resolves the toolchain and reports the port, so `check` can be run on a
+/// machine without touching anything.
+fn check(probe: &Installer<SystemEnvironment>) {
+    match SystemEnvironment.resolve_toolchain() {
         Ok(toolchain) => {
             println!("LAUNCHD toolchain node={}", toolchain.node_path);
             println!("LAUNCHD toolchain pnpm={}", toolchain.pnpm_path);
             println!("LAUNCHD toolchain claude={}", toolchain.claude_path);
-            toolchain
         }
-        Err(error) => {
-            println!("LAUNCHD toolchain FAIL {error}");
-            std::process::exit(1);
-        }
+        Err(error) => println!("LAUNCHD toolchain FAIL {error}"),
     }
-}
 
-fn check() {
-    let toolchain = resolved();
-    let value = launchd::plist(&standin_directory(), &toolchain);
-
-    // Printed rather than written, so `check` stays read-only.
-    let mut buffer = Vec::new();
-    plist::to_writer_xml(&mut buffer, &value).expect("plist should serialise");
-    println!("LAUNCHD plist bytes={}", buffer.len());
-    println!("{}", String::from_utf8_lossy(&buffer));
-
-    println!(
-        "LAUNCHD port {} in_use={}",
-        launchd::PORT,
-        launchd::is_port_in_use()
-    );
-    println!("LAUNCHD plist_path {}", launchd::plist_path().display());
-    println!(
-        "LAUNCHD spike_loaded={} real_engine_loaded={}",
-        launchd::is_loaded(launchd::LABEL),
-        launchd::is_loaded("nl.linku.workbench.engine")
-    );
-}
-
-fn install() {
-    let toolchain = resolved();
-
-    // Every refusal happens before anything is written or run, so a rejected install
-    // leaves the machine exactly as it was. That ordering is lifted from
-    // EngineAgentInstaller and is the whole point of the check.
-    if launchd::is_port_in_use() {
+    for config in [Config::probe(), Config::engine()] {
         println!(
-            "LAUNCHD install REFUSED port {} is already in use",
-            launchd::PORT
+            "LAUNCHD port {} in_use={}",
+            config.port,
+            SystemEnvironment.is_port_in_use(config.port)
         );
-        std::process::exit(1);
     }
-
-    let value = launchd::plist(&standin_directory(), &toolchain);
-    match launchd::write_plist(&value) {
-        Ok(path) => println!("LAUNCHD wrote {}", path.display()),
-        Err(error) => {
-            println!("LAUNCHD write FAIL {error}");
-            std::process::exit(1);
-        }
-    }
-
-    match launchd::bootstrap() {
-        Ok(_) => println!("LAUNCHD bootstrap ok"),
-        Err(error) => {
-            println!("LAUNCHD bootstrap FAIL {error}");
-            std::process::exit(1);
-        }
-    }
-
-    println!(
-        "LAUNCHD spike_loaded={}",
-        launchd::is_loaded(launchd::LABEL)
-    );
+    println!("LAUNCHD standin {}", standin_directory());
+    let _ = probe;
 }
 
-fn remove() {
-    match launchd::bootout() {
-        Ok(_) => println!("LAUNCHD bootout ok"),
-        Err(error) => println!("LAUNCHD bootout FAIL {error}"),
+fn act(name: &str, result: Result<(), tauri_client_lib::launchd::AgentError>) {
+    match result {
+        Ok(()) => println!("LAUNCHD {name} ok"),
+        Err(error) => {
+            println!("LAUNCHD {name} REFUSED {error}");
+            std::process::exit(1);
+        }
     }
-    match launchd::delete_plist() {
-        Ok(()) => println!("LAUNCHD plist deleted"),
-        Err(error) => println!("LAUNCHD delete FAIL {error}"),
-    }
+}
+
+fn report(name: &str, installer: &Installer<SystemEnvironment>) {
+    let state = installer.state();
     println!(
-        "LAUNCHD spike_loaded={} plist_exists={}",
-        launchd::is_loaded(launchd::LABEL),
-        launchd::plist_path().exists()
+        "LAUNCHD {name} installed={} loaded={} plist={}",
+        state.is_installed, state.is_loaded, state.plist_path
     );
 }
