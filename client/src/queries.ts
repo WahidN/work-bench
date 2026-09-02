@@ -342,6 +342,50 @@ export const usePromoteTodo = () =>
 export const useAllTodos = () =>
   list<Todo[]>(keys.allTodos, '/todos?done=any', { refetchInterval: false })
 
+/* -------------------------------------------------------------- Refresh */
+
+export type PollSummary = {
+  jiraTodos: number
+  ticketsCreated: number
+  prsSynced: number
+  /**
+   * One entry per source that failed. The engine only logs these to its own console, so
+   * this is the app's single window onto a stale Jira token.
+   */
+  sourceErrors: string[]
+}
+
+/**
+ * Asks the engine to poll its sources now, then reloads every list.
+ *
+ * `RefreshViewModel.refresh` answers "should the caller reload", and says why a poll with
+ * source errors still answers yes: the sources that did work have new data, and the errors
+ * are surfaced separately rather than discarding the rest. Here that is the same thing said
+ * with invalidation, which happens on success whatever `sourceErrors` holds; the caller
+ * reads the summary to decide what to say.
+ *
+ * Everything is invalidated because a poll can touch everything: `runQuickPoll` syncs Jira
+ * and pull requests, and a new Jira issue moves the todo lists, the ticket list and Today's
+ * counts with it.
+ *
+ * The engine already guards against two polls at once: `pollOnce` keeps one promise per
+ * database and hands the existing one back, so a click landing during a scheduled cycle
+ * joins that cycle. The disabled button is therefore about not queueing pointless requests
+ * rather than about correctness.
+ */
+export const useRefresh = () =>
+  useEngineMutation(
+    () => engine.post<PollSummary>('/poll'),
+    [
+      keys.today,
+      keys.prs,
+      keys.projects,
+      keys.tickets,
+      keys.todos,
+      keys.allTodos,
+    ] as const,
+  )
+
 /* ------------------------------------------------------------- Settings */
 
 export type JiraSite = { id: string; url: string; name: string }

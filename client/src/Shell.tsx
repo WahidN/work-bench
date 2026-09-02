@@ -39,6 +39,7 @@ import {
   useCreateTodo,
   useDeleteProject,
   useDeleteTodo,
+  useRefresh,
   useSetTodoDone,
   useSetTodoPinned,
   useShellData,
@@ -132,6 +133,7 @@ export function Shell() {
   const createProject = useCreateProject()
   const updateProject = useUpdateProject()
   const deleteProject = useDeleteProject()
+  const refresh = useRefresh()
 
   const onError = (error: Error) => setAlert(String(error))
 
@@ -520,6 +522,26 @@ export function Shell() {
           activeProjectCount={activeProjectCount}
           kickerOverride={prHeaderKicker}
           headingOverride={prHeaderHeading}
+          isRefreshing={refresh.isPending}
+          onRefresh={() => {
+            if (refresh.isPending) return
+            refresh.mutate(undefined, {
+              /*
+               * A poll that reported source errors is still a success, and
+               * `RefreshViewModel` says why: the sources that did work have new data, and
+               * the errors are surfaced separately rather than discarding the rest. So the
+               * lists reload either way, through the mutation's own invalidation, and this
+               * only says what went wrong.
+               *
+               * The engine logs these to its own console and nowhere else, so this alert is
+               * the app's single window onto something like a stale Jira token.
+               */
+              onSuccess: (summary) => {
+                if (summary.sourceErrors.length > 0) setAlert(summary.sourceErrors.join('\n'))
+              },
+              onError,
+            })
+          }}
           onAddProject={() => setSheet({ kind: 'create' })}
           /*
            * The header's Agent button is project-scoped, unlike the one on a pull
