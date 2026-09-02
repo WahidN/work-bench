@@ -1,11 +1,9 @@
 /*
  * Port of PRsScreen.swift, PRsLogic.swift and WorkItemLabels.swift.
  *
- * Live: the filter pills, the pin toggle, and Review, which starts a background review
- * and opens nothing. There is nothing to open yet: the review takes minutes, announces
- * itself when it is done, and is read on the pull request's own page.
- *
- * Agent still does nothing. It opens the panel, which is task group 5.
+ * Live: the filter pills, the pin toggle, Agent, and Review, which starts a background
+ * review and opens nothing. There is nothing to open yet: the review takes minutes,
+ * announces itself when it is done, and is read on the pull request's own page.
  */
 
 import { useState } from 'react'
@@ -84,10 +82,12 @@ export function PRsScreen({
   prs,
   projects,
   onSelectPr,
+  onOpenAgent,
 }: {
   prs: Pr[]
   projects: Project[]
   onSelectPr: (pr: Pr) => void
+  onOpenAgent: (pr: Pr) => void
 }) {
   const [filter, setFilter] = useState<PrFilter>('assignedToMe')
   const [alert, setAlert] = useState<string | null>(null)
@@ -275,14 +275,13 @@ export function PRsScreen({
                     setPinned.mutate({ id: row.id, pinned: !row.pinned }, { onError })
                   }}
                 />
-                {/*
-                  Opens the agent panel, which is task group 5. It still takes the click,
-                  because without one it renders as a span and the click reaches the row,
-                  which navigates. The Swift's button opens the panel and never navigates,
-                  so doing nothing is the closer stand-in of the two.
-                */}
+                {/* Opens the panel; it must not also navigate to the detail page. */}
                 <RowAction
-                  onClick={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    const pr = prs.find((candidate) => candidate.id === row.id)
+                    if (pr) onOpenAgent(pr)
+                  }}
                   label={row.messageCount > 0 ? `Chat · ${row.messageCount}` : 'Agent'}
                   symbol={row.messageCount > 0 ? 'bubble-left-fill' : 'sparkles'}
                   color={row.messageCount > 0 ? 'var(--wb-text)' : 'var(--wb-n400)'}

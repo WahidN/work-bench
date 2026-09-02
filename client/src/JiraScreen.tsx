@@ -97,12 +97,14 @@ function IssueRow({
   onPromote,
   onTogglePin,
   onCreatePr,
+  onChat,
 }: {
   row: JiraRow
   isBusy: boolean
   onPromote: () => void
   onTogglePin: () => void
   onCreatePr: () => void
+  onChat: () => void
 }) {
   const [isHovered, setIsHovered] = useState(false)
 
@@ -194,8 +196,12 @@ function IssueRow({
             <Icon name="arrow-up-right-square" size={14} />
           </a>
         )}
-        {/* The agent panel is task group 5. */}
-        <Icon name="sparkles" size={14} color="var(--wb-n700)" />
+        <IconButton
+          symbol="sparkles"
+          color="var(--wb-n700)"
+          label="Chat with the agent"
+          onClick={onChat}
+        />
       </div>
     </div>
   )
@@ -205,11 +211,13 @@ export function JiraScreen({
   todos,
   projects,
   tickets,
+  onChat,
 }: {
   /** Every mirrored issue, done ones included. See `useAllTodos`. */
   todos: Todo[]
   projects: Project[]
   tickets: Ticket[]
+  onChat: (todo: Todo) => void
 }) {
   const [selected, setSelected] = useState<string | null>(null)
   const [alert, setAlert] = useState<string | null>(null)
@@ -408,6 +416,7 @@ export function JiraScreen({
                   onTogglePin={() =>
                     setPinned.mutate({ id: row.id, pinned: !row.isPinned }, { onError })
                   }
+                  onChat={() => onChat(row.todo)}
                 />
               ))}
             </section>

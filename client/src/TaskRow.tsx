@@ -52,6 +52,7 @@ export function TaskRow({
   onCyclePriority,
   onDelete,
   onPromote,
+  onChat,
 }: {
   row: TaskRowModel
   /** The todo behind the row, or undefined for a pinned ticket or pull request. */
@@ -60,6 +61,7 @@ export function TaskRow({
   onCyclePriority: () => void
   onDelete: () => void
   onPromote: () => void
+  onChat: (todo: Todo) => void
 }) {
   const [isHovered, setIsHovered] = useState(false)
 
@@ -70,11 +72,23 @@ export function TaskRow({
   const checkboxLabel = row.source === 'todo' ? 'Toggle task' : 'Unpin'
 
   /*
-   * The same items TaskRow.swift offers, minus "Chat with the agent", which needs the
-   * panel from task group 5. Promote is only ever a menu item: the app gives it no
-   * button, and inventing one here would be a redesign rather than a port.
+   * The three items TaskRow.swift offers, in its order.
+   *
+   * Chat is offered on a mirrored Jira issue whether it sits here as a plain row or as a
+   * pinned pseudo-task, and only on one: the Swift keeps `jiraTodo` separate from `todo`
+   * because only a mirrored issue has an issue to discuss. A manual task has no body, no
+   * reference and no source issue.
+   *
+   * Promote is only ever a menu item; the app gives it no button, and inventing one here
+   * would be a redesign rather than a port.
    */
+  const jiraTodo =
+    todo?.source === 'jira' && (row.source === 'todo' || row.source === 'pinnedTodo')
+      ? todo
+      : undefined
+
   const { onContextMenu, menu } = useContextMenu([
+    ...(jiraTodo ? [{ label: 'Chat with the agent', run: () => onChat(jiraTodo) }] : []),
     ...(todo?.canPromote ? [{ label: 'Start fixing this', run: onPromote }] : []),
     ...(row.deletable ? [{ label: 'Delete task', run: onDelete }] : []),
   ])

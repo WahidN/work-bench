@@ -153,6 +153,8 @@ export function ProjectDetailScreen({
   onToggleTask,
   onDeleteTodo,
   onOpenWork,
+  onChatTodo,
+  onChatWork,
 }: {
   project: Project
   projects: Project[]
@@ -165,6 +167,8 @@ export function ProjectDetailScreen({
   onToggleTask: (row: TaskRowModel) => void
   onDeleteTodo: (todo: Todo) => void
   onOpenWork: (item: OpenWorkItem) => void
+  onChatTodo: (todo: Todo) => void
+  onChatWork: (item: OpenWorkItem) => void
 }) {
   const [tab, setTab] = useState<Tab>('Tasks')
   const [draft, setDraft] = useState('')
@@ -359,6 +363,7 @@ export function ProjectDetailScreen({
                     onDelete={() => {
                       if (todo) onDeleteTodo(todo)
                     }}
+                    onChat={onChatTodo}
                   />
                 )
               })
@@ -439,9 +444,7 @@ export function ProjectDetailScreen({
                 key={item.id}
                 item={item}
                 onOpen={() => onOpenWork(item)}
-                // The agent panel is task group 5, so this takes the click and stops it
-                // reaching the row rather than opening nothing and navigating instead.
-                onChat={() => {}}
+                onChat={() => onChatWork(item)}
               />
             ))
           )}

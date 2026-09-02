@@ -41,6 +41,7 @@ export function AppHeader({
   kickerOverride,
   headingOverride,
   onAddProject,
+  onOpenAgent,
 }: {
   section: SidebarSection
   activeProjectCount: number
@@ -56,6 +57,8 @@ export function AppHeader({
    * action and not the same one relabelled. Refresh and Agent are task groups 6 and 5.
    */
   onAddProject?: () => void
+  /** Project-scoped, unlike the Agent button on a pull request's own page. */
+  onOpenAgent?: () => void
 }) {
   return (
     <header
@@ -98,7 +101,7 @@ export function AppHeader({
         <HeaderActionButton
           title={section === 'Projects' ? 'Add project' : 'Agent'}
           symbol={section === 'Projects' ? 'plus' : 'sparkles'}
-          onClick={section === 'Projects' ? onAddProject : undefined}
+          onClick={section === 'Projects' ? onAddProject : onOpenAgent}
         />
       </div>
     </header>
