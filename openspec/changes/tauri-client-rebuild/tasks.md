@@ -99,23 +99,23 @@
 
 ## 9. Tests
 
-- [ ] 9.1 Vitest for every ported pure module: diff parsing, today sections, PR filters,
+- [x] 9.1 Vitest for every ported pure module: diff parsing, today sections, PR filters,
       refs, labels, relative time, project logic
-- [ ] 9.2 React Testing Library for the components whose behaviour is worth asserting,
+- [x] 9.2 React Testing Library for the components whose behaviour is worth asserting,
       guided by which of the 39 Swift test files exist and what they cover
-- [ ] 9.3 Rust tests for the keychain, plist generation and toolchain resolution behind
+- [x] 9.3 Rust tests for the keychain, plist generation and toolchain resolution behind
       the environment seam
-- [ ] 9.4 Compare coverage against the Swift test files and record, per file, what is
+- [x] 9.4 Compare coverage against the Swift test files and record, per file, what is
       covered and what is deliberately not
 
 ## 10. Packaging and handover
 
-- [ ] 10.1 Real bundle identity: name, identifier, version, and icons from the app's own
+- [x] 10.1 Real bundle identity: name, identifier, version, and icons from the app's own
       asset rather than the Tauri default
-- [ ] 10.2 Code signing and notarisation, noting that `.dmg` bundling needs Finder
+- [x] 10.2 Code signing and notarisation, noting that `.dmg` bundling needs Finder
       automation which this machine does not grant
-- [ ] 10.3 Final fidelity and parity pass, screen by screen, against the SwiftUI app
-- [ ] 10.4 Measure the finished client the way the spike did: lines, bundle, memory, and
+- [x] 10.3 Final fidelity and parity pass, screen by screen, against the SwiftUI app
+- [x] 10.4 Measure the finished client the way the spike did: lines, bundle, memory, and
       record how the estimate held up
-- [ ] 10.5 Write the parity report and put the question of retiring `app/` to the user as
+- [x] 10.5 Write the parity report and put the question of retiring `app/` to the user as
       a decision, not an assumption
