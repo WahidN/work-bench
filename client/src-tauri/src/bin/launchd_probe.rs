@@ -9,10 +9,13 @@ and the real launchctl calls.
 That split is not a nicety. `KeepAlive` plus an occupied port is an endless restart loop, so
 a mistake made against the engine's own label and port 4173 would take the engine down.
 
-    cargo run --bin launchd_probe -- check      # read-only: resolve, serialize, port, state
-    cargo run --bin launchd_probe -- install    # write the plist and bootstrap the job
-    cargo run --bin launchd_probe -- start      # bootstrap or kickstart, whichever fits
-    cargo run --bin launchd_probe -- remove     # bootout and delete the plist
+It is behind the `probe` feature so release bundles do not carry it, hence the flag on
+every line below.
+
+    cargo run --features probe --bin launchd_probe -- check      # read-only: resolve, serialize, port, state
+    cargo run --features probe --bin launchd_probe -- install    # write the plist and bootstrap the job
+    cargo run --features probe --bin launchd_probe -- start      # bootstrap or kickstart, whichever fits
+    cargo run --features probe --bin launchd_probe -- remove     # bootout and delete the plist
 
 It also reports the real agent's state, because that is the reading Settings shows and this
 is the only channel that can be read on a machine where the app window can be neither
