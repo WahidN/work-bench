@@ -164,7 +164,7 @@ describe('sendPrMessage: revise', () => {
 
 describe('sendPrMessage: a PR with no ticket', () => {
   it('revises using the pull request title instead of a ticket', async () => {
-    const pr = ingestedPr();
+    const pr = ingestedPr(true);
     vi.mocked(git.openDetachedWorktree).mockResolvedValue('/repos/demo/.worktrees/feat-deploy-timeout');
     vi.mocked(review.reviewDiff).mockResolvedValue({
       correctness: 5, completeness: 5, quality: 5, tests: 5, regressionRisk: 5, findings: [],
@@ -198,7 +198,7 @@ describe('sendPrMessage: a PR with no ticket', () => {
   });
 });
 
-describe('sendPrMessage: merge authorship gate', () => {
+describe('sendPrMessage: the authorship gate', () => {
   it('refuses to merge a pull request the user did not author, and never touches git', async () => {
     const pr = ingestedPr(false);
 
@@ -232,8 +232,22 @@ describe('sendPrMessage: merge authorship gate', () => {
     expect(git.mergePr).toHaveBeenCalled();
   });
 
-  it('still revises normally a pull request the user did not author', async () => {
+  it('refuses to revise a pull request the user did not author, and never touches git', async () => {
     const pr = ingestedPr(false);
+
+    const result = await sendPrMessage(db, pr.id, 'also guard the email field');
+
+    expect(result.action).toBe('refused');
+    expect(result.reply).toContain(pr.url);
+    expect(git.openDetachedWorktree).not.toHaveBeenCalled();
+    expect(claude.runClaude).not.toHaveBeenCalled();
+    expect(git.commitAll).not.toHaveBeenCalled();
+    expect(git.pushDetachedHead).not.toHaveBeenCalled();
+    expect(listPrMessages(db, pr.id).map((m) => m.role)).toEqual(['user', 'assistant']);
+  });
+
+  it('still revises a pull request the user authored', async () => {
+    const pr = ingestedPr(true);
     vi.mocked(git.openDetachedWorktree).mockResolvedValue('/repos/demo/.worktrees/feat-deploy-timeout');
     vi.mocked(review.reviewDiff).mockResolvedValue({
       correctness: 5, completeness: 5, quality: 5, tests: 5, regressionRisk: 5, findings: [],
@@ -244,6 +258,6 @@ describe('sendPrMessage: merge authorship gate', () => {
     const result = await sendPrMessage(db, pr.id, 'also guard the email field');
 
     expect(result.action).toBe('revised');
-    expect(git.mergePr).not.toHaveBeenCalled();
+    expect(git.pushDetachedHead).toHaveBeenCalled();
   });
 });

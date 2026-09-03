@@ -176,6 +176,22 @@ export interface StoredReviewFinding extends ReviewFinding {
   createdAt: string;
 }
 
+export type CommentFixState = 'queued' | 'running' | 'landed' | 'nothing' | 'failed';
+
+export interface StoredCommentFix {
+  id: number;
+  prId: number;
+  commentId: number;
+  path: string;
+  line: number;
+  comment: string;
+  instruction: string;
+  state: CommentFixState;
+  detail: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+}
+
 /// The three Atlassian status categories, as stable tokens rather than Atlassian's
 /// own keys: `new` reads as nothing useful at a call site, `todo` does.
 export type JiraStatusCategory = 'todo' | 'in_progress' | 'done';

@@ -36,7 +36,7 @@ export async function sendPrMessage(db: Database.Database, prId: number, userMes
   const subject = merge ? null : chatSubject(db, pr);
   addPrMessage(db, prId, 'user', userMessage);
 
-  if (merge && !pr.authoredByMe) return refusePrChat(db, pr);
+  if (!pr.authoredByMe) return refusePrChat(db, pr, merge);
   return subject === null
     ? mergePrChat(db, pr, project)
     : revisePrChat(db, pr, project, subject, userMessage);
@@ -60,11 +60,14 @@ function mergeSelector(pr: Pr): string {
   throw new Error(`PR ${pr.id} has no number or url to merge`);
 }
 
-// Squash-merging deletes the branch and cannot be undone, so it is only ever
-// done on a pull request the user wrote themselves. The inbox also holds pull
-// requests just assigned to them, which they can still merge by hand on GitHub.
-async function refusePrChat(db: Database.Database, pr: Pr): Promise<PrChatResult> {
-  const reply = `Workbench only merges pull requests you authored. Merge ${pr.url} yourself on GitHub if that's what you want.`;
+// Squash-merging deletes the branch and cannot be undone, and revising force-pushes
+// over it, so both are only ever done on a pull request the user wrote themselves.
+// The inbox is mostly other people's work, assigned or awaiting review, and that is
+// exactly what must not be rewritten from here.
+async function refusePrChat(db: Database.Database, pr: Pr, merge: boolean): Promise<PrChatResult> {
+  const reply = merge
+    ? `Workbench only merges pull requests you authored. Merge ${pr.url} yourself on GitHub if that's what you want.`
+    : `Workbench only changes pull requests you authored. Say it on ${pr.url} instead, so whoever wrote it can act on it.`;
   addPrMessage(db, pr.id, 'assistant', reply);
   return { action: 'refused', reply };
 }
