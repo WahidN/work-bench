@@ -584,7 +584,6 @@ export function Shell() {
                 key={openPr.id}
                 pr={openPr}
                 onBack={() => setOpenPrId(null)}
-                onOpenAgent={() => setChatTarget({ kind: 'pullRequest', pr: openPr })}
               />
             ) : (
               <PRsScreen

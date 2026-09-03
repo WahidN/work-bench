@@ -18,6 +18,7 @@ import { useEffect, useState } from 'react'
 import { ErrorAlert } from './ErrorAlert'
 import { Icon } from './Icon'
 import { PrFileSection } from './PrFileSection'
+import { openInBrowser } from './engineAgent'
 import { prReviewStateLabel, relativeTime } from './logic'
 import { factsParts, openedLine, sections, tabCounts, threadId } from './prDetailLogic'
 import type { PrReviewThread } from './prDetailLogic'
@@ -50,14 +51,12 @@ function OutlineButton({
   color,
   disabled,
   onClick,
-  radius = 'var(--wb-radius-md)',
   id,
 }: {
   label: string
   color: string
   disabled?: boolean
   onClick: () => void
-  radius?: string
   id?: string
 }) {
   return (
@@ -73,7 +72,7 @@ function OutlineButton({
         color,
         background: 'transparent',
         border: `1px solid ${color}`,
-        borderRadius: radius,
+        borderRadius: 'var(--wb-radius-md)',
         cursor: disabled ? 'default' : 'pointer',
         whiteSpace: 'nowrap',
       }}
@@ -403,11 +402,9 @@ function ConversationItem({
 export function PrDetailScreen({
   pr,
   onBack,
-  onOpenAgent,
 }: {
   pr: Pr
   onBack: () => void
-  onOpenAgent: () => void
 }) {
   const [tab, setTab] = useState<Tab>('files')
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set())
@@ -457,6 +454,12 @@ export function PrDetailScreen({
   const facts = detail.data ? factsParts(detail.data) : null
   const counts = detail.data ? tabCounts(detail.data) : null
   const fileSections = detail.data ? sections(detail.data) : []
+
+  /*
+   * GitHub's own page for this pull request. Null on a row created before the pull
+   * request existed, so the link is offered only once there is a page to open.
+   */
+  const prUrl = pr.url
 
   function toggleFile(id: string) {
     setCollapsedFiles((current) => {
@@ -560,6 +563,16 @@ export function PrDetailScreen({
             </span>
           )}
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 'var(--wb-s3)' }}>
+            {prUrl !== null && (
+              <OutlineButton
+                id="pr-github-button"
+                label="Open on GitHub"
+                color="var(--wb-n500)"
+                onClick={() => {
+                  void openInBrowser(prUrl).catch((error: unknown) => setAlert(String(error)))
+                }}
+              />
+            )}
             {/*
               Offered whoever wrote it, unlike Merge: the review queue is mostly other
               people's work, and that is what needs reviewing.
@@ -732,19 +745,6 @@ export function PrDetailScreen({
             </span>
           </button>
         ))}
-        {/*
-          Scoped to this pull request. The header's Agent button stays project-scoped, so
-          the two never mean the same thing.
-        */}
-        <span style={{ marginLeft: 'auto' }}>
-          <OutlineButton
-            id="pr-agent-button"
-            label={pr.messageCount > 0 ? `Agent · ${pr.messageCount}` : 'Agent'}
-            color="var(--wb-accent)"
-            radius="var(--wb-radius-sm)"
-            onClick={onOpenAgent}
-          />
-        </span>
       </div>
 
       {/* content */}
