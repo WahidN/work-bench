@@ -11,6 +11,7 @@
  */
 
 import { isDone, unposted, type PrReviewView } from './prReviewLogic'
+import type { StoredCommentFix } from './queries'
 import type { TodayView } from './queries'
 
 export type TodayItem = TodayView['needsInput'][number]
@@ -63,4 +64,39 @@ export function reviewsToAnnounce(
 /** How many comments the announcement should claim, which is what is left to post. */
 export function unpostedCount(review: PrReviewView): number {
   return unposted(review.findings).length
+}
+
+/* ------------------------------------------------------ a finished fix */
+
+export function fixTitle(state: StoredCommentFix['state']): string {
+  return state === 'landed' ? 'Fix pushed' : 'Fix failed'
+}
+
+export function fixBody(prTitle: string, state: StoredCommentFix['state']): string {
+  return state === 'landed'
+    ? `A review comment on ${prTitle} was answered in the code`
+    : `The fix on ${prTitle} did not land`
+}
+
+/**
+ * Fixes worth interrupting for, once each.
+ *
+ * A running one has not finished, and one that changed nothing is a prompt to write a
+ * better instruction, which the user does on the thread they are already reading. Same
+ * distinction the review makes for a review with nothing to post.
+ *
+ * `since` is when this session started, and it is what keeps a launch quiet: every fix
+ * ever asked for is still stored, and being told about last week's on every start is the
+ * welcome `seenKeys` exists to prevent for tickets.
+ */
+export function fixesToAnnounce(
+  fixes: StoredCommentFix[],
+  alreadyAnnounced: Set<number>,
+  since: string,
+): StoredCommentFix[] {
+  return fixes
+    .filter((fix) => !alreadyAnnounced.has(fix.id))
+    .filter((fix) => fix.state === 'landed' || fix.state === 'failed')
+    .filter((fix) => fix.finishedAt !== null && fix.finishedAt > since)
+    .sort((left, right) => left.id - right.id)
 }

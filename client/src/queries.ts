@@ -20,12 +20,20 @@ import {
   type UseQueryOptions,
 } from '@tanstack/react-query'
 import { engine } from './engineClient'
-import type { Pr, Project, Ticket, Todo, TodoPriority } from '../../engine/src/types.ts'
+import type { Pr, Project, StoredCommentFix, Ticket, Todo, TodoPriority } from '../../engine/src/types.ts'
 import type { TodayView } from '../../engine/src/todos.ts'
 import type { PrDetailView } from './prDetailLogic'
 import { isRunning, type PrReviewView } from './prReviewLogic'
 
-export type { Pr, Project, Ticket, Todo, TodoPriority, TodayView }
+export type { Pr, Project, StoredCommentFix, Ticket, Todo, TodoPriority, TodayView }
+
+export interface CommentFixInput {
+  commentId: number
+  instruction: string
+  comment: string
+  path: string
+  line: number
+}
 export { EngineError } from './engineClient'
 
 /*
@@ -43,6 +51,7 @@ export const keys = {
   prDetail: (id: number) => ['/prs', id, 'detail'] as const,
   prDiff: (id: number) => ['/prs', id, 'diff'] as const,
   prReview: (id: number) => ['/prs', id, 'review'] as const,
+  prCommentFixes: (id: number) => ['/prs', id, 'comment-fixes'] as const,
   prMessages: (id: number) => ['/prs', id, 'messages'] as const,
   projects: ['/projects'] as const,
   project: (id: number) => ['/projects', id] as const,
@@ -549,14 +558,44 @@ export const useDiscardPrFinding = (id: number) =>
 
 /* ------------------------------------------ Pull request detail mutations */
 
-export const usePostReviewReply = (id: number) =>
+export const useStartCommentFix = (id: number) =>
   useEngineMutation(
-    (args: { commentId: number; text: string }) =>
-      engine.post<unknown>(`/prs/${id}/review-comments/${args.commentId}/reply`, {
-        text: args.text,
+    (args: CommentFixInput) =>
+      engine.post<{ started: boolean }>(`/prs/${id}/review-comments/${args.commentId}/fix`, {
+        instruction: args.instruction,
+        comment: args.comment,
+        path: args.path,
+        line: args.line,
       }),
-    [keys.prDetail(id)],
+    [keys.prCommentFixes(id)],
   )
+
+/**
+ * What became of each fix on this pull request, polled while one is running.
+ *
+ * Same shape as `usePrReview`, and for the same reason: the work finishes in the engine
+ * while the screen sits there, and nothing else tells it.
+ */
+export const useCommentFixes = (id: number, enabled = true) =>
+  useQuery<{ fixes: StoredCommentFix[] }>({
+    queryKey: keys.prCommentFixes(id),
+    queryFn: () => engine.get<{ fixes: StoredCommentFix[] }>(`/prs/${id}/comment-fixes`),
+    enabled,
+    refetchInterval: (query) =>
+      (query.state.data?.fixes ?? []).some((fix) => fix.state === 'running') ? 5_000 : false,
+  })
+
+export function fetchCommentFixes(
+  client: QueryClient,
+  id: number,
+  staleTime: number,
+): Promise<{ fixes: StoredCommentFix[] }> {
+  return client.fetchQuery<{ fixes: StoredCommentFix[] }>({
+    queryKey: keys.prCommentFixes(id),
+    queryFn: () => engine.get<{ fixes: StoredCommentFix[] }>(`/prs/${id}/comment-fixes`),
+    staleTime,
+  })
+}
 
 export type PrChatResult = { action: 'revised' | 'merged' | 'refused'; reply: string }
 

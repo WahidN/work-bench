@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   REVIEW_TITLE,
+  fixBody,
+  fixTitle,
+  fixesToAnnounce,
   itemKey,
   needsInputTitle,
   newlyAppeared,
@@ -10,6 +13,7 @@ import {
 } from './notificationLogic'
 import type { TodayItem } from './notificationLogic'
 import type { PrReviewView, StoredReviewFinding } from './prReviewLogic'
+import type { StoredCommentFix } from './queries'
 
 /*
  * Mirrors WorkbenchTests/Views/ReviewNotificationLogicTests.swift.
@@ -129,5 +133,60 @@ describe('reviewBody', () => {
 describe('unpostedCount', () => {
   it('counts what is left, never what the review produced', () => {
     expect(unpostedCount(review([finding(1, true), finding(2, true), finding(3, false)]))).toBe(1)
+  })
+})
+
+describe('a finished fix', () => {
+  const SESSION_START = '2026-09-03T10:00:00.000Z'
+
+  const fix = (over: Partial<StoredCommentFix> = {}): StoredCommentFix => ({
+    id: 1,
+    prId: 5,
+    commentId: 7,
+    path: 'src/helpers/sessionToken.ts',
+    line: 8,
+    comment: 'This only fires once the token is already past its expiry.',
+    instruction: 'compare with a margin',
+    state: 'landed',
+    detail: null,
+    createdAt: '2026-09-03T10:01:00.000Z',
+    finishedAt: '2026-09-03T10:04:00.000Z',
+    ...over,
+  })
+
+  it('announces one that landed, naming its pull request', () => {
+    expect(fixesToAnnounce([fix()], new Set(), SESSION_START)).toHaveLength(1)
+    expect(fixTitle('landed')).toBe('Fix pushed')
+    expect(fixBody('Retry card capture', 'landed')).toContain('Retry card capture')
+  })
+
+  it('announces one that failed', () => {
+    const failed = fix({ state: 'failed', detail: 'the branch moved on' })
+    expect(fixesToAnnounce([failed], new Set(), SESSION_START)).toEqual([failed])
+    expect(fixTitle('failed')).toBe('Fix failed')
+    expect(fixBody('Retry card capture', 'failed')).toContain('Retry card capture')
+  })
+
+  it('says nothing about one that changed nothing, or one not finished', () => {
+    const nothing = fix({ id: 2, state: 'nothing', detail: 'no change made' })
+    const running = fix({ id: 3, state: 'running', finishedAt: null })
+    const queued = fix({ id: 4, state: 'queued', finishedAt: null })
+    expect(fixesToAnnounce([nothing, running, queued], new Set(), SESSION_START)).toEqual([])
+  })
+
+  it('says nothing twice', () => {
+    expect(fixesToAnnounce([fix()], new Set([1]), SESSION_START)).toEqual([])
+  })
+
+  it('stays quiet about fixes that finished before this session', () => {
+    const old = fix({ id: 4, finishedAt: '2026-09-02T18:00:00.000Z' })
+    expect(fixesToAnnounce([old], new Set(), SESSION_START)).toEqual([])
+  })
+
+  it('orders by id so the order is stable', () => {
+    const second = fix({ id: 9 })
+    const first = fix({ id: 2 })
+    expect(fixesToAnnounce([second, first], new Set(), SESSION_START).map((f) => f.id))
+      .toEqual([2, 9])
   })
 })

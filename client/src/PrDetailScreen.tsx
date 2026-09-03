@@ -30,14 +30,16 @@ import {
   type StoredReviewFinding,
 } from './prReviewLogic'
 import {
+  useCommentFixes,
   useDiscardPrFinding,
   useMergePr,
   usePostPrFinding,
-  usePostReviewReply,
   usePrDetail,
   usePrReview,
+  useStartCommentFix,
   useStartPrReview,
   type Pr,
+  type StoredCommentFix,
 } from './queries'
 
 type Tab = 'files' | 'conversation'
@@ -201,14 +203,64 @@ function FindingCard({
 
 /* --------------------------------------------------------- review thread */
 
-function ReviewThreadView({
+const FIX_LABEL: Record<StoredCommentFix['state'], string> = {
+  queued: 'Waiting its turn…',
+  running: 'The agent is working on this…',
+  landed: 'Fixed, and pushed to this branch.',
+  nothing: 'Nothing was changed.',
+  failed: 'This fix did not land.',
+}
+
+const FIX_COLOR: Record<StoredCommentFix['state'], string> = {
+  queued: 'var(--wb-n500)',
+  running: 'var(--wb-accent)',
+  landed: 'var(--wb-status-approved)',
+  nothing: 'var(--wb-n500)',
+  failed: 'var(--wb-negative)',
+}
+
+function FixAttempt({ fix }: { fix: StoredCommentFix }) {
+  return (
+    <div
+      data-fix={fix.id}
+      data-fix-state={fix.state}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--wb-s1)',
+        padding: 'var(--wb-s2)',
+        background: 'var(--wb-bg)',
+        borderRadius: 'var(--wb-radius-sm)',
+        boxSizing: 'border-box',
+      }}
+    >
+      <span style={{ fontSize: 'var(--wb-fs-table-meta)', color: FIX_COLOR[fix.state] }}>
+        {FIX_LABEL[fix.state]}
+      </span>
+      <span style={{ fontSize: 'var(--wb-fs-label)', color: 'var(--wb-n400)' }}>
+        {fix.instruction}
+      </span>
+      {fix.detail !== null && (
+        <span style={{ fontSize: 'var(--wb-fs-label)', color: 'var(--wb-n600)' }}>
+          {fix.detail}
+        </span>
+      )}
+    </div>
+  )
+}
+
+export function ReviewThreadView({
   thread,
-  isBusy,
-  onPost,
+  canFix,
+  fixes,
+  isStarting,
+  onFix,
 }: {
   thread: PrReviewThread
-  isBusy: boolean
-  onPost: (text: string) => Promise<boolean>
+  canFix: boolean
+  fixes: StoredCommentFix[]
+  isStarting: boolean
+  onFix: (instruction: string) => Promise<boolean>
 }) {
   const [text, setText] = useState('')
   const isBlank = text.trim() === ''
@@ -274,17 +326,28 @@ function ReviewThreadView({
         </div>
       ))}
 
-      {/*
-        A thread GitHub returned without comments has no id to reply to, and the reply
-        endpoint would 404 on the 0 the parent falls back to.
-      */}
-      {commentId !== 0 && (
+      {commentId !== 0 &&
+        fixes.map((attempt) => <FixAttempt key={attempt.id} fix={attempt} />)}
+
+      {commentId !== 0 && !canFix && (
+        <span style={{ fontSize: 'var(--wb-fs-label)', color: 'var(--wb-n600)' }}>
+          Replying happens on GitHub. Workbench only changes pull requests you wrote.
+        </span>
+      )}
+
+      {commentId !== 0 && canFix && thread.line === null && (
+        <span style={{ fontSize: 'var(--wb-fs-label)', color: 'var(--wb-n600)' }}>
+          This comment hangs on no line of the diff, so the agent cannot be pointed at it.
+        </span>
+      )}
+
+      {commentId !== 0 && canFix && thread.line !== null && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--wb-s2)' }}>
           <textarea
             value={text}
             onChange={(event) => setText(event.target.value)}
-            placeholder="Write a reply…"
-            aria-label={`Reply to ${thread.comments[0]?.author ?? 'this comment'}`}
+            placeholder="Tell the agent what to change…"
+            aria-label={`Ask the agent to fix ${thread.path}:${thread.line}`}
             style={{
               minHeight: 72,
               padding: 'var(--wb-s2)',
@@ -300,34 +363,34 @@ function ReviewThreadView({
           />
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--wb-s3)' }}>
             <span style={{ fontSize: 'var(--wb-fs-label)', color: 'var(--wb-n600)' }}>
-              This will be posted to GitHub.
+              The agent changes this branch. Nothing is posted to GitHub.
             </span>
             <button
+              data-fix-start={commentId}
               onClick={() => {
-                void onPost(text).then((landed) => {
-                  // Emptied only on a post that actually landed, so a failed one leaves
-                  // the text to retry.
-                  if (landed) setText('')
+                void onFix(text).then((started) => {
+                  if (started) setText('')
                 })
               }}
-              disabled={isBusy || isBlank}
+              disabled={isStarting || isBlank}
               style={{
                 marginLeft: 'auto',
                 padding: 'var(--wb-s1) 0',
                 fontFamily: 'inherit',
                 fontSize: 'var(--wb-fs-table-meta)',
                 fontWeight: 'var(--wb-weight-heading)',
-                color: isBusy || isBlank ? 'var(--wb-n700)' : 'var(--wb-accent)',
+                color: isStarting || isBlank ? 'var(--wb-n700)' : 'var(--wb-accent)',
                 background: 'transparent',
                 border: 'none',
-                cursor: isBusy || isBlank ? 'default' : 'pointer',
+                cursor: isStarting || isBlank ? 'default' : 'pointer',
               }}
             >
-              {isBusy ? 'Posting…' : 'Post'}
+              {isStarting ? 'Starting…' : 'Ask the agent to fix this'}
             </button>
           </div>
         </div>
       )}
+
     </div>
   )
 }
@@ -416,7 +479,8 @@ export function PrDetailScreen({
   const startReview = useStartPrReview(pr.id)
   const postFinding = usePostPrFinding(pr.id)
   const discardFinding = useDiscardPrFinding(pr.id)
-  const postReply = usePostReviewReply(pr.id)
+  const startFix = useStartCommentFix(pr.id)
+  const commentFixes = useCommentFixes(pr.id)
   const merge = useMergePr(pr.id)
 
   /*
@@ -490,12 +554,20 @@ export function PrDetailScreen({
     }
   }
 
-  /** Answers whether the reply reached GitHub, so a failed post leaves the text to retry. */
-  async function reply(commentId: number, text: string): Promise<boolean> {
-    if (busyCommentIds.has(commentId)) return false
+  /** Answers whether the fix started, so a refused one leaves the instruction to edit. */
+  async function askFix(thread: PrReviewThread, instruction: string): Promise<boolean> {
+    const commentId = thread.comments[0]?.id ?? 0
+    if (commentId === 0 || thread.line === null) return false
+    if (instruction.trim() === '' || busyCommentIds.has(commentId)) return false
     setBusyCommentIds((current) => new Set(current).add(commentId))
     try {
-      await postReply.mutateAsync({ commentId, text })
+      await startFix.mutateAsync({
+        commentId,
+        instruction: instruction.trim(),
+        comment: thread.comments[0]?.body ?? '',
+        path: thread.path,
+        line: thread.line,
+      })
       return true
     } catch (error) {
       setAlert(String(error))
@@ -507,6 +579,13 @@ export function PrDetailScreen({
         return next
       })
     }
+  }
+
+  const fixByComment = new Map<number, StoredCommentFix[]>()
+  for (const fix of commentFixes.data?.fixes ?? []) {
+    const attempts = fixByComment.get(fix.commentId)
+    if (attempts === undefined) fixByComment.set(fix.commentId, [fix])
+    else attempts.push(fix)
   }
 
   return (
@@ -777,8 +856,10 @@ export function PrDetailScreen({
                   return (
                     <ReviewThreadView
                       thread={thread}
-                      isBusy={busyCommentIds.has(commentId)}
-                      onPost={(text) => reply(commentId, text)}
+                      canFix={pr.authoredByMe}
+                      fixes={fixByComment.get(commentId) ?? []}
+                      isStarting={busyCommentIds.has(commentId)}
+                      onFix={(instruction) => askFix(thread, instruction)}
                     />
                   )
                 }}
