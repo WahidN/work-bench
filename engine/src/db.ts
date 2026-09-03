@@ -146,6 +146,22 @@ CREATE TABLE IF NOT EXISTS pr_review_findings (
 );
 
 CREATE INDEX IF NOT EXISTS idx_pr_review_findings_pr ON pr_review_findings(pr_id);
+
+CREATE TABLE IF NOT EXISTS pr_comment_fixes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  pr_id INTEGER NOT NULL REFERENCES prs(id),
+  comment_id INTEGER NOT NULL,
+  path TEXT NOT NULL,
+  line INTEGER NOT NULL,
+  comment TEXT NOT NULL,
+  instruction TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('queued','running','landed','nothing','failed')),
+  detail TEXT,
+  created_at TEXT NOT NULL,
+  finished_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_pr_comment_fixes_pr ON pr_comment_fixes(pr_id);
 `;
 
 // SQLite has no "ADD COLUMN IF NOT EXISTS", so every change to a table that
@@ -238,6 +254,21 @@ const MIGRATIONS: string[] = [
      created_at TEXT NOT NULL
    );
    CREATE INDEX IF NOT EXISTS idx_pr_review_findings_pr ON pr_review_findings(pr_id);`,
+  // 10: what became of a fix the user asked the agent for from a review comment.
+  `CREATE TABLE IF NOT EXISTS pr_comment_fixes (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     pr_id INTEGER NOT NULL REFERENCES prs(id),
+     comment_id INTEGER NOT NULL,
+     path TEXT NOT NULL,
+     line INTEGER NOT NULL,
+     comment TEXT NOT NULL,
+     instruction TEXT NOT NULL,
+     state TEXT NOT NULL CHECK (state IN ('queued','running','landed','nothing','failed')),
+     detail TEXT,
+     created_at TEXT NOT NULL,
+     finished_at TEXT
+   );
+   CREATE INDEX IF NOT EXISTS idx_pr_comment_fixes_pr ON pr_comment_fixes(pr_id);`,
 ];
 
 function isEmptyDatabase(db: Database.Database): boolean {

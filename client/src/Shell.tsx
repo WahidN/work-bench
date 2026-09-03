@@ -44,6 +44,7 @@ import {
   useSetTodoPinned,
   useShellData,
   useUpdateProject,
+  fetchCommentFixes,
   fetchPrReview,
 } from './queries'
 import {
@@ -56,6 +57,9 @@ import {
 import { accountName, notify, requestNotificationPermission } from './native'
 import {
   REVIEW_TITLE,
+  fixBody,
+  fixTitle,
+  fixesToAnnounce,
   itemKey,
   needsInputTitle,
   newlyAppeared,
@@ -346,6 +350,8 @@ export function Shell() {
    */
   const client = useQueryClient()
   const announcedReviews = useRef<Set<number>>(new Set())
+  const announcedFixes = useRef<Set<number>>(new Set())
+  const sessionStart = useRef(new Date().toISOString())
   /*
    * The pull requests, in a ref, so the interval below can read the current list without
    * being torn down and restarted every time a poll hands back a new array.
@@ -378,12 +384,37 @@ export function Shell() {
       }
     }
 
+    /*
+     * A finished fix, announced once each. Read on the same beat as the review and for
+     * the same reason: the thread that started it is usually not on screen when it ends,
+     * and after a restart the engine has already failed what was running.
+     */
+    async function lookAtFixes() {
+      for (const pr of currentPrs.current) {
+        let fixes
+        try {
+          fixes = (await fetchCommentFixes(client, pr.id, REVIEW_BEAT_MS - 5_000)).fixes
+        } catch {
+          continue
+        }
+        if (cancelled) return
+        for (const fix of fixesToAnnounce(fixes, announcedFixes.current, sessionStart.current)) {
+          void notify(fixTitle(fix.state), fixBody(pr.title, fix.state))
+          announcedFixes.current.add(fix.id)
+        }
+      }
+    }
+
     // An interval rather than a dependency, because a review finishing changes nothing
     // this component renders: the pull request list is identical, so an effect keyed on it
     // would never look again. `announceFinishedReviews` runs on its own loop for the same
     // reason.
-    const timer = setInterval(() => void look(), REVIEW_BEAT_MS)
+    const timer = setInterval(() => {
+      void look()
+      void lookAtFixes()
+    }, REVIEW_BEAT_MS)
     void look()
+    void lookAtFixes()
     return () => {
       cancelled = true
       clearInterval(timer)
@@ -584,7 +615,6 @@ export function Shell() {
                 key={openPr.id}
                 pr={openPr}
                 onBack={() => setOpenPrId(null)}
-                onOpenAgent={() => setChatTarget({ kind: 'pullRequest', pr: openPr })}
               />
             ) : (
               <PRsScreen

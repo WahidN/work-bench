@@ -5,12 +5,14 @@ import { getProject } from '../../projects.js';
 import { sendPrMessage } from '../../prChat.js';
 import { acquireJob, finishJob, isJobRunning } from '../../jobs.js';
 import { openDetachedWorktree, getDiff, removeWorktree, headSha } from '../../git.js';
-import { fetchPrDetailView, postReviewCommentReply, postLineComment } from '../../sources/githubPrDetail.js';
+import { fetchPrDetailView, postLineComment } from '../../sources/githubPrDetail.js';
 import { reviewPrDiff } from '../../prReview.js';
 import { splitByAnchor } from '../../diffAnchors.js';
 import {
   replaceReviewFindings, listReviewFindings, getReviewFinding, markFindingPosted, deleteReviewFinding,
 } from '../../prReviewStore.js';
+import { startCommentFix, listCommentFixes } from '../../prCommentFixStore.js';
+import { drainCommentFixes } from '../../prCommentFix.js';
 import type { PrDetailView } from '../../types.js';
 
 // One GET /prs/:id/detail costs three gh calls (the view, the changed files, the
@@ -92,32 +94,42 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
     }
   });
 
-  app.post('/prs/:id/review-comments/:commentId/reply', async (req, res) => {
-    const text = req.body?.text;
-    if (typeof text !== 'string' || !text.trim()) {
-      res.status(400).json({ error: 'text is required' });
+  app.post('/prs/:id/review-comments/:commentId/fix', (req, res) => {
+    const prId = Number(req.params.id);
+    const commentId = Number(req.params.commentId);
+    const { instruction, comment, path, line } = req.body ?? {};
+
+    if (typeof instruction !== 'string' || !instruction.trim()) {
+      res.status(400).json({ error: 'instruction is required' });
       return;
     }
-    const pr = getPr(db, Number(req.params.id));
+    if (typeof comment !== 'string' || typeof path !== 'string' || typeof line !== 'number') {
+      res.status(400).json({ error: 'comment, path and line are required' });
+      return;
+    }
+
+    const pr = getPr(db, prId);
     if (!pr) { res.status(404).json({ error: 'not found' }); return; }
-    if (pr.number === null) {
-      res.status(400).json({ error: 'this PR has no GitHub number yet' });
-      return;
-    }
     const project = getProject(db, pr.projectId);
-    if (!project?.githubRepo) {
-      res.status(400).json({ error: 'project has no GitHub repo configured' });
+    if (!project) { res.status(404).json({ error: 'project not found' }); return; }
+
+    if (!pr.authoredByMe) {
+      res.status(403).json({ error: 'Workbench only fixes pull requests you authored.' });
       return;
     }
-    try {
-      const created = await postReviewCommentReply(
-        project.githubRepo, pr.number, Number(req.params.commentId), text
-      );
-      invalidateDetail(db, pr.id);
-      res.json(created);
-    } catch (err) {
-      res.status(502).json({ error: String(err) });
-    }
+
+    startCommentFix(db, prId, {
+      commentId, path, line, comment, instruction: instruction.trim(),
+    });
+    res.status(202).json({ queued: true });
+
+    void drainCommentFixes(db, prId);
+  });
+
+  app.get('/prs/:id/comment-fixes', (req, res) => {
+    const prId = Number(req.params.id);
+    if (!getPr(db, prId)) { res.status(404).json({ error: 'not found' }); return; }
+    res.json({ fixes: listCommentFixes(db, prId) });
   });
 
   app.get('/prs/:id/diff', async (req, res) => {
@@ -212,7 +224,14 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
     let outdated = false;
     // Best effort: a head that cannot be read is not a reason to withhold the
     // remarks, only a reason not to claim they are current.
-    if (project) {
+    //
+    // Under the job lock, because this opens and force-removes the pull request's
+    // worktree, and the app asks for this every 30 seconds per pull request from
+    // the notification loop. Without the lock it deletes the directory a running
+    // fix or chat revision is working in: a fix on a reviewed pull request died on
+    // `git add -A` with ENOENT after the agent had worked for seven minutes.
+    const job = project ? acquireJob(db, 'pr-chat', 'pr', prId) : null;
+    if (project && job) {
       let worktreePath: string | null = null;
       try {
         worktreePath = await openDetachedWorktree(project, pr.branch);
@@ -221,6 +240,7 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
         outdated = false;
       } finally {
         if (worktreePath) await removeWorktree(project.repoPath, worktreePath);
+        finishJob(db, job.id, 'done');
       }
     }
     res.json({ findings, outdated, running });
