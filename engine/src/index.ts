@@ -1,5 +1,6 @@
 import { openDb, DB_PATH } from './db.js';
 import { reconcileInterruptedJobs } from './jobs.js';
+import { reconcileUnfinishedCommentFixes } from './prCommentFixStore.js';
 import { getOrCreateApiToken } from './keychain.js';
 import { startPoller } from './poller.js';
 import { createServer } from './api/server.js';
@@ -10,6 +11,9 @@ async function main(): Promise<void> {
 
   const interrupted = reconcileInterruptedJobs(db);
   if (interrupted > 0) console.log(`Marked ${interrupted} job(s) interrupted from a previous run.`);
+
+  const interruptedFixes = reconcileUnfinishedCommentFixes(db);
+  if (interruptedFixes > 0) console.log(`Failed ${interruptedFixes} comment fix(es) left running.`);
 
   const apiToken = await getOrCreateApiToken();
   const stopPoller = startPoller(db);

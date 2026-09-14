@@ -177,6 +177,7 @@ export function reconcileGithubPrs(
   // nine merged pull requests stayed in the inbox and `POST /poll` answered
   // `githubPrs: FOREIGN KEY constraint failed` with no clue which table.
   const deleteFindings = db.prepare('DELETE FROM pr_review_findings WHERE pr_id = ?');
+  const deleteCommentFixes = db.prepare('DELETE FROM pr_comment_fixes WHERE pr_id = ?');
   // A ticket keeps pointing at the PR the fix pipeline opened for it, and
   // foreign keys are enforced, so the reference has to go before the row does.
   // The ticket itself stays: its history is worth more than the link.
@@ -186,6 +187,7 @@ export function reconcileGithubPrs(
     for (const row of doomed) {
       deleteMessages.run(row.id);
       deleteFindings.run(row.id);
+      deleteCommentFixes.run(row.id);
       clearTicketLink.run(row.id);
       deletePr.run(row.id);
     }

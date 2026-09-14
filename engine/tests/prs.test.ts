@@ -5,6 +5,7 @@ import { createProject } from '../src/projects.js';
 import { createTicket, getTicket, updateTicketStatus } from '../src/tickets.js';
 import { recordPr, getPr, listPrs, updatePrStatus, addPrMessage, listPrMessages, setPrPinned, upsertGithubPr, reconcileGithubPrs } from '../src/prs.js';
 import { replaceReviewFindings, listReviewFindings } from '../src/prReviewStore.js';
+import { startCommentFix, finishCommentFix, listCommentFixes } from '../src/prCommentFixStore.js';
 
 let db: Database.Database;
 let ticketId: number;
@@ -241,6 +242,27 @@ describe('reconciling github PRs', () => {
 
     expect(listPrs(db)).toHaveLength(1);
     expect(listReviewFindings(db, kept.id)).toHaveLength(1);
+  });
+
+  it('deletes a PR that has a stored comment fix on it', () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+    const fixed = recordPr(db, { ticketId: null, projectId: project.id, branch: 'a', number: 1, url: 'u1', status: 'open' });
+    recordPr(db, { ticketId: null, projectId: project.id, branch: 'b', number: 2, url: 'u2', status: 'open' });
+    finishCommentFix(
+      db,
+      startCommentFix(db, fixed.id, {
+        commentId: 7, path: 'src/a.ts', line: 3, comment: 'a remark', instruction: 'clear the cache key',
+      }),
+      'landed',
+      null,
+    );
+
+    const removed = reconcileGithubPrs(db, [project.id], [{ projectId: project.id, number: 99 }]);
+
+    expect(removed).toBe(2);
+    expect(listPrs(db)).toEqual([]);
+    expect(listCommentFixes(db, fixed.id)).toEqual([]);
   });
 
   it('skips reconciliation entirely when the fetch came back empty', () => {
