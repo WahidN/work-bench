@@ -84,12 +84,12 @@ describe('runFixPipeline', () => {
 
     const pr = listPrs(db)[0];
     expect(pr).toBeDefined();
-    expect(acquireJob(db, 'pr-chat', 'pr', pr.id)).toBeNull();
+    expect(acquireJob(db, 'pr-chat', 'pr', pr.id, 'chat')).toBeNull();
 
     resolveReview!({ correctness: 5, completeness: 5, quality: 5, tests: 5, regressionRisk: 5, findings: [] });
     await pipeline;
 
-    expect(acquireJob(db, 'pr-chat', 'pr', pr.id)).not.toBeNull();
+    expect(acquireJob(db, 'pr-chat', 'pr', pr.id, 'chat')).not.toBeNull();
   });
 
   it('releases the PR lock when the pipeline throws mid-review', async () => {
@@ -98,7 +98,7 @@ describe('runFixPipeline', () => {
     await expect(runFixPipeline(db, ticketId)).rejects.toThrow('review blew up');
 
     const pr = listPrs(db)[0];
-    expect(acquireJob(db, 'pr-chat', 'pr', pr.id)).not.toBeNull();
+    expect(acquireJob(db, 'pr-chat', 'pr', pr.id, 'chat')).not.toBeNull();
   });
 
   it('throws when the implement session produces no changes, but still cleans up the worktree', async () => {

@@ -118,7 +118,7 @@ describe('POST /prs/:id/review-comments/:commentId/fix', () => {
   });
 
   it('queues rather than refusing while something else holds the pull request', async () => {
-    acquireJob(db, 'pr-chat', 'pr', prId);
+    acquireJob(db, 'pr-chat', 'pr', prId, 'chat');
 
     await auth(request(app).post(`/prs/${prId}/review-comments/7/fix`).send(body)).expect(202);
 
@@ -153,7 +153,7 @@ describe('GET /prs/:id/comment-fixes', () => {
 
 describe('GET /prs/:id/review while a fix runs', () => {
   it('does not remove the worktree a fix is working in', async () => {
-    acquireJob(db, 'pr-chat', 'pr', prId);
+    acquireJob(db, 'pr-chat', 'pr', prId, 'chat');
     const findings = await import('../../src/prReviewStore.js');
     findings.replaceReviewFindings(db, prId, [{ path: 'a.ts', line: 1, body: 'x' }], 'abc123');
     const git = await import('../../src/git.js');

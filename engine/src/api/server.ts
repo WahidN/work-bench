@@ -7,6 +7,7 @@ import { registerTodosRoutes } from './routes/todos.js';
 import { registerTicketsRoutes } from './routes/tickets.js';
 import { registerPrsRoutes } from './routes/prs.js';
 import { registerPollRoutes } from './routes/poll.js';
+import { registerAgentsRoutes } from './routes/agents.js';
 import { registerJiraCallbackRoute, registerSettingsRoutes } from './routes/settings.js';
 
 export function createServer(db: Database.Database, apiToken: string): express.Express {
@@ -32,6 +33,7 @@ export function createServer(db: Database.Database, apiToken: string): express.E
   registerTicketsRoutes(app, db);
   registerPrsRoutes(app, db);
   registerPollRoutes(app, db);
+  registerAgentsRoutes(app, db);
   registerSettingsRoutes(app);
 
   // Safety net: an uncaught throw in a route must never leave as an HTML error

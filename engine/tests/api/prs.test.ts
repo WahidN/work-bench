@@ -4,7 +4,7 @@ import Database from 'better-sqlite3';
 import { openDb } from '../../src/db.js';
 import { createProject } from '../../src/projects.js';
 import { createTicket } from '../../src/tickets.js';
-import { recordPr, updatePrStatus } from '../../src/prs.js';
+import { recordPr, updatePrStatus, getPr } from '../../src/prs.js';
 import { acquireJob, finishJob, reconcileInterruptedJobs } from '../../src/jobs.js';
 import { replaceReviewFindings, listReviewFindings } from '../../src/prReviewStore.js';
 import * as prChat from '../../src/prChat.js';
@@ -66,7 +66,7 @@ describe('GET /prs/:id/diff', () => {
   });
 
   it('returns 409 and never touches the worktree while another PR job holds the lock', async () => {
-    acquireJob(db, 'pr-chat', 'pr', prId);
+    acquireJob(db, 'pr-chat', 'pr', prId, 'chat');
 
     const res = await auth(request(app).get(`/prs/${prId}/diff`));
 
@@ -256,12 +256,40 @@ describe('POST /prs/:id/review', () => {
   });
 
   it('refuses a second review while one is running', async () => {
-    acquireJob(db, 'pr-chat', 'pr', prId);
+    acquireJob(db, 'pr-chat', 'pr', prId, 'chat');
 
     const res = await auth(request(app).post(`/prs/${prId}/review`));
 
     expect(res.status).toBe(409);
     expect(git.openDetachedWorktree).not.toHaveBeenCalled();
+  });
+
+  it('records when the review ran', async () => {
+    await auth(request(app).post(`/prs/${prId}/review`));
+    await settle();
+
+    expect(typeof getPr(db, prId)!.reviewedAt).toBe('string');
+  });
+
+  // A clean review stores no finding, so this is the only thing that separates it
+  // from a pull request nobody has reviewed.
+  it('records a review that found nothing to say', async () => {
+    vi.mocked(prReview.reviewPrDiff).mockResolvedValue([]);
+
+    await auth(request(app).post(`/prs/${prId}/review`));
+    await settle();
+
+    expect(listReviewFindings(db, prId)).toEqual([]);
+    expect(getPr(db, prId)!.reviewedAt).not.toBeNull();
+  });
+
+  it('records nothing when the review fails', async () => {
+    vi.mocked(prReview.reviewPrDiff).mockRejectedValue(new Error('claude exploded'));
+
+    await auth(request(app).post(`/prs/${prId}/review`));
+    await settle();
+
+    expect(getPr(db, prId)!.reviewedAt).toBeNull();
   });
 
   it('404s an unknown pull request', async () => {
@@ -295,7 +323,7 @@ describe('GET /prs/:id/review', () => {
   // The app cannot work this out for itself: a review still running and one that
   // finished with nothing to say both look like an empty list.
   it('reports that work is running on the pull request', async () => {
-    acquireJob(db, 'pr-chat', 'pr', prId);
+    acquireJob(db, 'pr-chat', 'pr', prId, 'chat');
 
     const res = await auth(request(app).get(`/prs/${prId}/review`));
 
@@ -303,7 +331,7 @@ describe('GET /prs/:id/review', () => {
   });
 
   it('reports nothing running when the job has finished', async () => {
-    const job = acquireJob(db, 'pr-chat', 'pr', prId)!;
+    const job = acquireJob(db, 'pr-chat', 'pr', prId, 'chat')!;
     finishJob(db, job.id, 'done');
 
     const res = await auth(request(app).get(`/prs/${prId}/review`));
@@ -314,7 +342,7 @@ describe('GET /prs/:id/review', () => {
   // A review killed by a restart is marked interrupted, not running, so the
   // button does not stay disabled forever waiting for something that is gone.
   it('does not report an interrupted job as running', async () => {
-    acquireJob(db, 'pr-chat', 'pr', prId);
+    acquireJob(db, 'pr-chat', 'pr', prId, 'chat');
     reconcileInterruptedJobs(db);
 
     const res = await auth(request(app).get(`/prs/${prId}/review`));
@@ -324,7 +352,7 @@ describe('GET /prs/:id/review', () => {
 
   it('reports running even when the pull request has stored findings', async () => {
     replaceReviewFindings(db, prId, [{ path: 'src/a.ts', line: 12, body: 'old remark' }], 'abc123');
-    acquireJob(db, 'pr-chat', 'pr', prId);
+    acquireJob(db, 'pr-chat', 'pr', prId, 'chat');
 
     const res = await auth(request(app).get(`/prs/${prId}/review`));
 

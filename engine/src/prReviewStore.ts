@@ -66,3 +66,22 @@ export function markFindingPosted(db: Database.Database, id: number): void {
 export function deleteReviewFinding(db: Database.Database, id: number): boolean {
   return db.prepare('DELETE FROM pr_review_findings WHERE id = ?').run(id).changes > 0;
 }
+
+/// Records that Workbench reviewed this pull request.
+///
+/// Separate from the findings, because a review with nothing to say writes no
+/// finding. Without this a clean pull request is indistinguishable from one that
+/// was never reviewed, and the user reviews it again.
+///
+/// Only the time is kept. The commit it read is already on every finding, and a
+/// second copy here would be one nothing reads.
+export function markPrReviewed(db: Database.Database, prId: number): void {
+  db.prepare('UPDATE prs SET reviewed_at = ? WHERE id = ?').run(new Date().toISOString(), prId);
+}
+
+/// Drops the review mark, for when the branch moves past what was reviewed. The
+/// findings stay: they carry their own commit sha and the detail page reports them
+/// as outdated, which is the user's call to make.
+export function clearPrReviewed(db: Database.Database, prId: number): void {
+  db.prepare('UPDATE prs SET reviewed_at = NULL WHERE id = ?').run(prId);
+}

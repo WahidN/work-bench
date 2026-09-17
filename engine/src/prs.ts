@@ -15,6 +15,7 @@ function rowToPr(row: any): Pr {
     authoredByMe: !!row.authored_by_me, assignedToMe: !!row.assigned_to_me,
     reviewRequestedByMe: !!row.review_requested_by_me,
     messageCount: Number(row.message_count ?? 0),
+    reviewedAt: row.reviewed_at ?? null,
   };
 }
 

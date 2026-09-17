@@ -20,12 +20,14 @@ import {
   type UseQueryOptions,
 } from '@tanstack/react-query'
 import { engine } from './engineClient'
-import type { Pr, Project, StoredCommentFix, Ticket, Todo, TodoPriority } from '../../engine/src/types.ts'
+import type {
+  Pr, Project, RunningAgent, StoredCommentFix, Ticket, Todo, TodoPriority,
+} from '../../engine/src/types.ts'
 import type { TodayView } from '../../engine/src/todos.ts'
 import type { PrDetailView } from './prDetailLogic'
 import { isRunning, type PrReviewView } from './prReviewLogic'
 
-export type { Pr, Project, StoredCommentFix, Ticket, Todo, TodoPriority, TodayView }
+export type { Pr, Project, RunningAgent, StoredCommentFix, Ticket, Todo, TodoPriority, TodayView }
 
 export interface CommentFixInput {
   commentId: number
@@ -44,8 +46,15 @@ export { EngineError } from './engineClient'
  */
 const POLL_MS = 30_000
 
+/*
+ * Faster than POLL_MS: this is the only thing that says an agent is alive, and a fix that
+ * lands in under a minute would otherwise never be seen running at all.
+ */
+const AGENTS_BEAT_MS = 10_000
+
 export const keys = {
   today: ['/today'] as const,
+  agents: ['/agents'] as const,
   prs: ['/prs'] as const,
   pr: (id: number) => ['/prs', id] as const,
   prDetail: (id: number) => ['/prs', id, 'detail'] as const,
@@ -627,3 +636,17 @@ export function useMergePr(id: number) {
     },
   })
 }
+
+/**
+ * Every agent the engine is running, for the sidebar and the agents list.
+ *
+ * Polled on a fixed beat rather than only while something runs: an agent the user did not
+ * start from this window, such as a fix draining behind another, has to appear on its own.
+ * The route is one query and opens no worktree, unlike the review poll beside it.
+ */
+export const useRunningAgents = () =>
+  useQuery<{ agents: RunningAgent[] }>({
+    queryKey: keys.agents,
+    queryFn: () => engine.get<{ agents: RunningAgent[] }>('/agents'),
+    refetchInterval: AGENTS_BEAT_MS,
+  })

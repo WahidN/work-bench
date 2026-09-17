@@ -4,7 +4,8 @@
  * Everything here is live: the rows, the project list, the search button and the gear.
  */
 
-import type { Pr, Project, Ticket, Todo } from './queries'
+import type { Pr, Project, RunningAgent, Ticket, Todo } from './queries'
+import { agentsSummary } from './agentsLogic'
 import { Icon } from './Icon'
 import { SettingsButton } from './SettingsSheet'
 import {
@@ -32,6 +33,7 @@ export function Sidebar({
   tickets,
   prs,
   projects,
+  agents,
 }: {
   selection: SidebarSection
   onSelect: (section: SidebarSection) => void
@@ -50,8 +52,16 @@ export function Sidebar({
   tickets: Ticket[]
   prs: Pr[]
   projects: Project[]
+  agents: RunningAgent[]
 }) {
   const shownName = accountName === '' ? UNKNOWN_ACCOUNT : accountName
+  const agentsLine = agentsSummary(agents)
+  /*
+   * The row also stays while its own section is open. Without that the last agent
+   * finishing pulls the row out from under the user, leaving them on a screen with no
+   * selected row in the nav, because Agents is deliberately not in SECTIONS.
+   */
+  const showAgents = agentsLine !== '' || selection === 'Agents'
 
   return (
     <div
@@ -243,6 +253,46 @@ export function Sidebar({
           })}
         </div>
       </div>
+
+      {/*
+        * Running agents. Only here while something runs: an agent is the exception, and a
+        * permanent "0 agents" row would be one more thing to read past every time.
+        */}
+      {showAgents && (
+        <button
+          id="sidebar-agents"
+          data-agent-count={agents.length}
+          onClick={() => onSelect('Agents')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--wb-s3)',
+            padding: 'var(--wb-s2) var(--wb-s3)',
+            borderRadius: 'var(--wb-radius-md)',
+            border: 'none',
+            background: selection === 'Agents' ? 'var(--wb-a900)' : 'transparent',
+            color: selection === 'Agents' ? 'var(--wb-a200)' : 'var(--wb-n400)',
+            font: 'inherit',
+            cursor: 'pointer',
+            textAlign: 'left',
+          }}
+        >
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              flex: 'none',
+              marginLeft: 5,
+              marginRight: 5,
+              borderRadius: '50%',
+              background: agentsLine === '' ? 'var(--wb-n700)' : 'var(--wb-accent)',
+            }}
+          />
+          <span style={{ fontSize: 'var(--wb-fs-secondary)' }}>
+            {agentsLine === '' ? 'No agents running' : agentsLine}
+          </span>
+        </button>
+      )}
 
       {/* footer */}
       <div

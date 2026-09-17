@@ -8,6 +8,7 @@ import { acquireJob, finishJob } from './jobs.js';
 import { claimNextQueuedFix, finishCommentFix } from './prCommentFixStore.js';
 import type { ReviewSubject } from './review.js';
 import type { CommentFixState, Pr, Project } from './types.js';
+import { clearPrReviewed } from './prReviewStore.js';
 
 export interface CommentFixRequest {
   commentId: number;
@@ -71,6 +72,8 @@ export async function runCommentFix(
 
     try {
       await pushDetachedHead(worktreePath, pr.branch);
+      // The branch has moved, so the stored review no longer describes it.
+      clearPrReviewed(db, pr.id);
     } catch (err) {
       return {
         state: 'failed',
@@ -118,7 +121,7 @@ export async function drainCommentFixes(
         .get(prId);
       if (!pending) return;
 
-      const job = acquireJob(db, 'pr-chat', 'pr', prId);
+      const job = acquireJob(db, 'pr-chat', 'pr', prId, 'comment-fix');
       if (!job) {
         await wait(retryMs);
         continue;

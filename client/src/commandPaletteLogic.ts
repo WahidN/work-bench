@@ -28,6 +28,7 @@ const NAV_HINT: Record<SidebarSection, string> = {
   Projects: '⌘2',
   'Pull requests': '⌘3',
   Jira: '⌘4',
+  Agents: '',
 }
 
 const NAV_ID: Record<SidebarSection, string> = {
@@ -35,6 +36,7 @@ const NAV_ID: Record<SidebarSection, string> = {
   Projects: 'nav-projects',
   'Pull requests': 'nav-prs',
   Jira: 'nav-jira',
+  Agents: 'nav-agents',
 }
 
 /**

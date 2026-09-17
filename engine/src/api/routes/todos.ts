@@ -85,7 +85,7 @@ export function registerTodosRoutes(app: Express, db: Database.Database): void {
     // both analyse and then collide on the ticket's UNIQUE(source, source_id).
     // Todo ids live in their own table but share the 'ticket' lock namespace,
     // so at worst a todo and a ticket with the same id block each other.
-    const job = acquireJob(db, 'triage', 'ticket', todoId);
+    const job = acquireJob(db, 'triage', 'ticket', todoId, 'triage');
     if (!job) { res.status(409).json({ error: 'already working on this' }); return; }
 
     try {
