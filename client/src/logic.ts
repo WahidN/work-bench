@@ -7,8 +7,12 @@
 
 import type { Pr, Project, Ticket, Todo } from './queries'
 
-export type SidebarSection = 'Today' | 'Projects' | 'Pull requests' | 'Jira'
+export type SidebarSection = 'Today' | 'Projects' | 'Pull requests' | 'Jira' | 'Agents'
 
+/**
+ * The fixed nav. Agents is deliberately absent: it is a section the Shell can show, but its
+ * row appears only while something runs, so a permanent "Agents 0" does not sit in the nav.
+ */
 export const SECTIONS: SidebarSection[] = ['Today', 'Projects', 'Pull requests', 'Jira']
 
 export const SECTION_SYMBOL: Record<SidebarSection, string> = {
@@ -16,6 +20,7 @@ export const SECTION_SYMBOL: Record<SidebarSection, string> = {
   Projects: 'square-grid-2x2',
   'Pull requests': 'arrow-triangle-pull',
   Jira: 'list-bullet-rectangle',
+  Agents: 'sparkles',
 }
 
 const ISSUE_SYMBOL = 'list-bullet-rectangle'
@@ -130,6 +135,9 @@ export function navCount(
       return data.jiraTodos.filter(
         (todo) => todo.source === 'jira' && todo.promotedTicketId === null && !todo.done,
       ).length
+    // Never asked for: Agents is not in SECTIONS, and its own row carries its count.
+    case 'Agents':
+      return 0
   }
 }
 
@@ -467,6 +475,13 @@ export type PrRow = {
   projectName: string
   statusLabel: string
   updatedText: string
+  /**
+   * Whether Workbench itself reviewed this pull request, and when. Nothing to do with
+   * `statusLabel`, which is GitHub's decision: a pull request GitHub calls approved may
+   * never have been read by the agent.
+   */
+  isReviewed: boolean
+  reviewedText: string
   pinned: boolean
   messageCount: number
 }
@@ -504,6 +519,10 @@ export function prRows(prs: Pr[], projects: Project[], filter: PrFilter, now: Da
         updatedText: pr.githubUpdatedAt
           ? relativeTime(new Date(pr.githubUpdatedAt), now)
           : '',
+        isReviewed: pr.reviewedAt !== null,
+        reviewedText: pr.reviewedAt === null
+          ? 'Not reviewed'
+          : `Reviewed ${relativeTime(new Date(pr.reviewedAt), now)}`,
         pinned: pr.pinned,
         messageCount: pr.messageCount,
       }
@@ -530,5 +549,7 @@ export function headerKicker(
       return 'GitHub'
     case 'Jira':
       return 'Jira'
+    case 'Agents':
+      return 'Workbench'
   }
 }

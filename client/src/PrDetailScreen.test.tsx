@@ -17,6 +17,7 @@ const pr = (over: Partial<Pr> = {}): Pr => ({
   url: 'https://github.com/acme/repo/pull/45',
   status: 'open',
   lastReviewScore: null,
+  reviewedAt: null,
   pinned: false,
   title: 'A pull request',
   reviewState: null,

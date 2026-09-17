@@ -127,7 +127,8 @@ function pr(over: Partial<Pr> = {}): Pr {
     authoredByMe: false,
     reviewRequestedByMe: null,
     messageCount: 0,
-    ...over,
+    reviewedAt: null,
+      ...over,
   } as Pr
 }
 
@@ -579,6 +580,36 @@ describe('prRows', () => {
   it('leaves the updated column empty when GitHub sent no timestamp', () => {
     const rows = prRows([pr({ assignedToMe: true })], PROJECTS, 'assignedToMe', now)
     expect(rows[0].updatedText).toBe('')
+  })
+
+  it('says a pull request Workbench has not reviewed is not reviewed', () => {
+    const rows = prRows([pr({ assignedToMe: true })], PROJECTS, 'assignedToMe', now)
+    expect(rows[0].isReviewed).toBe(false)
+    expect(rows[0].reviewedText).toBe('Not reviewed')
+  })
+
+  it('says when Workbench reviewed it', () => {
+    const rows = prRows(
+      [pr({ assignedToMe: true, reviewedAt: '2026-08-14T09:00:00.000Z' })],
+      PROJECTS,
+      'assignedToMe',
+      now,
+    )
+    expect(rows[0].isReviewed).toBe(true)
+    expect(rows[0].reviewedText).toBe('Reviewed 3h ago')
+  })
+
+  // The two answer different questions, and conflating them is the whole reason this
+  // column exists: GitHub's approval says nothing about whether the agent has read it.
+  it('does not read an approved pull request as reviewed by Workbench', () => {
+    const rows = prRows(
+      [pr({ assignedToMe: true, reviewState: 'approved' })],
+      PROJECTS,
+      'assignedToMe',
+      now,
+    )
+    expect(rows[0].statusLabel).toBe('Approved')
+    expect(rows[0].isReviewed).toBe(false)
   })
 
   it('fills the updated column from the GitHub timestamp', () => {

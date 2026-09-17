@@ -18,6 +18,7 @@ import { ErrorAlert } from './ErrorAlert'
 import { JiraScreen } from './JiraScreen'
 import { PrDetailScreen } from './PrDetailScreen'
 import { PRsScreen } from './PRsScreen'
+import { AgentsScreen } from './AgentsScreen'
 import { ProjectDetailScreen } from './ProjectDetailScreen'
 import { ProjectFormSheet, type ProjectSheetMode } from './ProjectFormSheet'
 import { ProjectsScreen } from './ProjectsScreen'
@@ -40,6 +41,7 @@ import {
   useDeleteProject,
   useDeleteTodo,
   useRefresh,
+  useRunningAgents,
   useSetTodoDone,
   useSetTodoPinned,
   useShellData,
@@ -121,6 +123,7 @@ export function Shell() {
   const [isStartingAgent, setIsStartingAgent] = useState(false)
   const [account, setAccount] = useState('')
   const data = useShellData()
+  const agents = useRunningAgents()
   /*
    * Every todo, done ones included, read by three surfaces: the sidebar's Jira count, the
    * project cards, and the Jira screen. ContentView.swift loads it once at that level for
@@ -545,6 +548,7 @@ export function Shell() {
         tickets={data.tickets}
         prs={data.prs}
         projects={data.projects}
+        agents={agents.data?.agents ?? []}
       />
 
       <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
@@ -624,6 +628,16 @@ export function Shell() {
                 onOpenAgent={(pr) => setChatTarget({ kind: 'pullRequest', pr })}
               />
             )
+          ) : section === 'Agents' ? (
+            <AgentsScreen
+              agents={agents.data?.agents ?? []}
+              /* An agent's row opens the pull request it is working on, list and all. */
+              onOpenPr={(prId) => {
+                setSection('Pull requests')
+                setOpenProjectId(null)
+                setOpenPrId(prId)
+              }}
+            />
           ) : section === 'Today' ? (
             <TodayScreen
               today={data.today}

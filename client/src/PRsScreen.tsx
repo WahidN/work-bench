@@ -14,7 +14,7 @@ import { Icon } from './Icon'
 import { PR_EMPTY_STATE, PR_FILTERS, prFilterLabel, prRows, type PrFilter } from './logic'
 import { ReviewStarter } from './ReviewStarter'
 
-const COLUMN_WIDTHS = { project: 150, status: 180, updated: 110, actions: 200 }
+const COLUMN_WIDTHS = { project: 150, status: 180, reviewed: 120, updated: 110, actions: 200 }
 
 function ColumnTitle({ label, width }: { label: string; width?: number }) {
   return (
@@ -159,6 +159,7 @@ export function PRsScreen({
           <ColumnTitle label="Pull request" />
           <ColumnTitle label="Project" width={COLUMN_WIDTHS.project} />
           <ColumnTitle label="Status" width={COLUMN_WIDTHS.status} />
+          <ColumnTitle label="Reviewed" width={COLUMN_WIDTHS.reviewed} />
           <ColumnTitle label="Updated" width={COLUMN_WIDTHS.updated} />
           <span style={{ width: COLUMN_WIDTHS.actions, flex: 'none' }} />
         </div>
@@ -242,6 +243,23 @@ export function PRsScreen({
                 >
                   {row.statusLabel}
                 </span>
+              </span>
+
+              {/* Workbench's own review, which is not the GitHub decision beside it. */}
+              <span
+                data-pr-reviewed={row.isReviewed ? 'true' : 'false'}
+                style={{
+                  width: COLUMN_WIDTHS.reviewed,
+                  flex: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: 'var(--wb-fs-table-meta)',
+                  color: row.isReviewed ? 'var(--wb-status-approved)' : 'var(--wb-n700)',
+                }}
+              >
+                {row.isReviewed && <Icon name="checklist" size={12} />}
+                {row.reviewedText}
               </span>
 
               <span
