@@ -7,6 +7,7 @@ import { runClaude } from './claude.js';
 import { reviewDiff, reviewPasses, averageScore, type ReviewSubject } from './review.js';
 import { passComment, failComment } from './fixPipeline.js';
 import type { Pr, Project } from './types.js';
+import { clearPrReviewed } from './prReviewStore.js';
 
 const MERGE_PHRASES = ['merge it', 'merge this', 'go ahead and merge'];
 
@@ -125,6 +126,8 @@ async function revisePrChat(
     }
 
     await pushDetachedHead(worktreePath, pr.branch);
+    // The branch has moved, so the stored review no longer describes it.
+    clearPrReviewed(db, pr.id);
     const diff = await getDiff(worktreePath, project.defaultBranch);
     const score = await reviewDiff(worktreePath, subject, diff);
     const passed = reviewPasses(score);

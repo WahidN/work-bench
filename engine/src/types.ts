@@ -87,6 +87,7 @@ export interface Pr {
   assignedToMe: boolean;
   reviewRequestedByMe: boolean;
   messageCount: number;
+  reviewedAt: string | null;
   createdAt: string;
 }
 
@@ -118,14 +119,45 @@ export type JobType = 'triage' | 'spar' | 'fix' | 'pr-chat' | 'merge';
 export type JobTargetType = 'ticket' | 'pr';
 export type JobStatus = 'running' | 'done' | 'failed' | 'interrupted';
 
+/// What is running under a job lock. Null on a lock held by work that runs no
+/// agent, which is what keeps the diff route and the head-sha check out of the
+/// agents list. `JobType` cannot say this: it is 'pr-chat' for all six pull
+/// request locks, two of which only shell out to git.
+export type JobActivity =
+  | 'review'
+  | 'comment-fix'
+  | 'chat'
+  | 'merge'
+  | 'triage'
+  | 'spar'
+  | 'implement';
+
 export interface Job {
   id: number;
   type: JobType;
   targetType: JobTargetType;
   targetId: number;
   status: JobStatus;
+  activity: JobActivity | null;
   error: string | null;
   createdAt: string;
+}
+
+/// One line of the running agents list.
+///
+/// `waiting` covers a fix queued behind another on the same branch. It holds no
+/// job yet, so it has no job id, and telling the user about it is the point: it
+/// is the case where nothing appears to be happening.
+export interface RunningAgent {
+  /// Unique across both sources, so two fixes queued in the same millisecond on one
+  /// pull request are still two things. 'job-12' or 'fix-3'.
+  key: string;
+  activity: JobActivity;
+  targetType: JobTargetType;
+  targetId: number;
+  title: string;
+  waiting: boolean;
+  startedAt: string;
 }
 
 export interface Analysis {

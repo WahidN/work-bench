@@ -88,6 +88,10 @@ CREATE TABLE IF NOT EXISTS prs (
   authored_by_me INTEGER NOT NULL DEFAULT 0,
   assigned_to_me INTEGER NOT NULL DEFAULT 0,
   review_requested_by_me INTEGER NOT NULL DEFAULT 0,
+  -- When Workbench last reviewed this pull request. Stored rather than derived from
+  -- pr_review_findings, because a review with nothing to say stores no finding and
+  -- would otherwise read as never reviewed.
+  reviewed_at TEXT,
   created_at TEXT NOT NULL
 );
 
@@ -121,6 +125,11 @@ CREATE TABLE IF NOT EXISTS jobs (
   target_type TEXT NOT NULL CHECK (target_type IN ('ticket','pr')),
   target_id INTEGER NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('running','done','failed','interrupted')) DEFAULT 'running',
+  -- What is actually running under this lock, or null when the lock is held by
+  -- something that runs no agent, such as building a diff. The type column cannot
+  -- answer this: every pull request lock is taken as 'pr-chat', including two that
+  -- only shell out to git. No CHECK, so a new agent does not need a rebuild.
+  activity TEXT,
   error TEXT,
   created_at TEXT NOT NULL
 );
@@ -169,7 +178,26 @@ CREATE INDEX IF NOT EXISTS idx_pr_comment_fixes_pr ON pr_comment_fixes(pr_id);
 // PRAGMA user_version records how many entries have been applied. SCHEMA above is
 // always the current shape, so a brand new file is stamped as fully migrated and
 // never replays these.
-const MIGRATIONS: string[] = [
+//
+// An entry is SQL, or a function when the SQL cannot be written idempotently.
+// openDb runs SCHEMA before replaying, so a table missing from an older file is
+// created complete, and a later ALTER on it then hits a column that is already
+// there. Adding a table is spelled CREATE TABLE IF NOT EXISTS; adding a column has
+// no such form, so it goes through `addColumn` below.
+type Migration = string | ((db: Database.Database) => void);
+
+function addColumn(
+  db: Database.Database,
+  table: string,
+  column: string,
+  definition: string
+): void {
+  const columns = db.pragma(`table_info(${table})`) as { name: string }[];
+  if (columns.some((existing) => existing.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`);
+}
+
+const MIGRATIONS: Migration[] = [
   // 1: Phase 4. Task priority, due date, completion stamp, and pin flags.
   `ALTER TABLE todos ADD COLUMN priority TEXT NOT NULL DEFAULT 'med' CHECK (priority IN ('high','med','low'));
    ALTER TABLE todos ADD COLUMN due_at TEXT;
@@ -269,6 +297,18 @@ const MIGRATIONS: string[] = [
      finished_at TEXT
    );
    CREATE INDEX IF NOT EXISTS idx_pr_comment_fixes_pr ON pr_comment_fixes(pr_id);`,
+  // 11: what a held lock is really doing, and when a pull request was last
+  // reviewed. Both nullable: an existing job has no recorded activity, and a pull
+  // request reviewed before this reads as unreviewed, which is honest, because
+  // nothing recorded that those reviews ran.
+  //
+  // The first column migration on jobs, and jobs is in SCHEMA rather than in any
+  // migration, so a file old enough to lack it gets it complete from SCHEMA first.
+  // Hence addColumn rather than a plain ALTER.
+  (db) => {
+    addColumn(db, 'jobs', 'activity', 'TEXT');
+    addColumn(db, 'prs', 'reviewed_at', 'TEXT');
+  },
 ];
 
 function isEmptyDatabase(db: Database.Database): boolean {
@@ -291,7 +331,9 @@ function migrate(db: Database.Database): void {
   try {
     for (let version = applied; version < MIGRATIONS.length; version++) {
       db.transaction(() => {
-        db.exec(MIGRATIONS[version]);
+        const step = MIGRATIONS[version];
+        if (typeof step === 'string') db.exec(step);
+        else step(db);
         db.exec(`PRAGMA user_version = ${version + 1};`);
       })();
     }

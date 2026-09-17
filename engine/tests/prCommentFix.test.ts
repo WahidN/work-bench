@@ -8,6 +8,7 @@ import * as claude from '../src/claude.js';
 import * as review from '../src/review.js';
 import { acquireJob, finishJob, isJobRunning } from '../src/jobs.js';
 import { startCommentFix, listCommentFixes } from '../src/prCommentFixStore.js';
+import { markPrReviewed } from '../src/prReviewStore.js';
 import { buildCommentFixPrompt, drainCommentFixes, runCommentFix } from '../src/prCommentFix.js';
 import type { Project } from '../src/types.js';
 
@@ -74,6 +75,24 @@ describe('runCommentFix', () => {
       '/repos/demo/.worktrees/fix-session-token', 'fix/session-token'
     );
     expect(git.removeWorktree).toHaveBeenCalledOnce();
+  });
+
+  // A landed fix rewrites the branch, so whatever Workbench reviewed is gone.
+  it('drops the review mark once the fix is pushed', async () => {
+    markPrReviewed(db, prId);
+
+    await runCommentFix(db, getPr(db, prId)!, project, request);
+
+    expect(getPr(db, prId)!.reviewedAt).toBeNull();
+  });
+
+  it('keeps the review mark when the fix changed nothing', async () => {
+    vi.mocked(git.commitAll).mockResolvedValue(false);
+    markPrReviewed(db, prId);
+
+    await runCommentFix(db, getPr(db, prId)!, project, request);
+
+    expect(getPr(db, prId)!.reviewedAt).not.toBeNull();
   });
 
   it('does not re-review the pull request or touch its status', async () => {
@@ -162,7 +181,7 @@ describe('drainCommentFixes', () => {
   });
 
   it('waits for a job it cannot take, then runs', async () => {
-    const held = acquireJob(db, 'pr-chat', 'pr', prId)!;
+    const held = acquireJob(db, 'pr-chat', 'pr', prId, 'chat')!;
     ask(7, 'behind a review');
 
     const draining = drainCommentFixes(db, prId, { retryMs: 1 });

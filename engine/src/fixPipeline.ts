@@ -69,7 +69,10 @@ export async function runFixPipeline(db: Database.Database, ticketId: number): P
       number: numberMatch ? Number(numberMatch[1]) : null, url: prUrl, status: 'open',
     });
 
-    prJob = acquireJob(db, 'pr-chat', 'pr', pr.id);
+    // No activity: the ticket job in the tickets route already stands for this run.
+    // Listing this one too would show one pipeline as two agents, on a pull request
+    // row that has no title yet because recordPr does not set one.
+    prJob = acquireJob(db, 'pr-chat', 'pr', pr.id, null);
     if (!prJob) console.warn(`Could not lock PR ${pr.id} right after creating it; continuing without the PR lock.`);
 
     let lastScore: ReviewScore | null = null;

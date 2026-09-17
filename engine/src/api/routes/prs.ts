@@ -10,6 +10,7 @@ import { reviewPrDiff } from '../../prReview.js';
 import { splitByAnchor } from '../../diffAnchors.js';
 import {
   replaceReviewFindings, listReviewFindings, getReviewFinding, markFindingPosted, deleteReviewFinding,
+  markPrReviewed,
 } from '../../prReviewStore.js';
 import { startCommentFix, listCommentFixes } from '../../prCommentFixStore.js';
 import { drainCommentFixes } from '../../prCommentFix.js';
@@ -145,7 +146,8 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
 
     // Building the diff opens (and force-removes) the PR's worktree, the same
     // directory a fix pipeline or PR chat may still be using. Take the PR lock.
-    const job = acquireJob(db, 'pr-chat', 'pr', prId);
+    // No activity: this runs git, not an agent, so it stays out of the agents list.
+    const job = acquireJob(db, 'pr-chat', 'pr', prId, null);
     if (!job) { res.status(409).json({ error: 'already working on this' }); return; }
 
     let worktreePath: string | null = null;
@@ -178,7 +180,7 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
     // Same lock as the diff route: this opens and force-removes the PR's
     // worktree, which a fix pipeline or PR chat may still be using. It is also
     // what stops a second review of the same pull request.
-    const job = acquireJob(db, 'pr-chat', 'pr', prId);
+    const job = acquireJob(db, 'pr-chat', 'pr', prId, 'review');
     if (!job) { res.status(409).json({ error: 'already working on this' }); return; }
 
     res.status(202).json({ started: true });
@@ -195,6 +197,9 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
         const findings = await reviewPrDiff(worktreePath, { title: pr.title, body: '' }, diff);
         const { kept } = splitByAnchor(findings, diff);
         replaceReviewFindings(db, prId, kept, commitSha);
+        // After the findings, and only when nothing threw: a review that died
+        // halfway has not reviewed this pull request, whatever it managed to store.
+        markPrReviewed(db, prId);
       } catch (err) {
         failure = String(err);
       } finally {
@@ -230,7 +235,10 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
     // the notification loop. Without the lock it deletes the directory a running
     // fix or chat revision is working in: a fix on a reviewed pull request died on
     // `git add -A` with ENOENT after the agent had worked for seven minutes.
-    const job = project ? acquireJob(db, 'pr-chat', 'pr', prId) : null;
+    //
+    // No activity, and here it matters most: the app asks for this every 30 seconds
+    // per pull request, so listing it would put a phantom agent on a timer.
+    const job = project ? acquireJob(db, 'pr-chat', 'pr', prId, null) : null;
     if (project && job) {
       let worktreePath: string | null = null;
       try {
@@ -297,7 +305,7 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
     const text = req.body?.text;
     if (typeof text !== 'string' || !text.trim()) { res.status(400).json({ error: 'text is required' }); return; }
 
-    const job = acquireJob(db, 'pr-chat', 'pr', prId);
+    const job = acquireJob(db, 'pr-chat', 'pr', prId, 'chat');
     if (!job) { res.status(409).json({ error: 'already working on this' }); return; }
 
     try {
@@ -312,7 +320,7 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
 
   app.post('/prs/:id/merge', async (req, res) => {
     const prId = Number(req.params.id);
-    const job = acquireJob(db, 'merge', 'pr', prId);
+    const job = acquireJob(db, 'merge', 'pr', prId, 'merge');
     if (!job) { res.status(409).json({ error: 'already working on this' }); return; }
 
     try {

@@ -19,7 +19,7 @@ export function registerTicketsRoutes(app: Express, db: Database.Database): void
     const text = req.body?.text;
     if (typeof text !== 'string' || !text.trim()) { res.status(400).json({ error: 'text is required' }); return; }
 
-    const job = acquireJob(db, 'spar', 'ticket', ticketId);
+    const job = acquireJob(db, 'spar', 'ticket', ticketId, 'spar');
     if (!job) { res.status(409).json({ error: 'already working on this' }); return; }
 
     try {
@@ -43,7 +43,7 @@ export function registerTicketsRoutes(app: Express, db: Database.Database): void
       return;
     }
 
-    const job = acquireJob(db, 'fix', 'ticket', ticketId);
+    const job = acquireJob(db, 'fix', 'ticket', ticketId, 'implement');
     if (!job) { res.status(409).json({ error: 'already working on this' }); return; }
 
     try {
