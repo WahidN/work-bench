@@ -50,26 +50,36 @@ async function syncGithubPrs(
     const previous = findPrByNumber(db, project.id, pr.number);
     let reviewState = previous?.reviewState ?? null;
     let branch = previous?.branch ?? '';
+    let mergeable = previous?.mergeable ?? null;
 
     // The search already reported when GitHub last touched this pull request. If
     // that has not moved since the stored row, the lookup can only hand back what
     // is already there, so it is skipped: on a quiet cycle this takes the per-PR
     // calls to zero, which is the bulk of the engine's GitHub traffic.
     //
-    // Both stored fields have to be present to skip. A row that has never been
+    // Every stored field has to be settled to skip. A row that has never been
     // looked up has a null review state and an empty branch, and matching on
     // `updatedAt` alone would leave it that way for as long as the pull request
     // sits still, which is exactly when it would never recover.
+    //
+    // `mergeable` is in that list for a reason of its own: GitHub computes it
+    // lazily and answers UNKNOWN while it does, so the first lookup of a pull
+    // request usually gets no answer. Treating UNKNOWN as settled would strand it
+    // there for as long as the pull request sits still, and a conflicting branch
+    // would never offer to resolve itself.
     const unchanged =
       previous !== null &&
       previous.githubUpdatedAt === pr.updatedAt &&
       previous.reviewState !== null &&
+      mergeable !== null &&
+      mergeable !== 'UNKNOWN' &&
       branch !== '';
 
     if (force || !unchanged) {
       try {
         const detail = await fetchPrDetail(pr.repo, pr.number);
         reviewState = detail.reviewState;
+        mergeable = detail.mergeable;
         if (detail.headRefName) branch = detail.headRefName;
       } catch (err) {
         console.error('github prs: detail lookup failed for', pr.url, String(err));
@@ -81,6 +91,7 @@ async function syncGithubPrs(
       githubUpdatedAt: pr.updatedAt, isDraft: pr.isDraft,
       authoredByMe: pr.authoredByMe, assignedToMe: pr.assignedToMe,
       reviewRequestedByMe: pr.reviewRequestedByMe, reviewState, branch,
+      mergeable: mergeable ?? 'UNKNOWN',
     });
     seen.push({ projectId: project.id, number: pr.number });
   }

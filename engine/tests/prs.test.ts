@@ -106,7 +106,7 @@ describe('upserting a github PR', () => {
       projectId: project.id, number: 7, title: 'Fix x', url: 'u2',
       githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false,
       authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false,
-      reviewState: 'approved', branch: 'fix/x',
+      reviewState: 'approved', mergeable: 'MERGEABLE', branch: 'fix/x',
     });
 
     expect(merged.id).toBe(local.id);
@@ -122,7 +122,7 @@ describe('upserting a github PR', () => {
       projectId: project.id, number: 9, title: 'From github', url: 'u',
       githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: true,
       authoredByMe: false, assignedToMe: true, reviewRequestedByMe: false,
-      reviewState: null, branch: 'feat/from-github',
+      reviewState: null, mergeable: 'MERGEABLE', branch: 'feat/from-github',
     });
     // The branch is what makes this row workable: openDetachedWorktree builds from
     // origin/<branch>, so the agent panel needs nothing to exist locally.
@@ -139,7 +139,7 @@ describe('upserting a github PR', () => {
       projectId: project.id, number: 45, title: 'Herbouw meldingsbalk', url: 'u',
       githubUpdatedAt: '2026-09-01T07:17:02Z', isDraft: false,
       authoredByMe: false, assignedToMe: false, reviewRequestedByMe: true,
-      reviewState: 'review_required', branch: 'feat/meldingsbalk',
+      reviewState: 'review_required', mergeable: 'MERGEABLE', branch: 'feat/meldingsbalk',
     });
 
     expect(pr.reviewRequestedByMe).toBe(true);
@@ -156,7 +156,7 @@ describe('upserting a github PR', () => {
       projectId: project.id, number: 45, title: 'Herbouw meldingsbalk', url: 'u',
       githubUpdatedAt: '2026-09-01T07:17:02Z', isDraft: false,
       authoredByMe: true, assignedToMe: false, reviewState: 'review_required' as const,
-      branch: 'feat/meldingsbalk',
+      mergeable: 'MERGEABLE' as const, branch: 'feat/meldingsbalk',
     };
 
     upsertGithubPr(db, { ...input, reviewRequestedByMe: true });

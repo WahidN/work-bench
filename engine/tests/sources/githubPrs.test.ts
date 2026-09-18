@@ -125,7 +125,9 @@ describe('fetchPrDetail', () => {
     vi.mocked(execa).mockResolvedValue({
       stdout: JSON.stringify({ reviewDecision: 'CHANGES_REQUESTED', headRefName: 'feat/x' }),
     } as any);
-    expect(await fetchPrDetail('linku/demo', 24)).toEqual({ reviewState: 'changes_requested', headRefName: 'feat/x' });
+    expect(await fetchPrDetail('linku/demo', 24)).toEqual({
+      reviewState: 'changes_requested', headRefName: 'feat/x', mergeable: 'UNKNOWN',
+    });
   });
 
   it('treats an empty decision as review required', async () => {
@@ -135,11 +137,26 @@ describe('fetchPrDetail', () => {
     expect((await fetchPrDetail('linku/demo', 24)).reviewState).toBe('review_required');
   });
 
-  it('asks gh for both fields in one call', async () => {
+  it('asks gh for all three fields in one call', async () => {
     vi.mocked(execa).mockResolvedValue({ stdout: '{}' } as any);
     await fetchPrDetail('linku/demo', 24);
     expect(execa).toHaveBeenCalledWith('gh', [
-      'pr', 'view', '24', '--repo', 'linku/demo', '--json', 'reviewDecision,headRefName',
+      'pr', 'view', '24', '--repo', 'linku/demo', '--json', 'reviewDecision,headRefName,mergeable',
     ]);
+  });
+
+  // GitHub's own word, not a boolean. UNKNOWN is a third answer: it computes
+  // mergeability lazily and says so until it has, and reading that as "merges
+  // cleanly" is what would hide the resolve action on a branch that conflicts.
+  it('returns what GitHub says about merging', async () => {
+    vi.mocked(execa).mockResolvedValue({
+      stdout: JSON.stringify({ reviewDecision: '', headRefName: 'feat/x', mergeable: 'CONFLICTING' }),
+    } as any);
+    expect((await fetchPrDetail('linku/demo', 24)).mergeable).toBe('CONFLICTING');
+  });
+
+  it('reads a missing mergeable as unknown rather than as mergeable', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: '{}' } as any);
+    expect((await fetchPrDetail('linku/demo', 24)).mergeable).toBe('UNKNOWN');
   });
 });

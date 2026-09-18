@@ -69,6 +69,12 @@ export type PrStatus = 'open' | 'needs_attention' | 'merged';
 
 export type PrReviewState = 'approved' | 'changes_requested' | 'review_required';
 
+/// GitHub's own word for whether the pull request can be merged.
+///
+/// Kept as its string rather than a boolean because UNKNOWN is a third answer,
+/// not a false: GitHub computes mergeability lazily and says so until it has.
+export type PrMergeable = 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
+
 export interface Pr {
   id: number;
   ticketId: number | null;
@@ -81,6 +87,7 @@ export interface Pr {
   pinned: boolean;
   title: string;
   reviewState: PrReviewState | null;
+  mergeable: PrMergeable | null;
   isDraft: boolean;
   githubUpdatedAt: string | null;
   authoredByMe: boolean;
@@ -130,7 +137,8 @@ export type JobActivity =
   | 'merge'
   | 'triage'
   | 'spar'
-  | 'implement';
+  | 'implement'
+  | 'conflicts';
 
 export interface Job {
   id: number;

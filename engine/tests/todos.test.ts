@@ -323,14 +323,14 @@ describe('getTodayView', () => {
     upsertGithubPr(db, {
       projectId: project.id, number: 48, title: 'Mine', url: 'u48',
       githubUpdatedAt: 'x', isDraft: false, authoredByMe: true, assignedToMe: false,
-      reviewRequestedByMe: false, reviewState: 'review_required', branch: 'feat/mine',
+      reviewRequestedByMe: false, reviewState: 'review_required', mergeable: 'MERGEABLE', branch: 'feat/mine',
     });
     // A colleague's, here only for the review request. needsInput drives the dock
     // badge and the macOS notifications, so this must not reach it.
     upsertGithubPr(db, {
       projectId: project.id, number: 45, title: 'Theirs', url: 'u45',
       githubUpdatedAt: 'x', isDraft: false, authoredByMe: false, assignedToMe: false,
-      reviewRequestedByMe: true, reviewState: 'review_required', branch: 'feat/theirs',
+      reviewRequestedByMe: true, reviewState: 'review_required', mergeable: 'MERGEABLE', branch: 'feat/theirs',
     });
 
     const view = getTodayView(db);
@@ -347,7 +347,7 @@ describe('getTodayView', () => {
     upsertGithubPr(db, {
       projectId: project.id, number: 50, title: 'Assigned to me', url: 'u50',
       githubUpdatedAt: 'x', isDraft: false, authoredByMe: false, assignedToMe: true,
-      reviewRequestedByMe: true, reviewState: 'review_required', branch: 'feat/assigned',
+      reviewRequestedByMe: true, reviewState: 'review_required', mergeable: 'MERGEABLE', branch: 'feat/assigned',
     });
 
     const view = getTodayView(db);

@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { Pr, PrMessage, PrStatus, PrReviewState } from './types.js';
+import type { Pr, PrMessage, PrStatus, PrReviewState, PrMergeable } from './types.js';
 
 // Every route that returns a PR hands it to Swift, whose decoder has no defaults,
 // so the message count has to ride along on every read rather than only the list.
@@ -11,6 +11,7 @@ function rowToPr(row: any): Pr {
     number: row.number, url: row.url, status: row.status,
     lastReviewScore: row.last_review_score, pinned: !!row.pinned, createdAt: row.created_at,
     title: row.title, reviewState: row.review_state as PrReviewState | null,
+    mergeable: (row.mergeable as PrMergeable | null) ?? null,
     isDraft: !!row.is_draft, githubUpdatedAt: row.github_updated_at,
     authoredByMe: !!row.authored_by_me, assignedToMe: !!row.assigned_to_me,
     reviewRequestedByMe: !!row.review_requested_by_me,
@@ -94,6 +95,7 @@ export interface UpsertGithubPrInput {
   assignedToMe: boolean;
   reviewRequestedByMe: boolean;
   reviewState: PrReviewState | null;
+  mergeable: PrMergeable;
   branch: string;
 }
 
@@ -120,6 +122,7 @@ export function upsertGithubPr(db: Database.Database, input: UpsertGithubPrInput
     // one the author withdrew, has to clear or the queue keeps finished work.
     reviewRequestedByMe: input.reviewRequestedByMe ? 1 : 0,
     reviewState: input.reviewState,
+    mergeable: input.mergeable,
     branch: input.branch,
   };
 
@@ -128,7 +131,7 @@ export function upsertGithubPr(db: Database.Database, input: UpsertGithubPrInput
       `UPDATE prs SET title = @title, url = @url, github_updated_at = @githubUpdatedAt,
        is_draft = @isDraft, authored_by_me = @authoredByMe, assigned_to_me = @assignedToMe,
        review_requested_by_me = @reviewRequestedByMe,
-       review_state = @reviewState, branch = @branch WHERE id = @id`
+       review_state = @reviewState, mergeable = @mergeable, branch = @branch WHERE id = @id`
     ).run({ ...fields, id: existing.id });
     return getPr(db, existing.id)!;
   }
@@ -136,9 +139,11 @@ export function upsertGithubPr(db: Database.Database, input: UpsertGithubPrInput
   const result = db
     .prepare(
       `INSERT INTO prs (ticket_id, project_id, branch, number, url, status, created_at,
-         title, github_updated_at, is_draft, authored_by_me, assigned_to_me, review_requested_by_me, review_state)
+         title, github_updated_at, is_draft, authored_by_me, assigned_to_me, review_requested_by_me, review_state,
+         mergeable)
        VALUES (NULL, @projectId, @branch, @number, @url, 'open', @createdAt,
-         @title, @githubUpdatedAt, @isDraft, @authoredByMe, @assignedToMe, @reviewRequestedByMe, @reviewState)`
+         @title, @githubUpdatedAt, @isDraft, @authoredByMe, @assignedToMe, @reviewRequestedByMe, @reviewState,
+         @mergeable)`
     )
     .run({ ...fields, projectId: input.projectId, number: input.number, createdAt: new Date().toISOString() });
   return getPr(db, Number(result.lastInsertRowid))!;
