@@ -4,7 +4,7 @@ import { getPr, addPrMessage, updatePrStatus, setPrPinned } from './prs.js';
 import { getTicket, updateTicketStatus, setTicketPinned } from './tickets.js';
 import {
   openDetachedWorktree, removeWorktree, commitAll, pushDetachedHead, getDiff, mergePr,
-  conflictsWith, mergeBranchInto, type ConflictCheck,
+  conflictsWith, mergeBranchInto, unresolvedConflicts, type ConflictCheck,
 } from './git.js';
 import { runClaude } from './claude.js';
 import { reviewDiff, reviewPasses, averageScore, type ReviewSubject } from './review.js';
@@ -176,6 +176,16 @@ async function revisePrChat(
       allowedTools: ['Read', 'Write', 'Edit', 'Grep', 'Glob', 'Bash'],
       timeoutMs: 30 * 60 * 1000,
     });
+
+    // The agent is not obliged to succeed, and a merge it half resolved must not be
+    // committed. `commitAll` refuses it either way; this is here so the answer names
+    // the files instead of reading as a git error.
+    const unresolved = await unresolvedConflicts(worktreePath);
+    if (unresolved.length > 0) {
+      const reply = `I could not resolve the conflict. ${unresolved.join(', ')} still has conflict markers in it, so nothing was committed or pushed. Resolve it yourself, or tell me which side to keep.`;
+      addPrMessage(db, pr.id, 'assistant', reply);
+      return { action: 'revised', reply };
+    }
 
     const committed = await commitAll(worktreePath, `fix: ${userMessage}`);
     if (!committed) {

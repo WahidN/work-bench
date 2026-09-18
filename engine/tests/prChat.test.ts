@@ -48,6 +48,7 @@ beforeEach(() => {
   vi.mocked(git.pushDetachedHead).mockResolvedValue(undefined);
   vi.mocked(git.getDiff).mockResolvedValue('diff');
   vi.mocked(claude.runClaude).mockResolvedValue('done');
+  vi.mocked(git.unresolvedConflicts).mockResolvedValue([]);
 });
 
 describe('isMergeRequest', () => {
@@ -358,6 +359,27 @@ describe('sendPrMessage: a request about a merge conflict', () => {
 
     expect(claude.runClaude).toHaveBeenCalled();
     expect(git.mergeBranchInto).not.toHaveBeenCalled();
+  });
+
+  /*
+   * The agent is not obliged to succeed. Without this, `commitAll` would `git add -A`
+   * over the conflicted files, which marks them resolved, and force-push a branch with
+   * `<<<<<<<` in it.
+   */
+  it('commits nothing when the agent leaves the conflict unresolved', async () => {
+    vi.mocked(git.conflictsWith).mockResolvedValue({
+      state: 'conflicts', files: ['sanityConfig/schemas/index.ts'],
+    });
+    vi.mocked(git.unresolvedConflicts).mockResolvedValue(['sanityConfig/schemas/index.ts']);
+
+    const result = await sendPrMessage(db, prId, 'fix the merge conflict in this branch');
+
+    expect(git.commitAll).not.toHaveBeenCalled();
+    expect(git.pushDetachedHead).not.toHaveBeenCalled();
+    expect(result.reply).toContain('sanityConfig/schemas/index.ts');
+    expect(result.reply.toLowerCase()).toContain('could not resolve');
+    expect(listPrMessages(db, prId).map((m) => m.role)).toEqual(['user', 'assistant']);
+    expect(git.removeWorktree).toHaveBeenCalled();
   });
 
   it('starts no merge for a revision that is not about conflicts', async () => {

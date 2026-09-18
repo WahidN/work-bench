@@ -2,7 +2,7 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import { execa } from 'execa';
 import {
   worktreePathFor, mergePr, openDetachedWorktree, pushDetachedHead, createFixWorktree, headSha,
-  conflictsWith, mergeBranchInto,
+  conflictsWith, mergeBranchInto, unresolvedConflicts, commitAll,
 } from '../src/git.js';
 
 vi.mock('execa');
@@ -165,5 +165,63 @@ describe('mergeBranchInto', () => {
     vi.mocked(execa).mockResolvedValue({ exitCode: 128, stdout: '', stderr: 'not something we can merge' } as any);
 
     await expect(mergeBranchInto('/repos/demo/.worktrees/x', 'origin/main')).rejects.toThrow();
+  });
+});
+
+/*
+ * The check that stops a half-resolved merge reaching the branch.
+ *
+ * It has to run before `git add -A`, because staging a conflicted file is what marks
+ * it resolved: after the add the markers are ordinary content and the commit succeeds
+ * with `<<<<<<<` in it. Measured in a scratch repo, exit 0 and all.
+ */
+describe('unresolvedConflicts', () => {
+  it('names the files git still considers unmerged', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: 'src/a.ts\nsrc/b.ts\n' } as any);
+
+    expect(await unresolvedConflicts('/repos/demo/.worktrees/x')).toEqual(['src/a.ts', 'src/b.ts']);
+    expect(execa).toHaveBeenCalledWith('git', ['diff', '--name-only', '--diff-filter=U'], {
+      cwd: '/repos/demo/.worktrees/x',
+    });
+  });
+
+  it('reads an empty answer as nothing left to resolve', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: '\n' } as any);
+
+    expect(await unresolvedConflicts('/repos/demo/.worktrees/x')).toEqual([]);
+  });
+});
+
+describe('commitAll', () => {
+  function gitReturning(answers: Record<string, string>) {
+    vi.mocked(execa).mockImplementation((async (_cmd: string, args: string[]) => {
+      for (const [key, stdout] of Object.entries(answers)) {
+        if (args.join(' ').startsWith(key)) return { stdout } as any;
+      }
+      return { stdout: '' } as any;
+    }) as any);
+  }
+
+  it('commits what changed when nothing is unmerged', async () => {
+    gitReturning({ 'diff --name-only': '', 'status --porcelain': ' M src/a.ts' });
+
+    expect(await commitAll('/w', 'fix: x')).toBe(true);
+    expect(execa).toHaveBeenCalledWith('git', ['commit', '-m', 'fix: x'], { cwd: '/w' });
+  });
+
+  it('answers false when the tree is clean', async () => {
+    gitReturning({ 'diff --name-only': '', 'status --porcelain': '' });
+
+    expect(await commitAll('/w', 'fix: x')).toBe(false);
+  });
+
+  // The whole point: `git add -A` on a conflicted file marks it resolved, so without
+  // this the commit lands with the markers in it and the push force-pushes them.
+  it('refuses a tree that still has unresolved conflicts, and adds nothing', async () => {
+    gitReturning({ 'diff --name-only': 'src/a.ts' });
+
+    await expect(commitAll('/w', 'fix: x')).rejects.toThrow('src/a.ts');
+    expect(execa).not.toHaveBeenCalledWith('git', ['add', '-A'], { cwd: '/w' });
+    expect(execa).not.toHaveBeenCalledWith('git', ['commit', '-m', 'fix: x'], { cwd: '/w' });
   });
 });

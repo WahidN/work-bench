@@ -36,7 +36,29 @@ export async function removeWorktree(repoPath: string, worktreePath: string): Pr
   await git(repoPath, ['worktree', 'remove', '--force', worktreePath]).catch(() => {});
 }
 
+/// The files git still considers unmerged, meaning a conflict nobody resolved.
+///
+/// Read before `git add -A`, never after: staging a conflicted file is what marks it
+/// resolved, so once everything is added the markers are ordinary content and there
+/// is nothing left to detect.
+export async function unresolvedConflicts(worktreePath: string): Promise<string[]> {
+  const out = await git(worktreePath, ['diff', '--name-only', '--diff-filter=U']);
+  return out.split('\n').map((line) => line.trim()).filter(Boolean);
+}
+
 export async function commitAll(worktreePath: string, message: string): Promise<boolean> {
+  // Refused rather than committed. `git add -A` on a conflicted file marks it
+  // resolved, and the commit then succeeds with `<<<<<<<` in the content, which
+  // `pushDetachedHead` force-pushes onto the pull request. Nothing upstream of
+  // here can see that, because after the add the conflict is gone from the index.
+  //
+  // Only reachable since a revise can start a merge; before that no caller ever
+  // handed this a conflicted tree.
+  const unresolved = await unresolvedConflicts(worktreePath);
+  if (unresolved.length > 0) {
+    throw new Error(`unresolved merge conflict in ${unresolved.join(', ')}, nothing was committed`);
+  }
+
   await git(worktreePath, ['add', '-A']);
   const status = await git(worktreePath, ['status', '--porcelain']);
   if (!status.trim()) return false;
