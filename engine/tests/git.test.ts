@@ -1,6 +1,9 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { execa } from 'execa';
-import { worktreePathFor, mergePr, openDetachedWorktree, pushDetachedHead, createFixWorktree, headSha } from '../src/git.js';
+import {
+  worktreePathFor, mergePr, openDetachedWorktree, pushDetachedHead, createFixWorktree, headSha,
+  conflictsWith, mergeBranchInto,
+} from '../src/git.js';
 
 vi.mock('execa');
 afterEach(() => vi.clearAllMocks());
@@ -78,5 +81,89 @@ describe('headSha', () => {
     expect(execa).toHaveBeenCalledWith('git', ['rev-parse', 'HEAD'], {
       cwd: '/repos/demo/.worktrees/feat-header',
     });
+  });
+});
+
+// `merge-tree --write-tree` answers from the object store alone: no checkout, no
+// second worktree, and it cannot leave the repo mid-merge if the engine dies.
+describe('conflictsWith', () => {
+  it('reads exit 1 as conflicting and lists the files', async () => {
+    vi.mocked(execa).mockResolvedValue({
+      exitCode: 1,
+      stdout: [
+        '1f2e126c6ec389bae18237672df145732e64ae28',
+        'sanityConfig/personalization/personalizationTypes.ts',
+        'sanityConfig/schemas/index.ts',
+        '',
+        'Auto-merging sanityConfig/schemas/index.ts',
+        'CONFLICT (content): Merge conflict in sanityConfig/schemas/index.ts',
+      ].join('\n'),
+    } as any);
+
+    const result = await conflictsWith('/repos/demo', 'main', 'chore/remove-unused-schemas');
+
+    expect(result).toEqual({
+      state: 'conflicts',
+      files: ['sanityConfig/personalization/personalizationTypes.ts', 'sanityConfig/schemas/index.ts'],
+    });
+    expect(execa).toHaveBeenCalledWith(
+      'git',
+      ['merge-tree', '--write-tree', '--name-only', 'origin/main', 'origin/chore/remove-unused-schemas'],
+      { cwd: '/repos/demo', reject: false }
+    );
+  });
+
+  it('reads exit 0 as clean', async () => {
+    vi.mocked(execa).mockResolvedValue({ exitCode: 0, stdout: 'f61596ba410370c41618db6082cc7f810db23ba7' } as any);
+
+    expect(await conflictsWith('/repos/demo', 'main', 'feat/header')).toEqual({ state: 'clean' });
+  });
+
+  it('reads any other exit as unknown', async () => {
+    vi.mocked(execa).mockResolvedValue({ exitCode: 128, stdout: '' } as any);
+
+    expect(await conflictsWith('/repos/demo', 'main', 'gone')).toEqual({ state: 'unknown' });
+  });
+
+  // Measured on the ACV repo: a ref git cannot resolve exits 1, the same as a
+  // conflict, with "not something we can merge" on stderr and nothing on stdout.
+  // Reading the exit code alone reported a conflict for a branch that is gone.
+  it('reads exit 1 with no tree as unknown, not as conflicting', async () => {
+    vi.mocked(execa).mockResolvedValue({ exitCode: 1, stdout: '' } as any);
+
+    expect(await conflictsWith('/repos/demo', 'main', 'gone')).toEqual({ state: 'unknown' });
+  });
+
+  it('reads a throw as unknown', async () => {
+    vi.mocked(execa).mockRejectedValue(new Error('git missing'));
+
+    expect(await conflictsWith('/repos/demo', 'main', 'feat/header')).toEqual({ state: 'unknown' });
+  });
+});
+
+describe('mergeBranchInto', () => {
+  // A conflict is the state this wants, so exit 1 is a success here. --no-commit
+  // leaves both outcomes for commitAll to finish, so the clean case does not
+  // sneak in a commit message nobody wrote.
+  it('does not throw when the merge conflicts', async () => {
+    vi.mocked(execa).mockResolvedValue({ exitCode: 1, stdout: '' } as any);
+
+    await expect(mergeBranchInto('/repos/demo/.worktrees/x', 'origin/main')).resolves.toBeUndefined();
+    expect(execa).toHaveBeenCalledWith('git', ['merge', '--no-commit', '--no-ff', 'origin/main'], {
+      cwd: '/repos/demo/.worktrees/x',
+      reject: false,
+    });
+  });
+
+  it('does not throw when the merge is clean', async () => {
+    vi.mocked(execa).mockResolvedValue({ exitCode: 0, stdout: '' } as any);
+
+    await expect(mergeBranchInto('/repos/demo/.worktrees/x', 'origin/main')).resolves.toBeUndefined();
+  });
+
+  it('throws when git could not merge at all', async () => {
+    vi.mocked(execa).mockResolvedValue({ exitCode: 128, stdout: '', stderr: 'not something we can merge' } as any);
+
+    await expect(mergeBranchInto('/repos/demo/.worktrees/x', 'origin/main')).rejects.toThrow();
   });
 });
