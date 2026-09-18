@@ -232,27 +232,6 @@ export function runJiraFidelityCheck(): string {
   return report('JIRA FIDELITY', checks)
 }
 
-/**
- * The agent panel, measured on its own because it can be open over any screen.
- *
- * AgentChatPanel.swift: .frame(width: 360), a 1px leading rule, and s6 padding on the
- * header, the transcript and the composer alike.
- */
-export function runAgentPanelFidelityCheck(): string {
-  const checks: Check[] = []
-  const add = (label: string, want: number, got: number | null) =>
-    checks.push({ label, want, got })
-
-  add('panel width', 360, box('#agent-panel')?.width ?? null)
-  add('panel left rule', 1, px('#agent-panel', 'border-left-width'))
-  add('messages padding', S.s6, px('#agent-messages', 'padding-top'))
-  add('messages gap', S.s6, px('#agent-messages', 'row-gap'))
-  add('composer padding', S.s6, px('#agent-composer', 'padding-top'))
-  add('composer gap', S.s3, px('#agent-composer', 'row-gap'))
-
-  return report('AGENT PANEL FIDELITY', checks)
-}
-
 /** One report, so the checks cannot drift in how they say PASS. */
 function report(title: string, checks: Check[]): string {
   const failures = checks

@@ -82,12 +82,10 @@ export function PRsScreen({
   prs,
   projects,
   onSelectPr,
-  onOpenAgent,
 }: {
   prs: Pr[]
   projects: Project[]
   onSelectPr: (pr: Pr) => void
-  onOpenAgent: (pr: Pr) => void
 }) {
   const [filter, setFilter] = useState<PrFilter>('assignedToMe')
   const [alert, setAlert] = useState<string | null>(null)
@@ -292,22 +290,6 @@ export function PRsScreen({
                     event.stopPropagation()
                     setPinned.mutate({ id: row.id, pinned: !row.pinned }, { onError })
                   }}
-                />
-                {/* Opens the panel; it must not also navigate to the detail page. */}
-                <RowAction
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    const pr = prs.find((candidate) => candidate.id === row.id)
-                    if (pr) onOpenAgent(pr)
-                  }}
-                  label={row.messageCount > 0 ? `Chat · ${row.messageCount}` : 'Agent'}
-                  symbol={row.messageCount > 0 ? 'bubble-left-fill' : 'sparkles'}
-                  color={row.messageCount > 0 ? 'var(--wb-text)' : 'var(--wb-n400)'}
-                  background={row.messageCount > 0 ? 'var(--wb-a900)' : undefined}
-                  // A filled pill draws no outline in the Swift, so the border is only
-                  // there to hold the shape of the empty one.
-                  borderColor={row.messageCount > 0 ? 'transparent' : undefined}
-                  boxed
                 />
               </span>
             </div>

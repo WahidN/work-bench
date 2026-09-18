@@ -12,7 +12,6 @@ import type { SidebarSection } from './logic'
 export type Shortcut =
   | { kind: 'palette' }
   | { kind: 'navigate'; section: SidebarSection }
-  | { kind: 'askAgent' }
 
 /**
  * The Go menu, in its order.
@@ -27,7 +26,6 @@ export const SHORTCUTS: { id: string; key: string; label: string; action: Shortc
   { id: 'projects', key: '2', label: 'Projects', action: { kind: 'navigate', section: 'Projects' } },
   { id: 'prs', key: '3', label: 'Pull requests', action: { kind: 'navigate', section: 'Pull requests' } },
   { id: 'jira', key: '4', label: 'Jira', action: { kind: 'navigate', section: 'Jira' } },
-  { id: 'agent', key: 'j', label: 'Ask the agent', action: { kind: 'askAgent' } },
 ]
 
 /** The action a native menu item stands for. Null for an id this build does not know. */

@@ -11,7 +11,7 @@ const cmd = (key: string) => ({ key, metaKey: true, ctrlKey: false, altKey: fals
 
 describe('SHORTCUTS', () => {
   it('is the Go menu, in its order', () => {
-    expect(SHORTCUTS.map((entry) => entry.key)).toEqual(['k', '1', '2', '3', '4', 'j'])
+    expect(SHORTCUTS.map((entry) => entry.key)).toEqual(['k', '1', '2', '3', '4'])
   })
 
   it('carries the ids the native menu emits', () => {
@@ -23,8 +23,13 @@ describe('SHORTCUTS', () => {
       'projects',
       'prs',
       'jira',
-      'agent',
     ])
+  })
+
+  // The agent lives on the pull request's own page now, so there is nothing
+  // project-scoped for a shortcut to open. menu.rs must lose the item with it.
+  it('no longer carries the agent', () => {
+    expect(SHORTCUTS.map((entry) => entry.id)).not.toContain('agent')
   })
 })
 
@@ -47,7 +52,10 @@ describe('matchShortcut', () => {
     expect(matchShortcut(cmd('k'), false)).toEqual({ kind: 'palette' })
     expect(matchShortcut(cmd('1'), false)).toEqual({ kind: 'navigate', section: 'Today' })
     expect(matchShortcut(cmd('4'), false)).toEqual({ kind: 'navigate', section: 'Jira' })
-    expect(matchShortcut(cmd('j'), false)).toEqual({ kind: 'askAgent' })
+  })
+
+  it('no longer answers the agent key', () => {
+    expect(matchShortcut(cmd('j'), false)).toBeNull()
   })
 
   it('fires nothing while a text field has focus', () => {
