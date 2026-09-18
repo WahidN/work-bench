@@ -1,8 +1,11 @@
 import type Database from 'better-sqlite3';
 import { getProject } from './projects.js';
-import { getPr, addPrMessage, updatePrStatus, setPrPinned } from './prs.js';
+import { getPr, addPrMessage, updatePrStatus, setPrPinned, clearPrMergeable } from './prs.js';
 import { getTicket, updateTicketStatus, setTicketPinned } from './tickets.js';
-import { openDetachedWorktree, removeWorktree, commitAll, pushDetachedHead, getDiff, mergePr } from './git.js';
+import {
+  openDetachedWorktree, removeWorktree, commitAll, pushDetachedHead, getDiff, mergePr,
+  conflictsWith, mergeBranchInto, unresolvedConflicts, type ConflictCheck,
+} from './git.js';
 import { runClaude } from './claude.js';
 import { reviewDiff, reviewPasses, averageScore, type ReviewSubject } from './review.js';
 import { passComment, failComment } from './fixPipeline.js';
@@ -18,6 +21,24 @@ const MERGE_PHRASES = ['merge it', 'merge this', 'go ahead and merge'];
 export function isMergeRequest(message: string): boolean {
   const normalized = message.trim().toLowerCase().replace(/[.!\s]+$/, '');
   return MERGE_PHRASES.includes(normalized);
+}
+
+const CONFLICT_PHRASES = [
+  'merge conflict',
+  'conflict with',
+  'conflicts with',
+  'resolve the conflict',
+  'fix the conflict',
+];
+
+// Substring, unlike isMergeRequest, because this is a sentence rather than a
+// command phrase: "fix the merge conflict in this branch" is how it gets asked.
+// Each phrase puts the word next to a merge, so a file called conflict.ts does
+// not fire it. The worst a false positive can do is merge the default branch
+// into a branch that already needed it.
+export function isConflictRequest(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return CONFLICT_PHRASES.some((phrase) => normalized.includes(phrase));
 }
 
 export interface PrChatResult {
@@ -93,10 +114,26 @@ async function mergePrChat(db: Database.Database, pr: Pr, project: Project): Pro
   return { action: 'merged', reply };
 }
 
-function buildRevisePrompt(subject: ReviewSubject, instruction: string): string {
+/// The agent gets a worktree it did not open, so the prompt has to say what that
+/// worktree is. Without this it assumed a merge was in progress and spent the
+/// whole timeout looking for conflict markers that were not there.
+export function buildRevisePrompt(
+  subject: ReviewSubject,
+  instruction: string,
+  defaultBranch: string,
+  conflict: ConflictCheck | null
+): string {
+  const state =
+    conflict?.state === 'conflicts'
+      ? `The working tree is a detached checkout of the branch head with origin/${defaultBranch} merged into it, and that merge is in progress and uncommitted. These files conflict and are marked up in the tree:
+${conflict.files.map((file) => `- ${file}`).join('\n')}`
+      : `The working tree is a detached checkout of the branch head. Nothing has been merged into it and no merge is in progress.`;
+
   return `Revise the fix already implemented on this branch for "${subject.title}".
 
 Requested change: ${instruction}
+
+${state}
 
 Make the changes directly in this working tree. Do not commit or push.`;
 }
@@ -108,15 +145,47 @@ async function revisePrChat(
   subject: ReviewSubject,
   userMessage: string
 ): Promise<PrChatResult> {
+  // Opened first because it fetches origin/<branch> and origin/<default>, which
+  // conflictsWith needs to be current before it can answer.
   const worktreePath = await openDetachedWorktree(project, pr.branch);
 
   try {
+    // Only for a request about the conflict. Merging on every revision would put
+    // a merge commit in a pull request that asked for something else, and grow
+    // the diff the self-review then scores.
+    const conflict = isConflictRequest(userMessage)
+      ? await conflictsWith(project.repoPath, project.defaultBranch, pr.branch)
+      : null;
+
+    // The case that cost 30 minutes: asked to fix a conflict, handed a clean
+    // checkout with nothing to fix in it. An unknown check is not a clean one,
+    // so it runs rather than refuses.
+    if (conflict?.state === 'clean') {
+      const reply = `This branch has no conflict with ${project.defaultBranch}, it merges cleanly as it stands. Tell me what to change instead, or merge it on GitHub.`;
+      addPrMessage(db, pr.id, 'assistant', reply);
+      return { action: 'revised', reply };
+    }
+
+    if (conflict?.state === 'conflicts') {
+      await mergeBranchInto(worktreePath, `origin/${project.defaultBranch}`);
+    }
+
     await runClaude({
       cwd: worktreePath,
-      prompt: buildRevisePrompt(subject, userMessage),
+      prompt: buildRevisePrompt(subject, userMessage, project.defaultBranch, conflict),
       allowedTools: ['Read', 'Write', 'Edit', 'Grep', 'Glob', 'Bash'],
       timeoutMs: 30 * 60 * 1000,
     });
+
+    // The agent is not obliged to succeed, and a merge it half resolved must not be
+    // committed. `commitAll` refuses it either way; this is here so the answer names
+    // the files instead of reading as a git error.
+    const unresolved = await unresolvedConflicts(worktreePath);
+    if (unresolved.length > 0) {
+      const reply = `I could not resolve the conflict. ${unresolved.join(', ')} still has conflict markers in it, so nothing was committed or pushed. Resolve it yourself, or tell me which side to keep.`;
+      addPrMessage(db, pr.id, 'assistant', reply);
+      return { action: 'revised', reply };
+    }
 
     const committed = await commitAll(worktreePath, `fix: ${userMessage}`);
     if (!committed) {
@@ -126,8 +195,12 @@ async function revisePrChat(
     }
 
     await pushDetachedHead(worktreePath, pr.branch);
-    // The branch has moved, so the stored review no longer describes it.
+    // The branch has moved, so neither the stored review nor what GitHub said
+    // about merging describes it any more. Without the second one the Resolve
+    // conflicts button stays on offer until the next poll, on a conflict this
+    // very call just resolved.
     clearPrReviewed(db, pr.id);
+    clearPrMergeable(db, pr.id);
     const diff = await getDiff(worktreePath, project.defaultBranch);
     const score = await reviewDiff(worktreePath, subject, diff);
     const passed = reviewPasses(score);

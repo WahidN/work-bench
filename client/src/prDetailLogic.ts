@@ -6,7 +6,8 @@
  * comment to the wrong code.
  */
 
-import type { PrDetailFile, PrDetailView, PrReviewThread } from '../../engine/src/types.ts'
+import type { Pr, PrDetailFile, PrDetailView, PrReviewThread, RunningAgent } from '../../engine/src/types.ts'
+import { relativeTime } from './logic'
 
 export type { PrDetailFile, PrDetailView, PrReviewThread }
 
@@ -199,4 +200,74 @@ export function openedLine(detail: PrDetailView, authoredByMe: boolean): string 
 
 export function tabCounts(detail: PrDetailView): { files: number; conversation: number } {
   return { files: detail.files.length, conversation: detail.conversation.length }
+}
+
+/* ------------------------------------------------- The agent on this page */
+
+/**
+ * Whether Workbench has reviewed this pull request, and when.
+ *
+ * `reviewedAt` is the only thing that can answer it. GitHub's own decision, which
+ * `prReviewStateLabel` reads, says whether a human approved it, which is a different
+ * question with a confusingly similar answer.
+ *
+ * A review that found nothing to say still sets `reviewedAt`, so "reviewed, nothing to
+ * say" and "never reviewed" read differently here even though both show no findings.
+ */
+export function reviewedLine(pr: Pr, now: Date): string {
+  if (pr.reviewedAt === null) return 'Not reviewed yet'
+  const at = new Date(pr.reviewedAt)
+  if (Number.isNaN(at.getTime())) return 'Reviewed'
+  return `Reviewed ${relativeTime(at, now)}`
+}
+
+/**
+ * The agents working on this pull request, out of everything the engine is running.
+ *
+ * A filter over `GET /agents` rather than a route of its own: a second way to ask the
+ * same question is a second answer to keep in step with the first.
+ */
+export function agentsForPr(agents: RunningAgent[], prId: number): RunningAgent[] {
+  return agents.filter((agent) => agent.targetType === 'pr' && agent.targetId === prId)
+}
+
+/**
+ * Whether the pull request offers to resolve its merge conflict.
+ *
+ * Only on GitHub's own CONFLICTING. It computes mergeability lazily and answers UNKNOWN
+ * until it has, and a null is a pull request never looked up. Offering the action on
+ * either would be offering it on a premise nothing has checked.
+ *
+ * And only on a pull request the user wrote, the same rule Merge follows. Resolving
+ * force-pushes the branch, so on anyone else's work the engine refuses it in
+ * `refusePrChat` and the button could only ever produce that refusal. The inbox is
+ * mostly other people's pull requests, waiting to be reviewed.
+ */
+export function offersConflictResolve(pr: Pr): boolean {
+  return pr.authoredByMe && pr.mergeable === 'CONFLICTING'
+}
+
+export type ChatRole = 'user' | 'assistant'
+
+export function authorLabel(role: ChatRole): string {
+  return role === 'user' ? 'YOU' : 'AGENT'
+}
+
+/**
+ * The message the composer is waiting on, held while its request is open.
+ *
+ * `countAtSend` is how many messages the thread held when the send started, which is what
+ * tells the echo apart from the stored row that replaces it.
+ */
+export type SentMessage = { text: string; countAtSend: number }
+
+/**
+ * Whether the message just sent is still the composer's own echo rather than a stored row.
+ *
+ * A send holds its request open for as long as the agent runs, which is minutes, and the
+ * thread does not hold the message until the engine answers. So the composer shows the
+ * text itself and drops it the moment the thread comes back longer than it was.
+ */
+export function showsSentEcho(sent: SentMessage | null, messageCount: number): boolean {
+  return sent !== null && messageCount <= sent.countAtSend
 }

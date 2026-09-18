@@ -92,6 +92,9 @@ CREATE TABLE IF NOT EXISTS prs (
   -- pr_review_findings, because a review with nothing to say stores no finding and
   -- would otherwise read as never reviewed.
   reviewed_at TEXT,
+  -- What GitHub says about merging: MERGEABLE, CONFLICTING or UNKNOWN. No CHECK,
+  -- because a value GitHub adds later must not start failing writes.
+  mergeable TEXT,
   created_at TEXT NOT NULL
 );
 
@@ -308,6 +311,13 @@ const MIGRATIONS: Migration[] = [
   (db) => {
     addColumn(db, 'jobs', 'activity', 'TEXT');
     addColumn(db, 'prs', 'reviewed_at', 'TEXT');
+  },
+  // 12: what GitHub says about merging, which is what decides whether resolving
+  // the conflict is offered. Nullable: a pull request not yet detailed has no
+  // answer, and that is not the same as being mergeable. SCHEMA already makes it
+  // on a fresh file, and a database stamped back replays this.
+  (db) => {
+    addColumn(db, 'prs', 'mergeable', 'TEXT');
   },
 ];
 

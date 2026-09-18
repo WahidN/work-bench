@@ -36,7 +36,29 @@ export async function removeWorktree(repoPath: string, worktreePath: string): Pr
   await git(repoPath, ['worktree', 'remove', '--force', worktreePath]).catch(() => {});
 }
 
+/// The files git still considers unmerged, meaning a conflict nobody resolved.
+///
+/// Read before `git add -A`, never after: staging a conflicted file is what marks it
+/// resolved, so once everything is added the markers are ordinary content and there
+/// is nothing left to detect.
+export async function unresolvedConflicts(worktreePath: string): Promise<string[]> {
+  const out = await git(worktreePath, ['diff', '--name-only', '--diff-filter=U']);
+  return out.split('\n').map((line) => line.trim()).filter(Boolean);
+}
+
 export async function commitAll(worktreePath: string, message: string): Promise<boolean> {
+  // Refused rather than committed. `git add -A` on a conflicted file marks it
+  // resolved, and the commit then succeeds with `<<<<<<<` in the content, which
+  // `pushDetachedHead` force-pushes onto the pull request. Nothing upstream of
+  // here can see that, because after the add the conflict is gone from the index.
+  //
+  // Only reachable since a revise can start a merge; before that no caller ever
+  // handed this a conflicted tree.
+  const unresolved = await unresolvedConflicts(worktreePath);
+  if (unresolved.length > 0) {
+    throw new Error(`unresolved merge conflict in ${unresolved.join(', ')}, nothing was committed`);
+  }
+
   await git(worktreePath, ['add', '-A']);
   const status = await git(worktreePath, ['status', '--porcelain']);
   if (!status.trim()) return false;
@@ -100,4 +122,63 @@ export async function markPrDraft(worktreePath: string): Promise<void> {
 // PR from the current branch: a detached-HEAD worktree is on no branch at all.
 export async function mergePr(worktreePath: string, selector: string): Promise<void> {
   await execa('gh', ['pr', 'merge', selector, '--squash', '--delete-branch'], { cwd: worktreePath });
+}
+
+export type ConflictCheck =
+  | { state: 'clean' }
+  | { state: 'conflicts'; files: string[] }
+  | { state: 'unknown' };
+
+/// Whether merging the default branch into a branch would conflict, and where.
+///
+/// `merge-tree --write-tree` answers from the object store: no checkout, no second
+/// worktree, and nothing left half merged if the engine dies mid-call. It needs
+/// both refs to be current, which openDetachedWorktree fetches before anything
+/// else runs.
+///
+/// Exit 0 is clean. Exit 1 is a conflict, but only when a merged tree came with
+/// it: a ref git cannot resolve also exits 1, with the reason on stderr and
+/// nothing at all on stdout. The tree oid on the first line is what tells those
+/// two apart, so it is what this reads rather than the exit code alone.
+///
+/// Anything it cannot read is unknown rather than clean. Claiming a branch is
+/// clean when git could not say is how a request gets refused for a conflict
+/// nobody checked.
+export async function conflictsWith(
+  repoPath: string,
+  defaultBranch: string,
+  branch: string
+): Promise<ConflictCheck> {
+  const result = await execa(
+    'git',
+    ['merge-tree', '--write-tree', '--name-only', `origin/${defaultBranch}`, `origin/${branch}`],
+    { cwd: repoPath, reject: false }
+  ).catch(() => null);
+  if (!result) return { state: 'unknown' };
+  if (result.exitCode === 0) return { state: 'clean' };
+  if (result.exitCode !== 1) return { state: 'unknown' };
+
+  // First line is the tree oid, then the conflicted paths, then a blank line and
+  // git's own running commentary.
+  const lines = String(result.stdout ?? '').split('\n');
+  if (!/^[0-9a-f]{40,64}$/.test(lines[0] ?? '')) return { state: 'unknown' };
+
+  const rest = lines.slice(1);
+  const end = rest.indexOf('');
+  return { state: 'conflicts', files: (end === -1 ? rest : rest.slice(0, end)).filter(Boolean) };
+}
+
+/// Merges a ref into the worktree and leaves the result for commitAll to finish.
+///
+/// A conflict is the state the caller wants, so exit 1 is not a failure here.
+/// `--no-commit` means the clean case is left staged too, rather than writing a
+/// merge commit with a message nobody chose.
+export async function mergeBranchInto(worktreePath: string, ref: string): Promise<void> {
+  const result = await execa('git', ['merge', '--no-commit', '--no-ff', ref], {
+    cwd: worktreePath,
+    reject: false,
+  });
+  if (result.exitCode !== 0 && result.exitCode !== 1) {
+    throw new Error(`git merge ${ref} failed: ${result.stderr || result.stdout}`);
+  }
 }

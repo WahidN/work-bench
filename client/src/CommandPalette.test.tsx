@@ -40,9 +40,9 @@ function selectedRow(): string | null {
 }
 
 describe('opening', () => {
-  it('shows the five commands and selects the first', () => {
+  it('shows the four commands and selects the first', () => {
     setup()
-    expect(document.querySelectorAll('[data-palette-row]')).toHaveLength(5)
+    expect(document.querySelectorAll('[data-palette-row]')).toHaveLength(4)
     expect(selectedRow()).toBe('nav-today')
   })
 
@@ -62,7 +62,7 @@ describe('the arrow keys', () => {
     expect(selectedRow()).toBe('nav-projects')
 
     for (let index = 0; index < 10; index += 1) fireEvent.keyDown(field, { key: 'ArrowDown' })
-    expect(selectedRow()).toBe('ask-agent')
+    expect(selectedRow()).toBe('nav-jira')
   })
 })
 
@@ -93,12 +93,12 @@ describe('Enter', () => {
 
   it('still runs something after the list has shrunk under the selection', () => {
     /*
-     * Select the fifth row, then type a query that leaves two. The selection is clamped
+     * Select the last row, then type a query that leaves two. The selection is clamped
      * back rather than left pointing past the end, so Enter runs a row instead of nothing.
      */
     const { onRun, field } = setup()
-    for (let index = 0; index < 4; index += 1) fireEvent.keyDown(field, { key: 'ArrowDown' })
-    expect(selectedRow()).toBe('ask-agent')
+    for (let index = 0; index < 3; index += 1) fireEvent.keyDown(field, { key: 'ArrowDown' })
+    expect(selectedRow()).toBe('nav-jira')
 
     fireEvent.change(field, { target: { value: 'atlas' } })
     fireEvent.keyDown(field, { key: 'Enter' })

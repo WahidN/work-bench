@@ -31,14 +31,19 @@ function project(id: number, name: string): Project {
 const PROJECTS = [project(1, 'Atlas'), project(2, 'Beacon'), project(3, 'atlas-tools')]
 
 describe('paletteCommands', () => {
-  it('offers the four sections and the agent', () => {
+  it('offers the four sections', () => {
     expect(paletteCommands.map((row) => row.label)).toEqual([
       'Go to Today',
       'Go to Projects',
       'Go to Pull requests',
       'Go to Jira',
-      'Ask the agent',
     ])
+  })
+
+  // The agent lives on the pull request's own page now, so the palette has nothing
+  // project-scoped to open.
+  it('no longer offers the agent', () => {
+    expect(paletteCommands.map((row) => row.label)).not.toContain('Ask the agent')
   })
 
   it('takes its symbols from the sidebar, so the two cannot drift', () => {

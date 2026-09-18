@@ -11,7 +11,7 @@ import * as analyze from '../src/analyze.js';
 import * as todos from '../src/todos.js';
 import { listPrs, upsertGithubPr } from '../src/prs.js';
 import { getSecret } from '../src/keychain.js';
-import { runPollCycle, startPoller, runQuickPoll, pollOnce, isPolling } from '../src/poller.js';
+import { runPollCycle, startPoller, runQuickPoll, pollOnce, isPolling, worthAskingMergeable } from '../src/poller.js';
 
 vi.mock('../src/sources/jira.js');
 vi.mock('../src/sources/sentry.js');
@@ -160,12 +160,12 @@ describe('runPollCycle', () => {
       }],
       truncated: false,
     });
-    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/deploy-guard' });
+    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/deploy-guard', mergeable: 'MERGEABLE' });
 
     const summary = await runPollCycle(db);
     expect(summary.prsSynced).toBe(1);
     expect(listPrs(db)[0]).toMatchObject({
-      number: 24, title: 'Guard the deploy', reviewState: 'approved', branch: 'feat/deploy-guard',
+      number: 24, title: 'Guard the deploy', reviewState: 'approved', mergeable: 'MERGEABLE', branch: 'feat/deploy-guard',
     });
   });
 
@@ -181,7 +181,7 @@ describe('runPollCycle', () => {
       }],
       truncated: false,
     });
-    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/deploy-guard' });
+    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/deploy-guard', mergeable: 'MERGEABLE' });
 
     const summary = await runPollCycle(db);
     expect(summary.prsSynced).toBe(1);
@@ -198,7 +198,7 @@ describe('runPollCycle', () => {
   it('keeps the previous review state and branch when the per-PR lookup fails', async () => {
     const db = openDb(':memory:');
     const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
-    upsertGithubPr(db, { projectId: project.id, number: 24, title: 't', url: 'u', githubUpdatedAt: 'x', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: 'approved', branch: 'feat/keep-me' });
+    upsertGithubPr(db, { projectId: project.id, number: 24, title: 't', url: 'u', githubUpdatedAt: 'x', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: 'approved', mergeable: 'MERGEABLE', branch: 'feat/keep-me' });
 
     vi.mocked(fetchMyOpenPrs).mockResolvedValue({
       prs: [{
@@ -211,7 +211,7 @@ describe('runPollCycle', () => {
     vi.mocked(fetchPrDetail).mockRejectedValue(new Error('rate limited'));
 
     await runPollCycle(db);
-    expect(listPrs(db)[0]).toMatchObject({ reviewState: 'approved', branch: 'feat/keep-me' });
+    expect(listPrs(db)[0]).toMatchObject({ reviewState: 'approved', mergeable: 'MERGEABLE', branch: 'feat/keep-me' });
   });
 
   it('upserts what it found but skips reconciliation when the search was truncated', async () => {
@@ -219,7 +219,7 @@ describe('runPollCycle', () => {
     const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
     // Already stored, but the truncated search below does not return it. If this
     // cycle reconciled anyway, it would delete a pull request that is still open.
-    upsertGithubPr(db, { projectId: project.id, number: 1, title: 'Fell off the cap', url: 'u1', githubUpdatedAt: 'x', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: null, branch: 'b' });
+    upsertGithubPr(db, { projectId: project.id, number: 1, title: 'Fell off the cap', url: 'u1', githubUpdatedAt: 'x', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: null, mergeable: 'MERGEABLE', branch: 'b' });
 
     vi.mocked(fetchMyOpenPrs).mockResolvedValue({
       prs: [{
@@ -229,7 +229,7 @@ describe('runPollCycle', () => {
       }],
       truncated: true,
     });
-    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/deploy-guard' });
+    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/deploy-guard', mergeable: 'MERGEABLE' });
 
     const summary = await runPollCycle(db);
 
@@ -240,7 +240,7 @@ describe('runPollCycle', () => {
   it('skips the per-PR lookup when GitHub reports the pull request has not changed', async () => {
     const db = openDb(':memory:');
     const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
-    upsertGithubPr(db, { projectId: project.id, number: 24, title: 't', url: 'u', githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: 'approved', branch: 'feat/known' });
+    upsertGithubPr(db, { projectId: project.id, number: 24, title: 't', url: 'u', githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: 'approved', mergeable: 'MERGEABLE', branch: 'feat/known' });
 
     vi.mocked(fetchMyOpenPrs).mockResolvedValue({
       prs: [{
@@ -255,13 +255,60 @@ describe('runPollCycle', () => {
 
     expect(fetchPrDetail).not.toHaveBeenCalled();
     expect(summary.prsSynced).toBe(1);
-    expect(listPrs(db)[0]).toMatchObject({ reviewState: 'approved', branch: 'feat/known' });
+    expect(listPrs(db)[0]).toMatchObject({ reviewState: 'approved', mergeable: 'MERGEABLE', branch: 'feat/known' });
+  });
+
+  // GitHub computes mergeability lazily, so the first lookup of a pull request
+  // usually answers UNKNOWN. Treating that as settled would strand the row there,
+  // and a conflicting branch would never offer to resolve itself. The retry is
+  // bounded by how recently GitHub touched it, see worthAskingMergeable.
+  it('looks the pull request up again while GitHub has not worked out whether it merges', async () => {
+    const db = openDb(':memory:');
+    const justNow = new Date(Date.now() - 60_000).toISOString();
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+    upsertGithubPr(db, { projectId: project.id, number: 24, title: 't', url: 'u', githubUpdatedAt: justNow, isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: 'approved', mergeable: 'UNKNOWN', branch: 'feat/known' });
+
+    vi.mocked(fetchMyOpenPrs).mockResolvedValue({
+      prs: [{
+        repo: 'linku/demo', number: 24, title: 't', url: 'u',
+        updatedAt: justNow, isDraft: false, authoredByMe: true, assignedToMe: false,
+        reviewRequestedByMe: false,
+      }],
+      truncated: false,
+    });
+    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/known', mergeable: 'CONFLICTING' });
+
+    await runPollCycle(db);
+
+    expect(fetchPrDetail).toHaveBeenCalled();
+    expect(listPrs(db)[0].mergeable).toBe('CONFLICTING');
+  });
+
+  // The bound, through the cycle rather than on the function: the same row with a
+  // timestamp GitHub has not touched in a month costs no lookup at all.
+  it('stops looking up a pull request GitHub never works out', async () => {
+    const db = openDb(':memory:');
+    const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
+    upsertGithubPr(db, { projectId: project.id, number: 24, title: 't', url: 'u', githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: 'approved', mergeable: 'UNKNOWN', branch: 'feat/known' });
+
+    vi.mocked(fetchMyOpenPrs).mockResolvedValue({
+      prs: [{
+        repo: 'linku/demo', number: 24, title: 't', url: 'u',
+        updatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false,
+        reviewRequestedByMe: false,
+      }],
+      truncated: false,
+    });
+
+    await runPollCycle(db);
+
+    expect(fetchPrDetail).not.toHaveBeenCalled();
   });
 
   it('looks the pull request up again once GitHub says it has changed', async () => {
     const db = openDb(':memory:');
     const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
-    upsertGithubPr(db, { projectId: project.id, number: 24, title: 't', url: 'u', githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: 'review_required', branch: 'feat/known' });
+    upsertGithubPr(db, { projectId: project.id, number: 24, title: 't', url: 'u', githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: 'review_required', mergeable: 'MERGEABLE', branch: 'feat/known' });
 
     vi.mocked(fetchMyOpenPrs).mockResolvedValue({
       prs: [{
@@ -271,7 +318,7 @@ describe('runPollCycle', () => {
       }],
       truncated: false,
     });
-    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/known' });
+    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/known', mergeable: 'MERGEABLE' });
 
     await runPollCycle(db);
 
@@ -285,7 +332,7 @@ describe('runPollCycle', () => {
   it('looks up a stored pull request that has never had a review state', async () => {
     const db = openDb(':memory:');
     const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
-    upsertGithubPr(db, { projectId: project.id, number: 24, title: 't', url: 'u', githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: null, branch: '' });
+    upsertGithubPr(db, { projectId: project.id, number: 24, title: 't', url: 'u', githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: null, mergeable: 'MERGEABLE', branch: '' });
 
     vi.mocked(fetchMyOpenPrs).mockResolvedValue({
       prs: [{
@@ -295,18 +342,18 @@ describe('runPollCycle', () => {
       }],
       truncated: false,
     });
-    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/recovered' });
+    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/recovered', mergeable: 'MERGEABLE' });
 
     await runPollCycle(db);
 
     expect(fetchPrDetail).toHaveBeenCalledTimes(1);
-    expect(listPrs(db)[0]).toMatchObject({ reviewState: 'approved', branch: 'feat/recovered' });
+    expect(listPrs(db)[0]).toMatchObject({ reviewState: 'approved', mergeable: 'MERGEABLE', branch: 'feat/recovered' });
   });
 
   it('reconciles exactly as before when the search was not truncated', async () => {
     const db = openDb(':memory:');
     const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
-    upsertGithubPr(db, { projectId: project.id, number: 1, title: 'Actually closed', url: 'u1', githubUpdatedAt: 'x', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: null, branch: 'b' });
+    upsertGithubPr(db, { projectId: project.id, number: 1, title: 'Actually closed', url: 'u1', githubUpdatedAt: 'x', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: null, mergeable: 'MERGEABLE', branch: 'b' });
 
     vi.mocked(fetchMyOpenPrs).mockResolvedValue({
       prs: [{
@@ -316,7 +363,7 @@ describe('runPollCycle', () => {
       }],
       truncated: false,
     });
-    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/deploy-guard' });
+    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/deploy-guard', mergeable: 'MERGEABLE' });
 
     const summary = await runPollCycle(db);
 
@@ -409,7 +456,7 @@ describe('runQuickPoll', () => {
   it('looks every pull request up even when GitHub says nothing changed', async () => {
     const db = openDb(':memory:');
     const project = createProject(db, { name: 'P', repoPath: '/tmp/p', defaultBranch: 'main', githubRepo: 'linku/demo', jiraProjectKey: null, sentryProjectSlug: null, status: 'active', blurb: '' });
-    upsertGithubPr(db, { projectId: project.id, number: 24, title: 't', url: 'u', githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: 'review_required', branch: 'feat/known' });
+    upsertGithubPr(db, { projectId: project.id, number: 24, title: 't', url: 'u', githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false, reviewState: 'review_required', mergeable: 'MERGEABLE', branch: 'feat/known' });
 
     vi.mocked(fetchMyOpenPrs).mockResolvedValue({
       prs: [{
@@ -419,7 +466,7 @@ describe('runQuickPoll', () => {
       }],
       truncated: false,
     });
-    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/known' });
+    vi.mocked(fetchPrDetail).mockResolvedValue({ reviewState: 'approved', headRefName: 'feat/known', mergeable: 'MERGEABLE' });
 
     await runQuickPoll(db);
 

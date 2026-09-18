@@ -105,21 +105,6 @@
   --wb-dot-7: #c49a9a;
 }
 
-/*
- * The handoff's `wbSlide`, which AgentChatPanel.swift applies as an AnyTransition:
- * translateX 24 to 0 with a fade, 160ms ease-out.
- */
-@keyframes wb-slide {
-  from {
-    transform: translateX(24px);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-
 /* The handoff's `wbIn`, which CommandPalette.swift applies: translateY 6 to 0, 130ms. */
 @keyframes wb-in {
   from {

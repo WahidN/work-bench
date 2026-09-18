@@ -1,6 +1,6 @@
 import { execa } from 'execa';
 import { toRepoSlug } from './github.js';
-import type { PrReviewState } from '../types.js';
+import type { PrMergeable, PrReviewState } from '../types.js';
 
 // One gh call can return at most this many pull requests. Hitting the cap is
 // logged rather than silently truncating the inbox.
@@ -96,17 +96,26 @@ export async function fetchMyOpenPrs(repoSlugs: string[]): Promise<FetchMyOpenPr
 export interface GithubPrDetail {
   reviewState: PrReviewState | null;
   headRefName: string;
+  mergeable: PrMergeable;
 }
 
-/// One call for both, because the head branch is what lets the agent panel
-/// build a worktree for a pull request this engine did not create.
+const MERGEABLE: PrMergeable[] = ['MERGEABLE', 'CONFLICTING', 'UNKNOWN'];
+
+/// One call for all three, because the head branch is what lets a worktree be
+/// built for a pull request this engine did not create, and mergeable is what
+/// decides whether resolving the conflict is offered at all.
+///
+/// Anything but the three values GitHub documents reads as UNKNOWN, including a
+/// missing field. Reading it as MERGEABLE would hide the resolve action on a
+/// branch that conflicts, which is the one case it exists for.
 export async function fetchPrDetail(repo: string, number: number): Promise<GithubPrDetail> {
   const { stdout } = await execa('gh', [
-    'pr', 'view', String(number), '--repo', repo, '--json', 'reviewDecision,headRefName',
+    'pr', 'view', String(number), '--repo', repo, '--json', 'reviewDecision,headRefName,mergeable',
   ]);
   const parsed = JSON.parse(stdout || '{}');
   const decision = parsed.reviewDecision;
   const reviewState: PrReviewState =
     decision === 'APPROVED' ? 'approved' : decision === 'CHANGES_REQUESTED' ? 'changes_requested' : 'review_required';
-  return { reviewState, headRefName: parsed.headRefName ?? '' };
+  const mergeable: PrMergeable = MERGEABLE.includes(parsed.mergeable) ? parsed.mergeable : 'UNKNOWN';
+  return { reviewState, headRefName: parsed.headRefName ?? '', mergeable };
 }

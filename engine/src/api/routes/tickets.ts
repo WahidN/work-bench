@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3';
 import { listTickets, getTicket, listTicketMessages, setTicketPinned } from '../../tickets.js';
 import { sendTicketMessage } from '../../ticketChat.js';
 import { runFixPipeline } from '../../fixPipeline.js';
+import { recordChatFailure } from '../../chatFailure.js';
 import { acquireJob, finishJob } from '../../jobs.js';
 
 export function registerTicketsRoutes(app: Express, db: Database.Database): void {
@@ -28,6 +29,7 @@ export function registerTicketsRoutes(app: Express, db: Database.Database): void
       res.json({ reply });
     } catch (err) {
       finishJob(db, job.id, 'failed', String(err));
+      recordChatFailure(db, 'ticket', ticketId, err);
       res.status(500).json({ error: String(err) });
     }
   });

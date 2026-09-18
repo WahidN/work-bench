@@ -17,10 +17,13 @@
 import { useEffect, useState } from 'react'
 import { ErrorAlert } from './ErrorAlert'
 import { Icon } from './Icon'
+import { PrAgentSection } from './PrAgentSection'
 import { PrFileSection } from './PrFileSection'
 import { openInBrowser } from './engineAgent'
 import { prReviewStateLabel, relativeTime } from './logic'
-import { factsParts, openedLine, sections, tabCounts, threadId } from './prDetailLogic'
+import {
+  factsParts, offersConflictResolve, openedLine, sections, tabCounts, threadId,
+} from './prDetailLogic'
 import type { PrReviewThread } from './prDetailLogic'
 import {
   canPost,
@@ -36,6 +39,7 @@ import {
   usePostPrFinding,
   usePrDetail,
   usePrReview,
+  useResolveConflicts,
   useStartCommentFix,
   useStartPrReview,
   type Pr,
@@ -477,6 +481,7 @@ export function PrDetailScreen({
   const review = usePrReview(pr.id)
 
   const startReview = useStartPrReview(pr.id)
+  const resolveConflicts = useResolveConflicts(pr.id)
   const postFinding = usePostPrFinding(pr.id)
   const discardFinding = useDiscardPrFinding(pr.id)
   const startFix = useStartCommentFix(pr.id)
@@ -672,6 +677,25 @@ export function PrDetailScreen({
                 })
               }}
             />
+            {/*
+              Only on GitHub's own CONFLICTING. It computes mergeability lazily and
+              answers UNKNOWN until it has, so offering this on anything else would be
+              offering it on a premise nothing has checked. When GitHub turns out to be
+              behind, the engine re-checks locally and answers in seconds.
+            */}
+            {offersConflictResolve(pr) && (
+              <OutlineButton
+                id="pr-resolve-conflicts-button"
+                label={resolveConflicts.isPending ? 'Resolving…' : 'Resolve conflicts'}
+                color="var(--wb-status-blocked)"
+                disabled={resolveConflicts.isPending}
+                onClick={() => {
+                  resolveConflicts.mutate(undefined, {
+                    onError: (error) => setAlert(String(error)),
+                  })
+                }}
+              />
+            )}
             {pr.authoredByMe && (
               <OutlineButton
                 id="pr-merge-button"
@@ -730,8 +754,13 @@ export function PrDetailScreen({
       {/*
         The review as part of the pull request, not as a dialog over it. It arrives while
         the user is elsewhere and waits here until they deal with it.
+
+        Always rendered, where it used to need a finding. Without that, three states looked
+        like one: never reviewed, reviewed with nothing to say, and reviewed with remarks
+        that were all posted or discarded. It is also what gives the composer a fixed home
+        rather than one that appears and disappears with the findings.
       */}
-      {findings.length > 0 && (
+      {
         <div
           id="pr-review-section"
           style={{
@@ -754,9 +783,11 @@ export function PrDetailScreen({
             >
               Review
             </span>
-            <span style={{ fontSize: 'var(--wb-fs-table-meta)', color: 'var(--wb-n600)' }}>
-              {summary(findings)}
-            </span>
+            {findings.length > 0 && (
+              <span style={{ fontSize: 'var(--wb-fs-table-meta)', color: 'var(--wb-n600)' }}>
+                {summary(findings)}
+              </span>
+            )}
             {outdated !== null && (
               <span
                 style={{ fontSize: 'var(--wb-fs-table-meta)', color: 'var(--wb-status-blocked)' }}
@@ -782,8 +813,9 @@ export function PrDetailScreen({
               }
             />
           ))}
+          <PrAgentSection pr={pr} onError={setAlert} />
         </div>
-      )}
+      }
 
       {/* tab bar */}
       <div

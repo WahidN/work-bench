@@ -138,7 +138,7 @@ describe('runCommentFix', () => {
       projectId: project.id, number: 88, title: 'Bump the deploy timeout',
       url: 'https://github.com/x/pull/88', githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false,
       authoredByMe: false, assignedToMe: true, reviewRequestedByMe: false,
-      reviewState: 'review_required', branch: 'feat/deploy-timeout',
+      reviewState: 'review_required', mergeable: 'MERGEABLE', branch: 'feat/deploy-timeout',
     });
 
     await expect(runCommentFix(db, theirs, project, request)).rejects.toThrow(/authored/i);

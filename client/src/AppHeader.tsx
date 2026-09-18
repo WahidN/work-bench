@@ -85,7 +85,6 @@ export function AppHeader({
   kickerOverride,
   headingOverride,
   onAddProject,
-  onOpenAgent,
   isRefreshing = false,
   onRefresh,
 }: {
@@ -98,13 +97,7 @@ export function AppHeader({
    */
   kickerOverride?: string
   headingOverride?: string
-  /*
-   * On Projects the second action is Add project rather than Agent, which is a different
-   * action and not the same one relabelled.
-   */
   onAddProject?: () => void
-  /** Project-scoped, unlike the Agent button on a pull request's own page. */
-  onOpenAgent?: () => void
   isRefreshing?: boolean
   onRefresh?: () => void
 }) {
@@ -152,12 +145,14 @@ export function AppHeader({
           isBusy={isRefreshing}
           onClick={onRefresh}
         />
-        <HeaderActionButton
-          title={section === 'Projects' ? 'Add project' : 'Agent'}
-          symbol={section === 'Projects' ? 'plus' : 'sparkles'}
-          help={section === 'Projects' ? 'Add a project' : 'Open the agent panel'}
-          onClick={section === 'Projects' ? onAddProject : onOpenAgent}
-        />
+        {section === 'Projects' && (
+          <HeaderActionButton
+            title="Add project"
+            symbol="plus"
+            help="Add a project"
+            onClick={onAddProject}
+          />
+        )}
       </div>
     </header>
   )

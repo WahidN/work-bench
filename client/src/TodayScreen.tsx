@@ -22,7 +22,6 @@ import {
   useSetTodoPinned,
   useSetTodoPriority,
 } from './queries'
-import { chatTargetForTodo, type AgentChatTarget } from './agentChatLogic'
 import { ErrorAlert } from './ErrorAlert'
 import { Icon } from './Icon'
 import { TaskRow } from './TaskRow'
@@ -44,11 +43,9 @@ function nextPriority(priority: TodoPriority): TodoPriority {
 function RailCard({
   item,
   onTogglePin,
-  onChat,
 }: {
   item: RailItem
   onTogglePin: () => void
-  onChat: () => void
 }) {
   return (
     <div
@@ -90,22 +87,6 @@ function RailCard({
         >
           <Icon name={item.isPinned ? 'pin-fill' : 'pin'} size={14} />
         </button>
-        <button
-          data-rail-chat=""
-          aria-label="Chat with the agent"
-          title="Chat with the agent"
-          onClick={onChat}
-          style={{
-            display: 'flex',
-            padding: 0,
-            color: 'var(--wb-n600)',
-            background: 'transparent',
-            border: 'none',
-            cursor: 'pointer',
-          }}
-        >
-          <Icon name="sparkles" size={14} />
-        </button>
       </div>
     </div>
   )
@@ -115,12 +96,10 @@ function RailSection({
   title,
   items,
   onTogglePin,
-  onChat,
 }: {
   title: string
   items: RailItem[]
   onTogglePin: (item: RailItem) => void
-  onChat: (item: RailItem) => void
 }) {
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--wb-s3)' }}>
@@ -144,7 +123,6 @@ function RailSection({
           key={item.id}
           item={item}
           onTogglePin={() => onTogglePin(item)}
-          onChat={() => onChat(item)}
         />
       ))}
     </section>
@@ -156,13 +134,11 @@ export function TodayScreen({
   prs,
   projects,
   tickets,
-  onOpenAgent,
 }: {
   today: TodayView
   prs: Pr[]
   projects: Project[]
   tickets: Ticket[]
-  onOpenAgent: (target: AgentChatTarget) => void
 }) {
   const [draft, setDraft] = useState('')
   const [alert, setAlert] = useState<string | null>(null)
@@ -216,19 +192,6 @@ export function TodayScreen({
     const id = Number(rawId)
     if (kind === 'ticket') setTicketPinned.mutate({ id, pinned: !item.isPinned }, { onError })
     else setPrPinned.mutate({ id, pinned: !item.isPinned }, { onError })
-  }
-
-  /** `RailCard.chatTarget`: the rail's two kinds map straight onto two chat targets. */
-  function chatFromRail(item: RailItem) {
-    const [kind, rawId] = item.id.split('-')
-    const id = Number(rawId)
-    if (kind === 'ticket') {
-      const ticket = tickets.find((candidate) => candidate.id === id)
-      if (ticket) onOpenAgent({ kind: 'ticket', ticket })
-      return
-    }
-    const pr = prs.find((candidate) => candidate.id === id)
-    if (pr) onOpenAgent({ kind: 'pullRequest', pr })
   }
 
   function addTask() {
@@ -341,8 +304,6 @@ export function TodayScreen({
                     onPromote={() => {
                       if (todo) promoteTodo.mutate({ id: todo.id }, { onError })
                     }}
-                    // A promoted issue's thread lives on the ticket it became.
-                    onChat={(jira) => onOpenAgent(chatTargetForTodo(jira, tickets))}
                   />
                 )
               })}
@@ -376,13 +337,11 @@ export function TodayScreen({
             title="Pull requests"
             items={pullRequestRail(prs, tickets, projects)}
             onTogglePin={togglePinFromRail}
-            onChat={chatFromRail}
           />
           <RailSection
             title="Issues"
             items={issueRail(tickets)}
             onTogglePin={togglePinFromRail}
-            onChat={chatFromRail}
           />
         </aside>
       </div>

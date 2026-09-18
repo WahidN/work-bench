@@ -33,7 +33,7 @@ function theirPr(): number {
     projectId, number: 88, title: 'Bump the deploy timeout', url: 'https://github.com/x/pull/88',
     githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe: false,
     assignedToMe: true, reviewRequestedByMe: false, reviewState: 'review_required',
-    branch: 'feat/deploy-timeout',
+    mergeable: 'MERGEABLE', branch: 'feat/deploy-timeout',
   }).id;
 }
 
@@ -136,7 +136,7 @@ describe('GET /prs/:id/comment-fixes', () => {
     const other = upsertGithubPr(db, {
       projectId, number: 24, title: 'Other', url: 'u', githubUpdatedAt: '2026-08-17T10:00:00Z',
       isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false,
-      reviewState: null, branch: 'feat/other',
+      reviewState: null, mergeable: 'MERGEABLE', branch: 'feat/other',
     }).id;
     await auth(request(app).post(`/prs/${prId}/review-comments/7/fix`).send(body)).expect(202);
     await auth(request(app).post(`/prs/${other}/review-comments/9/fix`).send(body)).expect(202);

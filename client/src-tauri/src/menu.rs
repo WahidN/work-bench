@@ -22,13 +22,12 @@ pub const EVENT: &str = "go-menu";
 
 /// Id, label and accelerator, in the Swift's order. The ids match `SHORTCUTS` in
 /// shortcuts.ts.
-const ITEMS: [(&str, &str, &str); 6] = [
+const ITEMS: [(&str, &str, &str); 5] = [
     ("palette", "Command palette", "CmdOrCtrl+K"),
     ("today", "Today", "CmdOrCtrl+1"),
     ("projects", "Projects", "CmdOrCtrl+2"),
     ("prs", "Pull requests", "CmdOrCtrl+3"),
     ("jira", "Jira", "CmdOrCtrl+4"),
-    ("agent", "Ask the agent", "CmdOrCtrl+J"),
 ];
 
 /// Builds the app menu: the default one, with Go added.
@@ -46,9 +45,9 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 
     let go = Submenu::new(app, "Go", true)?;
     for (index, (id, label, accelerator)) in ITEMS.iter().enumerate() {
-        // The Swift puts a divider after the palette and before the agent, which is what
-        // separates "open the palette", "go somewhere" and "ask something".
-        if index == 1 || index == 5 {
+        // A divider after the palette, which is what separates "open the palette" from
+        // "go somewhere". The one before the agent went with the agent itself.
+        if index == 1 {
             go.append(&PredefinedMenuItem::separator(app)?)?;
         }
         go.append(&MenuItem::with_id(

@@ -28,7 +28,7 @@ beforeEach(() => {
     projectId, number: 23, title: 'Remove the loading animation',
     url: 'https://github.com/x/pull/23', githubUpdatedAt: '2026-09-17T10:00:00Z',
     isDraft: false, authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false,
-    reviewState: 'review_required', branch: 'fix/loading',
+    reviewState: 'review_required', mergeable: 'MERGEABLE', branch: 'fix/loading',
   }).id;
   app = createServer(db, TOKEN);
 });

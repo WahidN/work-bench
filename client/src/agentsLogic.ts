@@ -19,6 +19,7 @@ const ACTIVITY_LABEL: Record<RunningAgent['activity'], string> = {
   triage: 'Triaging',
   spar: 'Sparring',
   implement: 'Implementing',
+  conflicts: 'Resolving the merge conflict',
 }
 
 /**

@@ -11,7 +11,6 @@ import type { Project } from './queries'
 
 export type PaletteAction =
   | { kind: 'navigate'; section: SidebarSection }
-  | { kind: 'askAgent' }
   | { kind: 'openProject'; project: Project }
   | { kind: 'addTask'; text: string }
 
@@ -51,7 +50,6 @@ export const paletteCommands: PaletteRow[] = [
     hint: NAV_HINT[section],
     action: { kind: 'navigate', section } as PaletteAction,
   })),
-  { id: 'ask-agent', symbol: 'sparkles', label: 'Ask the agent', hint: '⌘J', action: { kind: 'askAgent' } },
 ]
 
 /**

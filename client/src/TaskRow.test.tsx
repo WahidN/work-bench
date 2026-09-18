@@ -68,7 +68,6 @@ function setup(model: TaskRowModel, behind: Todo | undefined = todo()) {
     onCyclePriority: vi.fn(),
     onDelete: vi.fn(),
     onPromote: vi.fn(),
-    onChat: vi.fn(),
   }
   render(<TaskRow row={model} todo={behind} {...handlers} />)
   return handlers
@@ -92,7 +91,6 @@ describe('the checkbox', () => {
           onCyclePriority={vi.fn()}
           onDelete={vi.fn()}
           onPromote={vi.fn()}
-          onChat={vi.fn()}
         />,
       )
       expect(screen.getByLabelText('Unpin')).toBeTruthy()
@@ -130,18 +128,9 @@ describe('the delete button', () => {
 })
 
 describe('the context menu', () => {
-  it('offers the agent only on a mirrored Jira issue', () => {
-    const handlers = setup(
-      row({ source: 'todo' }),
-      todo({ source: 'jira', sourceId: 'JIRA-ATL-1' }),
-    )
-    fireEvent.contextMenu(screen.getByText('Cut the release branch'))
-    fireEvent.mouseDown(screen.getByText('Chat with the agent'))
-    expect(handlers.onChat).toHaveBeenCalledOnce()
-  })
-
-  it('offers no agent on a manual task, which has no issue to discuss', () => {
-    setup(row({ source: 'todo' }), todo({ source: 'manual' }))
+  // The agent lives on the pull request's own page now, so no row offers a chat.
+  it('offers no agent, on a mirrored Jira issue or anything else', () => {
+    setup(row({ source: 'todo' }), todo({ source: 'jira', sourceId: 'JIRA-ATL-1' }))
     fireEvent.contextMenu(screen.getByText('Cut the release branch'))
     expect(screen.queryByText('Chat with the agent')).toBeNull()
     expect(screen.getByText('Delete task')).toBeTruthy()
@@ -176,7 +165,6 @@ describe('the priority label', () => {
         onCyclePriority={vi.fn()}
         onDelete={vi.fn()}
         onPromote={vi.fn()}
-        onChat={vi.fn()}
       />,
     )
     expect(container.querySelector('[data-priority]')).toBeNull()

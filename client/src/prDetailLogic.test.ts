@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import {
+  agentsForPr,
+  authorLabel,
   diffLines,
   hunkStarts,
   missingPatchNote,
+  offersConflictResolve,
+  reviewedLine,
   sections,
+  showsSentEcho,
   type PrDetailFile,
   type PrDetailView,
   type PrReviewThread,
 } from './prDetailLogic'
+import type { Pr, RunningAgent } from './queries'
 
 /*
  * These cover the rules whose bugs are silent rather than loud: a miscounted line does
@@ -239,5 +245,115 @@ describe('sections', () => {
     expect(result[0].missingPatchNote).toBe('Binary or empty file, so there is no text diff.')
     expect(result[0].churn).toBe('+0 -0')
     expect(result[0].rows).toHaveLength(0)
+  })
+})
+
+/* ------------------------------------------------- The agent on this page */
+
+const NOW = new Date('2026-09-18T12:00:00Z')
+
+const pr = (over: Partial<Pr> = {}): Pr =>
+  ({
+    id: 7, ticketId: null, projectId: 1, branch: 'feat/x', number: 77, url: 'u',
+    status: 'open', lastReviewScore: null, pinned: false, title: 'A pull request',
+    reviewState: null, mergeable: null, isDraft: false, githubUpdatedAt: null,
+    authoredByMe: true, assignedToMe: false, reviewRequestedByMe: false,
+    messageCount: 0, reviewedAt: null, createdAt: NOW.toISOString(), ...over,
+  }) as Pr
+
+const agent = (over: Partial<RunningAgent> = {}): RunningAgent => ({
+  key: 'job-1', activity: 'review', targetType: 'pr', targetId: 7,
+  title: 'A pull request', waiting: false, startedAt: NOW.toISOString(), ...over,
+})
+
+describe('reviewedLine', () => {
+  it('says a pull request has not been reviewed', () => {
+    expect(reviewedLine(pr(), NOW)).toBe('Not reviewed yet')
+  })
+
+  it('says when it was reviewed', () => {
+    const line = reviewedLine(pr({ reviewedAt: '2026-09-18T10:00:00Z' }), NOW)
+    expect(line).toContain('Reviewed')
+    expect(line).toContain('2h ago')
+  })
+
+  // The two answer different questions. GitHub's decision is whether a person approved it;
+  // this is whether Workbench has read the diff.
+  it('does not read GitHub approval as a Workbench review', () => {
+    expect(reviewedLine(pr({ reviewState: 'approved' }), NOW)).toBe('Not reviewed yet')
+  })
+
+  it('survives a timestamp it cannot parse', () => {
+    expect(reviewedLine(pr({ reviewedAt: 'not a date' }), NOW)).toBe('Reviewed')
+  })
+})
+
+describe('agentsForPr', () => {
+  it('keeps the agents on this pull request', () => {
+    expect(agentsForPr([agent(), agent({ key: 'job-2', activity: 'conflicts' })], 7)).toHaveLength(2)
+  })
+
+  it('drops an agent on another pull request', () => {
+    expect(agentsForPr([agent({ targetId: 8 })], 7)).toEqual([])
+  })
+
+  // Ticket ids and pull request ids are separate sequences, so a ticket can carry the
+  // same number as the open pull request. Matching on the id alone would list it.
+  it('drops an agent on a ticket that shares the id', () => {
+    expect(agentsForPr([agent({ targetType: 'ticket', targetId: 7 })], 7)).toEqual([])
+  })
+
+  it('reads an empty list as nothing running', () => {
+    expect(agentsForPr([], 7)).toEqual([])
+  })
+})
+
+describe('offersConflictResolve', () => {
+  it('offers on a conflicting pull request', () => {
+    expect(offersConflictResolve(pr({ mergeable: 'CONFLICTING' }))).toBe(true)
+  })
+
+  it('does not offer on a mergeable one', () => {
+    expect(offersConflictResolve(pr({ mergeable: 'MERGEABLE' }))).toBe(false)
+  })
+
+  // GitHub computes this lazily. Offering the action on an answer it has not worked out
+  // is offering it on a premise nothing has checked.
+  it('does not offer while GitHub has not worked it out', () => {
+    expect(offersConflictResolve(pr({ mergeable: 'UNKNOWN' }))).toBe(false)
+    expect(offersConflictResolve(pr({ mergeable: null }))).toBe(false)
+  })
+
+  // Resolving force-pushes the branch, so the engine refuses it on anyone else's work
+  // and the button could only ever produce that refusal. Merge follows the same rule.
+  it('does not offer on a pull request someone else wrote', () => {
+    expect(offersConflictResolve(pr({ mergeable: 'CONFLICTING', authoredByMe: false }))).toBe(false)
+  })
+})
+
+describe('showsSentEcho', () => {
+  it('shows nothing when nothing was sent', () => {
+    expect(showsSentEcho(null, 4)).toBe(false)
+  })
+
+  it('shows the echo while the thread is still the length it was', () => {
+    expect(showsSentEcho({ text: 'fix the merge conflict', countAtSend: 4 }, 4)).toBe(true)
+  })
+
+  it('drops the echo once the thread comes back longer', () => {
+    expect(showsSentEcho({ text: 'fix the merge conflict', countAtSend: 4 }, 5)).toBe(false)
+  })
+
+  // A pull request the poller rewrote mid-send can come back shorter. Showing the echo is
+  // still the honest answer: the message is not in what came back.
+  it('keeps the echo when the thread comes back shorter', () => {
+    expect(showsSentEcho({ text: 'a', countAtSend: 4 }, 2)).toBe(true)
+  })
+})
+
+describe('authorLabel', () => {
+  it('names both sides of the thread', () => {
+    expect(authorLabel('user')).toBe('YOU')
+    expect(authorLabel('assistant')).toBe('AGENT')
   })
 })

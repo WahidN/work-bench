@@ -8,7 +8,7 @@ import { recordPr, getPr, listPrMessages, setPrPinned, upsertGithubPr } from '..
 import * as git from '../src/git.js';
 import * as claude from '../src/claude.js';
 import * as review from '../src/review.js';
-import { sendPrMessage, isMergeRequest } from '../src/prChat.js';
+import { sendPrMessage, isMergeRequest, isConflictRequest, buildRevisePrompt } from '../src/prChat.js';
 
 vi.mock('../src/git.js');
 vi.mock('../src/claude.js');
@@ -24,7 +24,7 @@ function ingestedPr(authoredByMe = false) {
   return upsertGithubPr(db, {
     projectId, number: 88, title: 'Bump the deploy timeout', url: 'https://github.com/x/pull/88',
     githubUpdatedAt: '2026-08-17T10:00:00Z', isDraft: false, authoredByMe,
-    assignedToMe: true, reviewRequestedByMe: false, reviewState: 'review_required', branch: 'feat/deploy-timeout',
+    assignedToMe: true, reviewRequestedByMe: false, reviewState: 'review_required', mergeable: 'MERGEABLE', branch: 'feat/deploy-timeout',
   });
 }
 
@@ -48,6 +48,7 @@ beforeEach(() => {
   vi.mocked(git.pushDetachedHead).mockResolvedValue(undefined);
   vi.mocked(git.getDiff).mockResolvedValue('diff');
   vi.mocked(claude.runClaude).mockResolvedValue('done');
+  vi.mocked(git.unresolvedConflicts).mockResolvedValue([]);
 });
 
 describe('isMergeRequest', () => {
@@ -259,5 +260,152 @@ describe('sendPrMessage: the authorship gate', () => {
 
     expect(result.action).toBe('revised');
     expect(git.pushDetachedHead).toHaveBeenCalled();
+  });
+});
+
+describe('isConflictRequest', () => {
+  it('matches a request about a merge conflict', () => {
+    expect(isConflictRequest('fix the merge conflict in this branch')).toBe(true);
+    expect(isConflictRequest('resolve the conflicts with main')).toBe(true);
+    expect(isConflictRequest('Fix The Merge Conflicts')).toBe(true);
+  });
+
+  // isMergeRequest owns these, and it runs first.
+  it('does not match a merge request', () => {
+    expect(isConflictRequest('merge it')).toBe(false);
+    expect(isConflictRequest('go ahead and merge')).toBe(false);
+  });
+
+  it('does not match a file that happens to be called conflict', () => {
+    expect(isConflictRequest('rename conflict.ts to clash.ts')).toBe(false);
+    expect(isConflictRequest('add a test for the conflict resolver')).toBe(false);
+  });
+
+  it('does not match an ordinary revision', () => {
+    expect(isConflictRequest('also guard the email field')).toBe(false);
+  });
+});
+
+describe('buildRevisePrompt', () => {
+  const subject = { title: 'Remove the filter tags', body: '' };
+
+  it('says the worktree is a detached checkout with no merge in progress', () => {
+    const prompt = buildRevisePrompt(subject, 'rename it', 'main', null);
+
+    expect(prompt).toContain('detached checkout');
+    expect(prompt).toContain('no merge is in progress');
+  });
+
+  it('says the merge is in progress and names the conflicting files', () => {
+    const prompt = buildRevisePrompt(subject, 'fix the merge conflict', 'main', {
+      state: 'conflicts',
+      files: ['sanityConfig/schemas/index.ts', 'src/queries/filterTags.ts'],
+    });
+
+    expect(prompt).toContain('origin/main');
+    expect(prompt).toContain('merge is in progress');
+    expect(prompt).toContain('sanityConfig/schemas/index.ts');
+    expect(prompt).toContain('src/queries/filterTags.ts');
+    expect(prompt).not.toContain('no merge is in progress');
+  });
+});
+
+describe('sendPrMessage: a request about a merge conflict', () => {
+  beforeEach(() => {
+    vi.mocked(review.reviewDiff).mockResolvedValue({
+      correctness: 5, completeness: 5, quality: 5, tests: 5, regressionRisk: 5, findings: [],
+    });
+    vi.mocked(review.reviewPasses).mockReturnValue(true);
+    vi.mocked(review.averageScore).mockReturnValue(5);
+    vi.mocked(git.mergeBranchInto).mockResolvedValue(undefined);
+  });
+
+  // The case that burned 30 minutes: the worktree is a clean checkout of the
+  // branch head, so there was no conflict in it to fix.
+  it('merges the default branch in before the agent runs, and names the files', async () => {
+    vi.mocked(git.conflictsWith).mockResolvedValue({
+      state: 'conflicts', files: ['sanityConfig/schemas/index.ts'],
+    });
+
+    const result = await sendPrMessage(db, prId, 'fix the merge conflict in this branch');
+
+    expect(git.mergeBranchInto).toHaveBeenCalledWith('/repos/demo/.worktrees/fix-github-1', 'origin/main');
+    expect(claude.runClaude).toHaveBeenCalled();
+    expect(vi.mocked(claude.runClaude).mock.calls[0][0].prompt).toContain('sanityConfig/schemas/index.ts');
+    expect(result.action).toBe('revised');
+    expect(git.pushDetachedHead).toHaveBeenCalled();
+  });
+
+  it('answers without running the agent when the branch merges cleanly', async () => {
+    vi.mocked(git.conflictsWith).mockResolvedValue({ state: 'clean' });
+
+    const result = await sendPrMessage(db, prId, 'fix the merge conflict in this branch');
+
+    expect(claude.runClaude).not.toHaveBeenCalled();
+    expect(git.mergeBranchInto).not.toHaveBeenCalled();
+    expect(git.pushDetachedHead).not.toHaveBeenCalled();
+    expect(result.reply.toLowerCase()).toContain('no conflict');
+    const messages = listPrMessages(db, prId);
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant']);
+    expect(git.removeWorktree).toHaveBeenCalled();
+  });
+
+  // Git could not say, so the request is run rather than refused. A refusal
+  // built on a check that failed is the silence this is meant to end.
+  it('runs the agent when the conflict check could not answer', async () => {
+    vi.mocked(git.conflictsWith).mockResolvedValue({ state: 'unknown' });
+
+    await sendPrMessage(db, prId, 'fix the merge conflict in this branch');
+
+    expect(claude.runClaude).toHaveBeenCalled();
+    expect(git.mergeBranchInto).not.toHaveBeenCalled();
+  });
+
+  /*
+   * The agent is not obliged to succeed. Without this, `commitAll` would `git add -A`
+   * over the conflicted files, which marks them resolved, and force-push a branch with
+   * `<<<<<<<` in it.
+   */
+  it('commits nothing when the agent leaves the conflict unresolved', async () => {
+    vi.mocked(git.conflictsWith).mockResolvedValue({
+      state: 'conflicts', files: ['sanityConfig/schemas/index.ts'],
+    });
+    vi.mocked(git.unresolvedConflicts).mockResolvedValue(['sanityConfig/schemas/index.ts']);
+
+    const result = await sendPrMessage(db, prId, 'fix the merge conflict in this branch');
+
+    expect(git.commitAll).not.toHaveBeenCalled();
+    expect(git.pushDetachedHead).not.toHaveBeenCalled();
+    expect(result.reply).toContain('sanityConfig/schemas/index.ts');
+    expect(result.reply.toLowerCase()).toContain('could not resolve');
+    expect(listPrMessages(db, prId).map((m) => m.role)).toEqual(['user', 'assistant']);
+    expect(git.removeWorktree).toHaveBeenCalled();
+  });
+
+  /*
+   * Only the poller writes `mergeable`, so without this the Resolve conflicts
+   * button stays on offer for up to a poll interval after the conflict it names
+   * has just been resolved, and the second press answers "no conflict".
+   */
+  it('forgets what GitHub said about merging once the branch has moved', async () => {
+    vi.mocked(git.conflictsWith).mockResolvedValue({
+      state: 'conflicts', files: ['sanityConfig/schemas/index.ts'],
+    });
+
+    // What the poller would have written on the last cycle.
+    db.prepare(`UPDATE prs SET mergeable = 'CONFLICTING' WHERE id = ?`).run(prId);
+
+    await sendPrMessage(db, prId, 'fix the merge conflict in this branch');
+
+    expect(git.pushDetachedHead).toHaveBeenCalled();
+    expect(getPr(db, prId)!.mergeable).toBe('UNKNOWN');
+  });
+
+  it('starts no merge for a revision that is not about conflicts', async () => {
+    await sendPrMessage(db, prId, 'also guard the email field');
+
+    expect(git.conflictsWith).not.toHaveBeenCalled();
+    expect(git.mergeBranchInto).not.toHaveBeenCalled();
+    expect(claude.runClaude).toHaveBeenCalled();
   });
 });

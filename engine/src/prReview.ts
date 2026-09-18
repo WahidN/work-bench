@@ -13,6 +13,10 @@ interface ReviewFindings {
 ///
 /// The line must be one the diff actually shows, because a remark anchored
 /// anywhere else is thrown away before it is ever posted.
+///
+/// The Dutch tone rules are spelled out here rather than read from a file. The
+/// review runs in the reviewed repo's worktree with Read, Grep and Glob, so a
+/// style guide living outside that worktree is not reliably reachable.
 export function buildPrReviewPrompt(subject: ReviewSubject, diff: string): string {
   return `You are reviewing a pull request titled "${subject.title}".
 ${subject.body}
@@ -31,6 +35,20 @@ diff spells it.
 
 Say something only where it is worth a colleague's time. Few sharp remarks beat a
 list of everything noticed. If the change is fine, return no findings at all.
+
+Write every remark in Dutch. Keep English technical nouns in English and
+unconjugated: "de pull request", "search params", "een datatable". Never translate
+them and never give them a Dutch plural. Put identifiers, values and file names
+between backticks.
+
+One paragraph per remark, 40 to 90 words, in this order, skipping what does not
+apply: what the code literally does, what the reader loses by it, the place in the
+repo that already does it right, then two named options or a question. Leave the
+author a way out rather than an order. Name the role instead of a pronoun: "de
+beheerder moet zelf raden", not "hij moet zelf raden".
+
+No heading, no bold, no severity label, no bullet list, no suggestion block and no
+second paragraph about how bad it is. No em dash anywhere.
 
 Return ONLY JSON: {"findings": [{"path": "...", "line": 0, "body": "..."}]}`;
 }

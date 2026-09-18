@@ -58,7 +58,6 @@ export const keys = {
   prs: ['/prs'] as const,
   pr: (id: number) => ['/prs', id] as const,
   prDetail: (id: number) => ['/prs', id, 'detail'] as const,
-  prDiff: (id: number) => ['/prs', id, 'diff'] as const,
   prReview: (id: number) => ['/prs', id, 'review'] as const,
   prCommentFixes: (id: number) => ['/prs', id, 'comment-fixes'] as const,
   prMessages: (id: number) => ['/prs', id, 'messages'] as const,
@@ -178,62 +177,18 @@ export function fetchPrReview(
   })
 }
 
-/**
- * The raw unified diff, for the agent panel's `DiffView`.
- *
- * `enabled` is not a nicety. The route opens and force-removes the pull request's worktree
- * under the PR job lock, so a fetch nobody asked for would contend with the fix pipeline
- * and with review itself, and answer 409 when it lost.
- *
- * A failure is not surfaced anywhere, matching `loadDiff`'s `try?`: a merged pull request
- * has no diff, and a 409 means another job holds the lock. Neither is worth interrupting a
- * conversation for.
- */
-export const usePrDiff = (id: number, enabled: boolean) =>
-  useQuery<{ diff: string }>({
-    queryKey: keys.prDiff(id),
-    queryFn: () => engine.get<{ diff: string }>(`/prs/${id}/diff`),
-    enabled,
-    // A worktree per refetch is too expensive to repeat on a window focus.
-    staleTime: Infinity,
-    retry: false,
-  })
-
 /* ------------------------------------------------------------ Agent chat */
 
 export type ChatMessage = { id: number; role: 'user' | 'assistant'; content: string }
 
 /**
- * One target's thread.
+ * The pull request with its thread, so a status or a review the agent changed comes back
+ * with it.
  *
- * The four shapes are not one hook with a switch, because they are four different paths
- * and two of them come wrapped in the target itself: `GET /tickets/:id` and `GET /prs/:id`
- * answer the record with its `messages` on it, which is also why `AgentChatViewModel`
- * refreshes its target from those two and not from the other two. A message can change a
- * ticket's status or a pull request's, and a chat cannot change a todo or a project.
+ * The one thread hook left. The panel served four, and the three others went with it: the
+ * engine still answers `/tickets/:id`, `/todos/:id/messages` and `/projects/:id/messages`,
+ * but nothing in the app reads them until those three get a surface of their own.
  */
-export const useProjectThread = (id: number, enabled: boolean) =>
-  useQuery<ChatMessage[]>({
-    queryKey: keys.projectMessages(id),
-    queryFn: () => engine.get<ChatMessage[]>(`/projects/${id}/messages`),
-    enabled,
-  })
-
-export const useTodoThread = (id: number, enabled: boolean) =>
-  useQuery<ChatMessage[]>({
-    queryKey: keys.todoMessages(id),
-    queryFn: () => engine.get<ChatMessage[]>(`/todos/${id}/messages`),
-    enabled,
-  })
-
-/** The ticket with its thread, so a status the agent changed comes back with it. */
-export const useTicketThread = (id: number, enabled: boolean) =>
-  useQuery<Ticket & { messages?: ChatMessage[] }>({
-    queryKey: keys.ticket(id),
-    queryFn: () => engine.get<Ticket & { messages?: ChatMessage[] }>(`/tickets/${id}`),
-    enabled,
-  })
-
 export const usePrThread = (id: number, enabled: boolean) =>
   useQuery<Pr & { messages?: ChatMessage[] }>({
     queryKey: keys.pr(id),
@@ -242,33 +197,39 @@ export const usePrThread = (id: number, enabled: boolean) =>
   })
 
 /*
- * Sending a message runs a headless Claude session, so these requests are held open for
+ * Sending a message runs a headless Claude session, so this request is held open for
  * minutes. There is no polling to do and nothing to time out against: the engine answers
- * when the agent has answered, which is what `AgentChatViewModel.send` awaits.
+ * when the agent has answered, which is what the composer waits on.
  */
-export const useSendProjectMessage = (id: number) =>
-  useEngineMutation(
-    (args: { text: string }) => engine.post<unknown>(`/projects/${id}/messages`, args),
-    [keys.projectMessages(id), keys.projects],
-  )
-
-export const useSendTicketMessage = (id: number) =>
-  useEngineMutation(
-    (args: { text: string }) => engine.post<unknown>(`/tickets/${id}/messages`, args),
-    [keys.ticket(id), keys.tickets, keys.today],
-  )
-
-export const useSendTodoMessage = (id: number) =>
-  useEngineMutation(
-    (args: { text: string }) => engine.post<unknown>(`/todos/${id}/messages`, args),
-    [keys.todoMessages(id), keys.todos, keys.allTodos, keys.today],
-  )
-
 export const useSendPrMessage = (id: number) =>
-  useEngineMutation(
+  useChatMutation(
     (args: { text: string }) => engine.post<PrChatResult>(`/prs/${id}/messages`, args),
     [keys.pr(id), keys.prs, keys.today],
   )
+
+/**
+ * A send, refetching what it changed whether or not it worked.
+ *
+ * `useEngineMutation` refetches on success only, which is right for every mutation that
+ * leaves nothing behind when it fails. A chat send is not one of them: the engine records
+ * a failed run as an assistant message in the thread, so the thread has changed either
+ * way, and refetching on success alone leaves that failure unread until the panel is
+ * reopened.
+ */
+function useChatMutation<TArgs, TResult>(
+  run: (args: TArgs) => Promise<TResult>,
+  invalidates: readonly (readonly unknown[])[],
+) {
+  const client = useQueryClient()
+  return useMutation<TResult, Error, TArgs>({
+    mutationFn: run,
+    onSettled: () => {
+      for (const key of invalidates) {
+        void client.invalidateQueries({ queryKey: key })
+      }
+    },
+  })
+}
 
 /* ------------------------------------------------------------- Mutations */
 
@@ -278,6 +239,11 @@ export const useSendPrMessage = (id: number) =>
  * No optimistic updates: the Swift app awaits the call and then reloads, and adding
  * optimism here would be an improvement rather than a port, which would make a port bug
  * indistinguishable from a race the app never had.
+ *
+ * That still holds for the cache. The agent panel does echo the message it just sent,
+ * because a send holds its request open for minutes and an empty transcript is how a
+ * failed send came to look like no send at all, but it holds that echo in its own state
+ * and never writes it here.
  */
 export function useEngineMutation<TArgs, TResult>(
   run: (args: TArgs) => Promise<TResult>,
@@ -636,6 +602,19 @@ export function useMergePr(id: number) {
     },
   })
 }
+
+/**
+ * Resolves the branch's merge conflict.
+ *
+ * Invalidates on settle rather than on success, the way the chat sends do: the engine
+ * records a failed run in the thread, so the thread has changed either way. The agents
+ * list goes too, because the job this starts is what the page lists while it runs.
+ */
+export const useResolveConflicts = (id: number) =>
+  useChatMutation(
+    () => engine.post<PrChatResult>(`/prs/${id}/resolve-conflicts`),
+    [keys.pr(id), keys.prDetail(id), keys.prs, keys.agents, keys.today],
+  )
 
 /**
  * Every agent the engine is running, for the sidebar and the agents list.

@@ -3,7 +3,6 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { SECTION_SYMBOL } from './logic'
 import { paletteCommands } from './commandPaletteLogic'
-import { targetSymbol } from './agentChatLogic'
 
 /*
  * Task 8.5, as a check rather than a claim.
@@ -62,12 +61,6 @@ describe('exported SF Symbols', () => {
     for (const row of paletteCommands) {
       expect(have.has(row.symbol), row.symbol).toBe(true)
     }
-  })
-
-  it('cover every agent panel target, including no target at all', () => {
-    const have = exportedIcons()
-    // `targetSymbol(null)` is the folder, which is a name nothing else asks for.
-    expect(have.has(targetSymbol(null)), targetSymbol(null)).toBe(true)
   })
 
   it('finds icons at all, so a broken scan cannot pass by finding nothing', () => {

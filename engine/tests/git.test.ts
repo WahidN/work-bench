@@ -1,6 +1,9 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { execa } from 'execa';
-import { worktreePathFor, mergePr, openDetachedWorktree, pushDetachedHead, createFixWorktree, headSha } from '../src/git.js';
+import {
+  worktreePathFor, mergePr, openDetachedWorktree, pushDetachedHead, createFixWorktree, headSha,
+  conflictsWith, mergeBranchInto, unresolvedConflicts, commitAll,
+} from '../src/git.js';
 
 vi.mock('execa');
 afterEach(() => vi.clearAllMocks());
@@ -78,5 +81,147 @@ describe('headSha', () => {
     expect(execa).toHaveBeenCalledWith('git', ['rev-parse', 'HEAD'], {
       cwd: '/repos/demo/.worktrees/feat-header',
     });
+  });
+});
+
+// `merge-tree --write-tree` answers from the object store alone: no checkout, no
+// second worktree, and it cannot leave the repo mid-merge if the engine dies.
+describe('conflictsWith', () => {
+  it('reads exit 1 as conflicting and lists the files', async () => {
+    vi.mocked(execa).mockResolvedValue({
+      exitCode: 1,
+      stdout: [
+        '1f2e126c6ec389bae18237672df145732e64ae28',
+        'sanityConfig/personalization/personalizationTypes.ts',
+        'sanityConfig/schemas/index.ts',
+        '',
+        'Auto-merging sanityConfig/schemas/index.ts',
+        'CONFLICT (content): Merge conflict in sanityConfig/schemas/index.ts',
+      ].join('\n'),
+    } as any);
+
+    const result = await conflictsWith('/repos/demo', 'main', 'chore/remove-unused-schemas');
+
+    expect(result).toEqual({
+      state: 'conflicts',
+      files: ['sanityConfig/personalization/personalizationTypes.ts', 'sanityConfig/schemas/index.ts'],
+    });
+    expect(execa).toHaveBeenCalledWith(
+      'git',
+      ['merge-tree', '--write-tree', '--name-only', 'origin/main', 'origin/chore/remove-unused-schemas'],
+      { cwd: '/repos/demo', reject: false }
+    );
+  });
+
+  it('reads exit 0 as clean', async () => {
+    vi.mocked(execa).mockResolvedValue({ exitCode: 0, stdout: 'f61596ba410370c41618db6082cc7f810db23ba7' } as any);
+
+    expect(await conflictsWith('/repos/demo', 'main', 'feat/header')).toEqual({ state: 'clean' });
+  });
+
+  it('reads any other exit as unknown', async () => {
+    vi.mocked(execa).mockResolvedValue({ exitCode: 128, stdout: '' } as any);
+
+    expect(await conflictsWith('/repos/demo', 'main', 'gone')).toEqual({ state: 'unknown' });
+  });
+
+  // Measured on the ACV repo: a ref git cannot resolve exits 1, the same as a
+  // conflict, with "not something we can merge" on stderr and nothing on stdout.
+  // Reading the exit code alone reported a conflict for a branch that is gone.
+  it('reads exit 1 with no tree as unknown, not as conflicting', async () => {
+    vi.mocked(execa).mockResolvedValue({ exitCode: 1, stdout: '' } as any);
+
+    expect(await conflictsWith('/repos/demo', 'main', 'gone')).toEqual({ state: 'unknown' });
+  });
+
+  it('reads a throw as unknown', async () => {
+    vi.mocked(execa).mockRejectedValue(new Error('git missing'));
+
+    expect(await conflictsWith('/repos/demo', 'main', 'feat/header')).toEqual({ state: 'unknown' });
+  });
+});
+
+describe('mergeBranchInto', () => {
+  // A conflict is the state this wants, so exit 1 is a success here. --no-commit
+  // leaves both outcomes for commitAll to finish, so the clean case does not
+  // sneak in a commit message nobody wrote.
+  it('does not throw when the merge conflicts', async () => {
+    vi.mocked(execa).mockResolvedValue({ exitCode: 1, stdout: '' } as any);
+
+    await expect(mergeBranchInto('/repos/demo/.worktrees/x', 'origin/main')).resolves.toBeUndefined();
+    expect(execa).toHaveBeenCalledWith('git', ['merge', '--no-commit', '--no-ff', 'origin/main'], {
+      cwd: '/repos/demo/.worktrees/x',
+      reject: false,
+    });
+  });
+
+  it('does not throw when the merge is clean', async () => {
+    vi.mocked(execa).mockResolvedValue({ exitCode: 0, stdout: '' } as any);
+
+    await expect(mergeBranchInto('/repos/demo/.worktrees/x', 'origin/main')).resolves.toBeUndefined();
+  });
+
+  it('throws when git could not merge at all', async () => {
+    vi.mocked(execa).mockResolvedValue({ exitCode: 128, stdout: '', stderr: 'not something we can merge' } as any);
+
+    await expect(mergeBranchInto('/repos/demo/.worktrees/x', 'origin/main')).rejects.toThrow();
+  });
+});
+
+/*
+ * The check that stops a half-resolved merge reaching the branch.
+ *
+ * It has to run before `git add -A`, because staging a conflicted file is what marks
+ * it resolved: after the add the markers are ordinary content and the commit succeeds
+ * with `<<<<<<<` in it. Measured in a scratch repo, exit 0 and all.
+ */
+describe('unresolvedConflicts', () => {
+  it('names the files git still considers unmerged', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: 'src/a.ts\nsrc/b.ts\n' } as any);
+
+    expect(await unresolvedConflicts('/repos/demo/.worktrees/x')).toEqual(['src/a.ts', 'src/b.ts']);
+    expect(execa).toHaveBeenCalledWith('git', ['diff', '--name-only', '--diff-filter=U'], {
+      cwd: '/repos/demo/.worktrees/x',
+    });
+  });
+
+  it('reads an empty answer as nothing left to resolve', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: '\n' } as any);
+
+    expect(await unresolvedConflicts('/repos/demo/.worktrees/x')).toEqual([]);
+  });
+});
+
+describe('commitAll', () => {
+  function gitReturning(answers: Record<string, string>) {
+    vi.mocked(execa).mockImplementation((async (_cmd: string, args: string[]) => {
+      for (const [key, stdout] of Object.entries(answers)) {
+        if (args.join(' ').startsWith(key)) return { stdout } as any;
+      }
+      return { stdout: '' } as any;
+    }) as any);
+  }
+
+  it('commits what changed when nothing is unmerged', async () => {
+    gitReturning({ 'diff --name-only': '', 'status --porcelain': ' M src/a.ts' });
+
+    expect(await commitAll('/w', 'fix: x')).toBe(true);
+    expect(execa).toHaveBeenCalledWith('git', ['commit', '-m', 'fix: x'], { cwd: '/w' });
+  });
+
+  it('answers false when the tree is clean', async () => {
+    gitReturning({ 'diff --name-only': '', 'status --porcelain': '' });
+
+    expect(await commitAll('/w', 'fix: x')).toBe(false);
+  });
+
+  // The whole point: `git add -A` on a conflicted file marks it resolved, so without
+  // this the commit lands with the markers in it and the push force-pushes them.
+  it('refuses a tree that still has unresolved conflicts, and adds nothing', async () => {
+    gitReturning({ 'diff --name-only': 'src/a.ts' });
+
+    await expect(commitAll('/w', 'fix: x')).rejects.toThrow('src/a.ts');
+    expect(execa).not.toHaveBeenCalledWith('git', ['add', '-A'], { cwd: '/w' });
+    expect(execa).not.toHaveBeenCalledWith('git', ['commit', '-m', 'fix: x'], { cwd: '/w' });
   });
 });

@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3';
 import { listPrs, getPr, listPrMessages, setPrPinned } from '../../prs.js';
 import { getProject } from '../../projects.js';
 import { sendPrMessage } from '../../prChat.js';
+import { recordChatFailure } from '../../chatFailure.js';
 import { acquireJob, finishJob, isJobRunning } from '../../jobs.js';
 import { openDetachedWorktree, getDiff, removeWorktree, headSha } from '../../git.js';
 import { fetchPrDetailView, postLineComment } from '../../sources/githubPrDetail.js';
@@ -22,6 +23,11 @@ import type { PrDetailView } from '../../types.js';
 // cover that walk and little else: long enough that going back and returning is
 // free, short enough that nobody has to reason about staleness.
 const DETAIL_TTL_MS = 60 * 1000;
+
+// What POST /prs/:id/resolve-conflicts sends. A sentence rather than a keyword,
+// because it is stored as the user's message in the thread and read there, and
+// because `isConflictRequest` is what has to claim it.
+const RESOLVE_CONFLICTS_PHRASE = 'Resolve the merge conflict with the default branch.';
 
 // Keyed by database for the same reason poller.ts keys its in-flight guard that
 // way: one test's :memory: database must not leak entries into the next.
@@ -314,6 +320,7 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
       res.json(result);
     } catch (err) {
       finishJob(db, job.id, 'failed', String(err));
+      recordChatFailure(db, 'pr', prId, err);
       res.status(500).json({ error: String(err) });
     }
   });
@@ -332,6 +339,35 @@ export function registerPrsRoutes(app: Express, db: Database.Database): void {
       res.json(result);
     } catch (err) {
       finishJob(db, job.id, 'failed', String(err));
+      recordChatFailure(db, 'pr', prId, err);
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  /// Resolves the branch's merge conflict, as a button rather than a phrase.
+  ///
+  /// The same shape as the merge route above: one call into `sendPrMessage` with
+  /// the phrase that path claims, so the job lock, the worktree, the commit, the
+  /// push, the re-review and the reply in the thread all come for free and cannot
+  /// drift from the typed request, which stays supported.
+  ///
+  /// The 404 is checked here rather than left to `sendPrMessage`, so a pull request
+  /// that is gone does not take the lock and come back as a 500.
+  app.post('/prs/:id/resolve-conflicts', async (req, res) => {
+    const prId = Number(req.params.id);
+    if (!getPr(db, prId)) { res.status(404).json({ error: 'not found' }); return; }
+
+    const job = acquireJob(db, 'pr-chat', 'pr', prId, 'conflicts');
+    if (!job) { res.status(409).json({ error: 'already working on this' }); return; }
+
+    try {
+      const result = await sendPrMessage(db, prId, RESOLVE_CONFLICTS_PHRASE);
+      finishJob(db, job.id, 'done');
+      invalidateDetail(db, prId);
+      res.json(result);
+    } catch (err) {
+      finishJob(db, job.id, 'failed', String(err));
+      recordChatFailure(db, 'pr', prId, err);
       res.status(500).json({ error: String(err) });
     }
   });

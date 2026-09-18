@@ -38,34 +38,17 @@ describe('the Refresh button', () => {
 describe('the second button', () => {
   it('is Add project on Projects, and adds', () => {
     const onAddProject = vi.fn()
-    const onOpenAgent = vi.fn()
-    render(
-      <AppHeader
-        section="Projects"
-        activeProjectCount={2}
-        onAddProject={onAddProject}
-        onOpenAgent={onOpenAgent}
-      />,
-    )
+    render(<AppHeader section="Projects" activeProjectCount={2} onAddProject={onAddProject} />)
     fireEvent.click(screen.getByText('Add project'))
     expect(onAddProject).toHaveBeenCalledOnce()
-    expect(onOpenAgent).not.toHaveBeenCalled()
   })
 
-  it('is Agent everywhere else, and opens the panel', () => {
-    const onAddProject = vi.fn()
-    const onOpenAgent = vi.fn()
-    render(
-      <AppHeader
-        section="Jira"
-        activeProjectCount={2}
-        onAddProject={onAddProject}
-        onOpenAgent={onOpenAgent}
-      />,
-    )
-    fireEvent.click(screen.getByText('Agent'))
-    expect(onOpenAgent).toHaveBeenCalledOnce()
-    expect(onAddProject).not.toHaveBeenCalled()
+  // The agent lives on the pull request's own page now, so the header has nothing
+  // project-scoped to open.
+  it('is absent everywhere else', () => {
+    render(<AppHeader section="Jira" activeProjectCount={2} onAddProject={vi.fn()} />)
+    expect(screen.queryByText('Agent')).toBeNull()
+    expect(screen.queryByText('Add project')).toBeNull()
   })
 })
 

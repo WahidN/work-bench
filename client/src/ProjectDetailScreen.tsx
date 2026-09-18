@@ -68,11 +68,9 @@ function useNotesSaver(project: Project) {
 function OpenWorkRow({
   item,
   onOpen,
-  onChat,
 }: {
   item: OpenWorkItem
   onOpen: () => void
-  onChat: () => void
 }) {
   const [isHovered, setIsHovered] = useState(false)
 
@@ -109,25 +107,6 @@ function OpenWorkRow({
           {item.ref} — {item.title}
         </span>
       </span>
-      <button
-        data-open-work-chat=""
-        title="Ask the agent about this"
-        aria-label="Ask the agent about this"
-        onClick={(event) => {
-          event.stopPropagation()
-          onChat()
-        }}
-        style={{
-          display: 'flex',
-          padding: 'var(--wb-s2) var(--wb-s4)',
-          color: 'var(--wb-n500)',
-          background: 'transparent',
-          border: 'none',
-          cursor: 'pointer',
-        }}
-      >
-        <Icon name="sparkles" size={11} />
-      </button>
     </div>
   )
 }
@@ -153,8 +132,6 @@ export function ProjectDetailScreen({
   onToggleTask,
   onDeleteTodo,
   onOpenWork,
-  onChatTodo,
-  onChatWork,
 }: {
   project: Project
   projects: Project[]
@@ -167,8 +144,6 @@ export function ProjectDetailScreen({
   onToggleTask: (row: TaskRowModel) => void
   onDeleteTodo: (todo: Todo) => void
   onOpenWork: (item: OpenWorkItem) => void
-  onChatTodo: (todo: Todo) => void
-  onChatWork: (item: OpenWorkItem) => void
 }) {
   const [tab, setTab] = useState<Tab>('Tasks')
   const [draft, setDraft] = useState('')
@@ -363,7 +338,6 @@ export function ProjectDetailScreen({
                     onDelete={() => {
                       if (todo) onDeleteTodo(todo)
                     }}
-                    onChat={onChatTodo}
                   />
                 )
               })
@@ -444,7 +418,6 @@ export function ProjectDetailScreen({
                 key={item.id}
                 item={item}
                 onOpen={() => onOpenWork(item)}
-                onChat={() => onChatWork(item)}
               />
             ))
           )}
