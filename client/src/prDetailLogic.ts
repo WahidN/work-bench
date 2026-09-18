@@ -237,9 +237,14 @@ export function agentsForPr(agents: RunningAgent[], prId: number): RunningAgent[
  * Only on GitHub's own CONFLICTING. It computes mergeability lazily and answers UNKNOWN
  * until it has, and a null is a pull request never looked up. Offering the action on
  * either would be offering it on a premise nothing has checked.
+ *
+ * And only on a pull request the user wrote, the same rule Merge follows. Resolving
+ * force-pushes the branch, so on anyone else's work the engine refuses it in
+ * `refusePrChat` and the button could only ever produce that refusal. The inbox is
+ * mostly other people's pull requests, waiting to be reviewed.
  */
 export function offersConflictResolve(pr: Pr): boolean {
-  return pr.mergeable === 'CONFLICTING'
+  return pr.authoredByMe && pr.mergeable === 'CONFLICTING'
 }
 
 export type ChatRole = 'user' | 'assistant'

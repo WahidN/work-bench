@@ -84,6 +84,13 @@ describe('the Resolve conflicts button', () => {
     expect(draw(pr({ mergeable: null })).container.querySelector('#pr-resolve-conflicts-button')).toBeNull()
   })
 
+  it('is not offered on a pull request someone else wrote', () => {
+    const { container } = draw(pr({ mergeable: 'CONFLICTING', authoredByMe: false }))
+    expect(container.querySelector('#pr-resolve-conflicts-button')).toBeNull()
+    // Merge is gone for the same reason, which is the rule this now follows.
+    expect(container.querySelector('#pr-merge-button')).toBeNull()
+  })
+
   it('calls the route and disables itself while it runs', async () => {
     vi.mocked(engine.post).mockReturnValue(new Promise(() => {}))
     const { container } = draw(pr({ mergeable: 'CONFLICTING' }))

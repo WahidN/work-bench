@@ -323,6 +323,12 @@ describe('offersConflictResolve', () => {
     expect(offersConflictResolve(pr({ mergeable: 'UNKNOWN' }))).toBe(false)
     expect(offersConflictResolve(pr({ mergeable: null }))).toBe(false)
   })
+
+  // Resolving force-pushes the branch, so the engine refuses it on anyone else's work
+  // and the button could only ever produce that refusal. Merge follows the same rule.
+  it('does not offer on a pull request someone else wrote', () => {
+    expect(offersConflictResolve(pr({ mergeable: 'CONFLICTING', authoredByMe: false }))).toBe(false)
+  })
 })
 
 describe('showsSentEcho', () => {
