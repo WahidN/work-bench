@@ -48,6 +48,35 @@ describe('buildPrReviewPrompt', () => {
   it('tells the model each remark stands alone under its line', () => {
     expect(buildPrReviewPrompt({ title: 't', body: '' }, diff).toLowerCase()).toContain('on its own');
   });
+
+  // The remarks are read in Dutch in the app and posted in Dutch on GitHub, and
+  // the model defaults to English without being told.
+  it('asks for Dutch remarks', () => {
+    expect(buildPrReviewPrompt({ title: 't', body: '' }, diff)).toContain('in Dutch');
+  });
+
+  // Asking for Dutch without this turns "pull request" into "trekverzoek".
+  it('keeps English technical nouns out of the translation', () => {
+    const prompt = buildPrReviewPrompt({ title: 't', body: '' }, diff);
+
+    expect(prompt).toContain('Never translate');
+    expect(prompt).toContain('de pull request');
+  });
+
+  it('gives the shape of one remark: mechanism, consequence, evidence, way out', () => {
+    const prompt = buildPrReviewPrompt({ title: 't', body: '' }, diff);
+
+    expect(prompt).toContain('40 to 90 words');
+    expect(prompt).toContain('what the code literally does');
+    expect(prompt).toContain('two named options or a question');
+  });
+
+  it('rules out the markup that does not survive as a line comment', () => {
+    const prompt = buildPrReviewPrompt({ title: 't', body: '' }, diff);
+
+    expect(prompt).toContain('No heading, no bold, no severity label');
+    expect(prompt).toContain('No em dash');
+  });
 });
 
 describe('isReviewFindings', () => {
