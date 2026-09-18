@@ -1,10 +1,18 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PrDetailScreen, ReviewThreadView } from './PrDetailScreen'
 import type { PrReviewThread } from './prDetailLogic'
 import type { Pr, StoredCommentFix } from './queries'
+import { engine } from './engineClient'
+
+// The screen fetches its detail, its review and its thread. None of that is what these
+// cover, so the transport is stubbed rather than left to fail against a jsdom fetch.
+vi.mock('./engineClient', () => ({
+  engine: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() },
+  EngineError: class extends Error {},
+}))
 
 afterEach(cleanup)
 
@@ -21,6 +29,7 @@ const pr = (over: Partial<Pr> = {}): Pr => ({
   pinned: false,
   title: 'A pull request',
   reviewState: null,
+  mergeable: null,
   isDraft: false,
   githubUpdatedAt: null,
   authoredByMe: true,
@@ -53,6 +62,61 @@ describe('the header link', () => {
   it('is not offered on a row with no url', () => {
     const { container } = draw(pr({ url: null }))
     expect(container.querySelector('#pr-github-button')).toBeNull()
+  })
+})
+
+describe('the Resolve conflicts button', () => {
+  it('is offered on a pull request GitHub reports as conflicting', () => {
+    const { container } = draw(pr({ mergeable: 'CONFLICTING' }))
+    expect(container.querySelector('#pr-resolve-conflicts-button')).toBeTruthy()
+  })
+
+  it('is not offered on one that merges cleanly', () => {
+    const { container } = draw(pr({ mergeable: 'MERGEABLE' }))
+    expect(container.querySelector('#pr-resolve-conflicts-button')).toBeNull()
+  })
+
+  // GitHub computes mergeability lazily, and a row never looked up has no answer at all.
+  // Offering the action on either is offering it on a premise nothing has checked.
+  it('is not offered while GitHub has not worked it out', () => {
+    expect(draw(pr({ mergeable: 'UNKNOWN' })).container.querySelector('#pr-resolve-conflicts-button')).toBeNull()
+    cleanup()
+    expect(draw(pr({ mergeable: null })).container.querySelector('#pr-resolve-conflicts-button')).toBeNull()
+  })
+
+  it('calls the route and disables itself while it runs', async () => {
+    vi.mocked(engine.post).mockReturnValue(new Promise(() => {}))
+    const { container } = draw(pr({ mergeable: 'CONFLICTING' }))
+
+    const button = container.querySelector('#pr-resolve-conflicts-button') as HTMLButtonElement
+    button.click()
+
+    await waitFor(() => expect(engine.post).toHaveBeenCalledWith('/prs/1/resolve-conflicts'))
+    await waitFor(() =>
+      expect(
+        (container.querySelector('#pr-resolve-conflicts-button') as HTMLButtonElement).disabled,
+      ).toBe(true),
+    )
+  })
+
+  it('raises the alert when the route fails', async () => {
+    vi.mocked(engine.post).mockRejectedValue(new Error('returned 409'))
+    const { container } = draw(pr({ mergeable: 'CONFLICTING' }))
+
+    ;(container.querySelector('#pr-resolve-conflicts-button') as HTMLButtonElement).click()
+
+    await waitFor(() => expect(screen.getByText(/returned 409/)).toBeTruthy())
+  })
+})
+
+describe('the Review section', () => {
+  // It used to render only with a finding, so a review that found nothing to say and a
+  // review that never ran were the same blank page.
+  it('is there with no findings at all', async () => {
+    const { container } = draw(pr())
+    await waitFor(() => expect(container.querySelector('#pr-review-section')).toBeTruthy())
+    expect(container.querySelector('#pr-agent-draft')).toBeTruthy()
+    expect(screen.getByText('Not reviewed yet')).toBeTruthy()
   })
 })
 
