@@ -10,7 +10,37 @@ import { upsertJiraTodo, reconcileJiraTodos, countJiraTodos } from './todos.js';
 import { upsertGithubPr, reconcileGithubPrs, findPrByNumber } from './prs.js';
 import { getSecret } from './keychain.js';
 import { POLL_INTERVAL_MS } from './config.js';
-import type { SourceIssue, Project } from './types.js';
+import type { SourceIssue, Project, PrMergeable } from './types.js';
+
+/// How long after GitHub last touched a pull request it is still worth asking
+/// again what it thinks about merging.
+///
+/// Four cycles at the default interval, which is far more than the one retry it
+/// normally takes.
+const MERGEABLE_RETRY_WINDOW_MS = 60 * 60 * 1000;
+
+/// Whether to spend a lookup on a pull request whose mergeability is unsettled.
+///
+/// GitHub computes it lazily and answers UNKNOWN while it does, so the first
+/// lookup of a pull request usually gets no answer and the next one has it.
+/// Retrying forever is the other failure: a pull request GitHub never settles
+/// would cost a lookup every cycle for as long as it stays open, and the skip in
+/// `syncGithubPrs` exists to take a quiet cycle down to zero calls.
+///
+/// So the retry follows how recently GitHub touched the pull request, which is
+/// also the only time mergeability can change. A push moves `updatedAt` and opens
+/// the window again. A timestamp that cannot be read keeps the lookup rather than
+/// silently stranding the row, which GitHub's own ISO strings never trigger.
+export function worthAskingMergeable(
+  mergeable: PrMergeable | null,
+  githubUpdatedAt: string,
+  now: number
+): boolean {
+  if (mergeable !== null && mergeable !== 'UNKNOWN') return false;
+  const touched = new Date(githubUpdatedAt).getTime();
+  if (Number.isNaN(touched)) return true;
+  return now - touched <= MERGEABLE_RETRY_WINDOW_MS;
+}
 
 export interface PollSummary {
   jiraTodos: number;
@@ -62,17 +92,16 @@ async function syncGithubPrs(
     // `updatedAt` alone would leave it that way for as long as the pull request
     // sits still, which is exactly when it would never recover.
     //
-    // `mergeable` is in that list for a reason of its own: GitHub computes it
-    // lazily and answers UNKNOWN while it does, so the first lookup of a pull
-    // request usually gets no answer. Treating UNKNOWN as settled would strand it
-    // there for as long as the pull request sits still, and a conflicting branch
-    // would never offer to resolve itself.
+    // `mergeable` is in that list for a reason of its own, and on its own terms:
+    // see `worthAskingMergeable`. Treating UNKNOWN as settled would strand a
+    // conflicting branch with no offer to resolve it; treating it as unsettled
+    // forever would ask about a pull request GitHub never works out on every
+    // cycle, which is what the skip is here to avoid.
     const unchanged =
       previous !== null &&
       previous.githubUpdatedAt === pr.updatedAt &&
       previous.reviewState !== null &&
-      mergeable !== null &&
-      mergeable !== 'UNKNOWN' &&
+      !worthAskingMergeable(mergeable, pr.updatedAt, Date.now()) &&
       branch !== '';
 
     if (force || !unchanged) {
