@@ -4,7 +4,7 @@ import Database from 'better-sqlite3';
 import { openDb } from '../../src/db.js';
 import { createProject } from '../../src/projects.js';
 import { createTicket } from '../../src/tickets.js';
-import { recordPr, updatePrStatus, getPr } from '../../src/prs.js';
+import { recordPr, updatePrStatus, getPr, listPrMessages } from '../../src/prs.js';
 import { acquireJob, finishJob, reconcileInterruptedJobs } from '../../src/jobs.js';
 import { replaceReviewFindings, listReviewFindings } from '../../src/prReviewStore.js';
 import * as prChat from '../../src/prChat.js';
@@ -125,6 +125,69 @@ describe('POST /prs/:id/merge', () => {
     expect(mergeCall.status).toBe(409);
     resolveChat!({ action: 'revised', reply: 'ok' });
     await chatCall;
+  });
+});
+
+describe('POST /prs/:id/resolve-conflicts', () => {
+  it('runs the chat turn with a phrase the conflict path recognises', async () => {
+    vi.mocked(prChat.sendPrMessage).mockResolvedValue({ action: 'revised', reply: 'merged main, pushed' });
+
+    const res = await auth(request(app).post(`/prs/${prId}/resolve-conflicts`));
+
+    expect(res.status).toBe(200);
+    expect(res.body.action).toBe('revised');
+    expect(prChat.sendPrMessage).toHaveBeenCalledTimes(1);
+
+    // The real matcher, not the mocked module: the phrase this route sends is only
+    // useful if the path it is meant to take actually claims it.
+    const actual = await vi.importActual<typeof prChat>('../../src/prChat.js');
+    const phrase = vi.mocked(prChat.sendPrMessage).mock.calls[0][2];
+    expect(actual.isConflictRequest(phrase)).toBe(true);
+    expect(actual.isMergeRequest(phrase)).toBe(false);
+  });
+
+  it('answers 404 for a pull request that is not there', async () => {
+    const res = await auth(request(app).post('/prs/99999/resolve-conflicts'));
+    expect(res.status).toBe(404);
+    expect(prChat.sendPrMessage).not.toHaveBeenCalled();
+  });
+
+  it('is refused while another agent holds the pull request', async () => {
+    const held = acquireJob(db, 'pr-chat', 'pr', prId, 'review')!;
+
+    const res = await auth(request(app).post(`/prs/${prId}/resolve-conflicts`));
+
+    expect(res.status).toBe(409);
+    expect(prChat.sendPrMessage).not.toHaveBeenCalled();
+    finishJob(db, held.id, 'done');
+  });
+
+  it('is listed as resolving the conflict while it runs', async () => {
+    let finish: (v: any) => void;
+    vi.mocked(prChat.sendPrMessage).mockReturnValueOnce(new Promise((r) => { finish = r; }));
+
+    const call = auth(request(app).post(`/prs/${prId}/resolve-conflicts`)).then();
+    await new Promise((r) => setTimeout(r, 10));
+    const agents = await auth(request(app).get('/agents'));
+
+    expect(agents.body.agents).toHaveLength(1);
+    expect(agents.body.agents[0]).toMatchObject({ activity: 'conflicts', targetType: 'pr', targetId: prId });
+
+    finish!({ action: 'revised', reply: 'ok' });
+    await call;
+  });
+
+  it('records a failure in the thread, the way the message route does', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(prChat.sendPrMessage).mockRejectedValue(new Error('git fetch failed'));
+
+    const res = await auth(request(app).post(`/prs/${prId}/resolve-conflicts`));
+
+    expect(res.status).toBe(500);
+    const messages = listPrMessages(db, prId);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toContain('git fetch failed');
+    vi.restoreAllMocks();
   });
 });
 
