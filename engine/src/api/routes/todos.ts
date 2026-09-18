@@ -4,6 +4,7 @@ import { listTodos, createManualTodo, setTodoDone, setTodoPriority, getTodo, pro
 import { getProject } from '../../projects.js';
 import { acquireJob, finishJob } from '../../jobs.js';
 import { sendTodoMessage } from '../../todoChat.js';
+import { recordChatFailure } from '../../chatFailure.js';
 
 export function registerTodosRoutes(app: Express, db: Database.Database): void {
   app.get('/todos', (req, res) => {
@@ -134,6 +135,7 @@ export function registerTodosRoutes(app: Express, db: Database.Database): void {
       const reply = await sendTodoMessage(db, todoId, text);
       res.json({ reply });
     } catch (err) {
+      recordChatFailure(db, 'todo', todoId, err);
       res.status(500).json({ error: String(err) });
     }
   });

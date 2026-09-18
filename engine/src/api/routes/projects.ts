@@ -4,6 +4,7 @@ import {
   listProjects, getProject, createProject, updateProject, deleteProject, listProjectMessages, setProjectNotes,
 } from '../../projects.js';
 import { sendProjectMessage } from '../../projectChat.js';
+import { recordChatFailure } from '../../chatFailure.js';
 import type { ProjectStatus } from '../../types.js';
 
 export function registerProjectsRoutes(app: Express, db: Database.Database): void {
@@ -33,6 +34,7 @@ export function registerProjectsRoutes(app: Express, db: Database.Database): voi
       const reply = await sendProjectMessage(db, projectId, text);
       res.json({ reply });
     } catch (err) {
+      recordChatFailure(db, 'project', projectId, err);
       res.status(500).json({ error: String(err) });
     }
   });
