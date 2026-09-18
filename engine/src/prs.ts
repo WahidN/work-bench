@@ -77,6 +77,18 @@ export function listPrMessages(db: Database.Database, prId: number): PrMessage[]
   return db.prepare('SELECT * FROM pr_messages WHERE pr_id = ? ORDER BY id').all(prId).map(rowToPrMessage);
 }
 
+/// Forgets what GitHub said about merging, because the branch just moved.
+///
+/// UNKNOWN rather than null: this pull request has been looked up before, the
+/// answer just no longer describes the branch that is on it now. It is also what
+/// sends the poller back to ask, since its skip treats UNKNOWN as unsettled.
+///
+/// Called wherever the engine force-pushes, for the same reason `clearPrReviewed`
+/// is: a stored fact about a branch stops being true when the branch moves.
+export function clearPrMergeable(db: Database.Database, prId: number): void {
+  db.prepare(`UPDATE prs SET mergeable = 'UNKNOWN' WHERE id = ?`).run(prId);
+}
+
 export function addPrMessage(db: Database.Database, prId: number, role: 'user' | 'assistant', content: string): PrMessage {
   const result = db
     .prepare('INSERT INTO pr_messages (pr_id, role, content, created_at) VALUES (?, ?, ?, ?)')

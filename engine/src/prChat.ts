@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 import { getProject } from './projects.js';
-import { getPr, addPrMessage, updatePrStatus, setPrPinned } from './prs.js';
+import { getPr, addPrMessage, updatePrStatus, setPrPinned, clearPrMergeable } from './prs.js';
 import { getTicket, updateTicketStatus, setTicketPinned } from './tickets.js';
 import {
   openDetachedWorktree, removeWorktree, commitAll, pushDetachedHead, getDiff, mergePr,
@@ -195,8 +195,12 @@ async function revisePrChat(
     }
 
     await pushDetachedHead(worktreePath, pr.branch);
-    // The branch has moved, so the stored review no longer describes it.
+    // The branch has moved, so neither the stored review nor what GitHub said
+    // about merging describes it any more. Without the second one the Resolve
+    // conflicts button stays on offer until the next poll, on a conflict this
+    // very call just resolved.
     clearPrReviewed(db, pr.id);
+    clearPrMergeable(db, pr.id);
     const diff = await getDiff(worktreePath, project.defaultBranch);
     const score = await reviewDiff(worktreePath, subject, diff);
     const passed = reviewPasses(score);

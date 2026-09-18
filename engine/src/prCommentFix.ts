@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3';
 import { openDetachedWorktree, removeWorktree, commitAll, pushDetachedHead } from './git.js';
 import { runClaude } from './claude.js';
 import { getTicket } from './tickets.js';
-import { getPr } from './prs.js';
+import { getPr, clearPrMergeable } from './prs.js';
 import { getProject } from './projects.js';
 import { acquireJob, finishJob } from './jobs.js';
 import { claimNextQueuedFix, finishCommentFix } from './prCommentFixStore.js';
@@ -72,8 +72,10 @@ export async function runCommentFix(
 
     try {
       await pushDetachedHead(worktreePath, pr.branch);
-      // The branch has moved, so the stored review no longer describes it.
+      // The branch has moved, so neither the stored review nor what GitHub said
+      // about merging describes it any more.
       clearPrReviewed(db, pr.id);
+      clearPrMergeable(db, pr.id);
     } catch (err) {
       return {
         state: 'failed',

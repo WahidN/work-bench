@@ -382,6 +382,25 @@ describe('sendPrMessage: a request about a merge conflict', () => {
     expect(git.removeWorktree).toHaveBeenCalled();
   });
 
+  /*
+   * Only the poller writes `mergeable`, so without this the Resolve conflicts
+   * button stays on offer for up to a poll interval after the conflict it names
+   * has just been resolved, and the second press answers "no conflict".
+   */
+  it('forgets what GitHub said about merging once the branch has moved', async () => {
+    vi.mocked(git.conflictsWith).mockResolvedValue({
+      state: 'conflicts', files: ['sanityConfig/schemas/index.ts'],
+    });
+
+    // What the poller would have written on the last cycle.
+    db.prepare(`UPDATE prs SET mergeable = 'CONFLICTING' WHERE id = ?`).run(prId);
+
+    await sendPrMessage(db, prId, 'fix the merge conflict in this branch');
+
+    expect(git.pushDetachedHead).toHaveBeenCalled();
+    expect(getPr(db, prId)!.mergeable).toBe('UNKNOWN');
+  });
+
   it('starts no merge for a revision that is not about conflicts', async () => {
     await sendPrMessage(db, prId, 'also guard the email field');
 
