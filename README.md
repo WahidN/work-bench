@@ -2,7 +2,7 @@
 
 A native macOS window with every open pull request that is assigned to you or waiting on your review. Filter the list by repo in the sidebar.
 
-Open a pull request and press Review with Claude. Claude reads the diff and writes remarks in Dutch, each on a file and line. Nothing is posted to GitHub.
+Open a pull request and press Review with Claude. Claude reads the diff and writes remarks in Dutch, each on a file and line. Press Post on a remark to put it on the pull request as an inline comment under your name. Nothing goes to GitHub without that press.
 
 Built with [GPUIX](https://gpuix.dev): React and TypeScript on Bun, drawn on the GPU by [GPUI](https://gpui.rs).
 
