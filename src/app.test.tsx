@@ -5,7 +5,7 @@ import { createTestRoot, hasNativeTestRenderer } from '@gpuix/react/testing'
 
 import { PrApp } from './app'
 import type { Pr, Reason } from './github'
-import type { Finding } from './review'
+import type { Remark, Reviewed } from './review'
 
 const describeNative = hasNativeTestRenderer ? describe : describe.skip
 
@@ -30,10 +30,11 @@ const TITLES = PRS.map((entry) => entry.title)
 
 async function mount(
   load: () => Promise<Pr[]>,
-  review: (pr: Pr) => Promise<Finding[]> = async () => [],
+  review: (pr: Pr) => Promise<Reviewed> = async () => ({ commit: 'abc123', remarks: [] }),
+  post: (pr: Pr, commit: string, remark: Remark) => Promise<string> = async () => '',
 ) {
   const { render, renderer } = createTestRoot({ width: 960, height: 680 })
-  render(<PrApp load={load} review={review} />)
+  render(<PrApp load={load} review={review} post={post} />)
   const app = await connectTest(renderer)
   return { app, renderer }
 }
@@ -99,15 +100,16 @@ describeNative('pr list', () => {
   })
 })
 
-const FINDING: Finding = {
+const REMARK: Remark = {
   path: 'src/limits.ts',
   line: 12,
+  inDiff: true,
   body: 'Deze limiet telt per proces, dus met drie instances achter de load balancer mag een client drie keer zoveel requests doen. `RateLimiter` in `src/auth.ts` houdt de teller al in Redis bij. Die hergebruiken, of is een limiet per instance hier genoeg?',
 }
 
 describeNative('pr review', () => {
   it('reviews a pull request and keeps the remarks after going back', async () => {
-    let finish: (findings: Finding[]) => void = () => {}
+    let finish: (reviewed: Reviewed) => void = () => {}
     let calls = 0
     const { app, renderer } = await mount(
       async () => PRS,
@@ -130,10 +132,10 @@ describeNative('pr review', () => {
     await app.getByText('Pull requests').waitFor()
     expect(renderer.getPaintedText()).not.toContain('Fix the login form')
 
-    finish([FINDING])
+    finish({ commit: 'abc123', remarks: [REMARK] })
     await app.getByTestId('pr-acme/api#2').click()
     await app.getByTestId('finding-0').waitFor()
-    expect(await app.getByTestId('finding-0').textContent()).toBe(`src/limits.ts:12${FINDING.body}`)
+    expect(await app.getByTestId('finding-0').textContent()).toBe(`src/limits.ts:12Post${REMARK.body}`)
     expect(renderer.getPaintedText()).toContain('Review again')
     expect(calls).toBe(1)
 
@@ -163,6 +165,66 @@ describeNative('pr review', () => {
     await app.getByTestId('review').click()
     await app.getByText('claude is not logged in').waitFor()
     expect(renderer.getPaintedText()).toContain('Review again')
+
+    await app.close()
+  })
+})
+
+const OUTSIDE: Remark = {
+  path: 'src/limits.ts',
+  line: 99,
+  inDiff: false,
+  body: 'Deze check staat buiten de diff, dus GitHub weigert een comment op deze regel.',
+}
+
+async function openReviewed(post: (pr: Pr, commit: string, remark: Remark) => Promise<string>) {
+  const { app, renderer } = await mount(
+    async () => PRS,
+    async () => ({ commit: 'abc123', remarks: [REMARK, OUTSIDE] }),
+    post,
+  )
+  await app.getByTestId('pr-acme/api#2').waitFor()
+  await app.getByTestId('pr-acme/api#2').click()
+  await app.getByTestId('review').click()
+  await app.getByTestId('finding-0').waitFor()
+  return { app, renderer }
+}
+
+describeNative('review posting', () => {
+  it('posts a remark once, on the reviewed commit', async () => {
+    const posted: [string, string, Remark][] = []
+    let answer: (url: string) => void = () => {}
+    const { app, renderer } = await openReviewed((pr, commit, remark) => {
+      posted.push([pr.url, commit, remark])
+      return new Promise((resolve) => (answer = resolve))
+    })
+
+    await app.getByTestId('post-0').click()
+    await app.getByText('Posting').waitFor()
+    await app.getByTestId('post-0').click()
+    expect(posted).toEqual([['https://github.com/acme/api/pull/2', 'abc123', REMARK]])
+
+    answer('https://github.com/acme/api/pull/2#discussion_r1')
+    await app.getByText('Posted').waitFor()
+    expect(await app.getByTestId('post-0').count()).toBe(0)
+
+    expect(renderer.getPaintedText()).toContain('Line not in the diff')
+    expect(await app.getByTestId('post-1').count()).toBe(0)
+
+    mkdirSync('screenshots', { recursive: true })
+    renderer.captureScreenshot('screenshots/pr-post.png')
+
+    await app.close()
+  })
+
+  it('shows why a post failed and lets you post again', async () => {
+    const { app } = await openReviewed(() =>
+      Promise.reject(new Error('Validation Failed (HTTP 422)')),
+    )
+
+    await app.getByTestId('post-0').click()
+    await app.getByText('Validation Failed (HTTP 422)').waitFor()
+    expect(await app.getByTestId('post-0').count()).toBe(1)
 
     await app.close()
   })

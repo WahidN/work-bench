@@ -3,7 +3,8 @@ import { render } from '@gpuix/react'
 
 import { fetchMyPrs, type Pr, type Reason } from './github'
 import { inRepo, repoCounts, shortName } from './repos'
-import { reviewPr, type Finding } from './review'
+import { postRemark } from './post'
+import { reviewPr, type Remark, type Reviewed } from './review'
 
 // GPUI does not inherit `color`, so every <text> sets one from here.
 const C = {
@@ -23,7 +24,12 @@ const REASON_LABEL: Record<Reason, string> = { assigned: 'Assigned', review: 'Re
 
 type Review =
   | { state: 'running' }
-  | { state: 'done'; findings: Finding[] }
+  | { state: 'done'; commit: string; remarks: Remark[] }
+  | { state: 'failed'; error: string }
+
+type Post =
+  | { state: 'posting' }
+  | { state: 'posted'; url: string }
   | { state: 'failed'; error: string }
 
 function errorMessage(error: unknown): string {
@@ -141,11 +147,85 @@ function Button({
   )
 }
 
-function ReviewResult({ review }: { review: Review | undefined }) {
+// Same inset as a Button, so the label does not jump when Post turns into Posted.
+function Status({ text, color }: { text: string; color: string }) {
+  return (
+    <div style={{ paddingLeft: 12, paddingRight: 12 }}>
+      <text style={{ fontSize: 12, color }}>{text}</text>
+    </div>
+  )
+}
+
+function PostControl({
+  index,
+  remark,
+  post,
+  onPost,
+}: {
+  index: number
+  remark: Remark
+  post: Post | undefined
+  onPost: () => void
+}) {
+  if (!remark.inDiff) return <Status text="Line not in the diff" color={C.ghost} />
+  if (post?.state === 'posted') return <Status text="Posted" color={C.secondary} />
+
+  const posting = post?.state === 'posting'
+  return <Button testId={`post-${index}`} label={posting ? 'Posting' : 'Post'} onClick={posting ? undefined : onPost} />
+}
+
+function RemarkRow({
+  index,
+  remark,
+  post,
+  onPost,
+}: {
+  index: number
+  remark: Remark
+  post: Post | undefined
+  onPost: () => void
+}) {
+  return (
+    <div
+      testId={`finding-${index}`}
+      style={{
+        width: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        paddingTop: 14,
+        paddingBottom: 14,
+        paddingLeft: 24,
+        paddingRight: 24,
+        borderTopWidth: 1,
+        borderColor: C.border,
+      }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 28 }}>
+        <text style={{ flexGrow: 1, fontSize: 12, color: C.accent }}>{`${remark.path}:${remark.line}`}</text>
+        <PostControl index={index} remark={remark} post={post} onPost={onPost} />
+      </div>
+      <text style={{ fontSize: 13, lineHeight: 20, color: C.text }}>{remark.body}</text>
+      {post?.state === 'failed' ? (
+        <text style={{ fontSize: 12, lineHeight: 18, color: C.error }}>{post.error}</text>
+      ) : null}
+    </div>
+  )
+}
+
+function ReviewResult({
+  review,
+  posts,
+  onPost,
+}: {
+  review: Review | undefined
+  posts: Map<Remark, Post>
+  onPost: (commit: string, remark: Remark) => void
+}) {
   if (!review) {
     return (
       <Message
-        text="Claude reads the diff and writes its remarks here. Nothing is posted to GitHub."
+        text="Claude reads the diff and writes its remarks here. Nothing goes to GitHub until you press Post."
         color={C.secondary}
       />
     )
@@ -154,31 +234,20 @@ function ReviewResult({ review }: { review: Review | undefined }) {
     return <Message text="Claude is reviewing the diff. This can take a few minutes." color={C.secondary} />
   }
   if (review.state === 'failed') return <Message text={review.error} color={C.error} />
-  if (review.findings.length === 0) {
+  if (review.remarks.length === 0) {
     return <Message text="Claude found nothing to remark on" color={C.secondary} />
   }
 
   return (
     <virtual-list estimatedItemHeight={120} style={{ flexGrow: 1, minHeight: 0 }}>
-      {review.findings.map((finding, index) => (
-        <div
+      {review.remarks.map((remark, index) => (
+        <RemarkRow
           key={index}
-          testId={`finding-${index}`}
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 6,
-            paddingTop: 14,
-            paddingBottom: 14,
-            paddingLeft: 24,
-            paddingRight: 24,
-            borderTopWidth: 1,
-            borderColor: C.border,
-          }}
-        >
-          <text style={{ fontSize: 12, color: C.accent }}>{`${finding.path}:${finding.line}`}</text>
-          <text style={{ fontSize: 13, lineHeight: 20, color: C.text }}>{finding.body}</text>
-        </div>
+          index={index}
+          remark={remark}
+          post={posts.get(remark)}
+          onPost={() => onPost(review.commit, remark)}
+        />
       ))}
     </virtual-list>
   )
@@ -187,13 +256,17 @@ function ReviewResult({ review }: { review: Review | undefined }) {
 function PrPage({
   pr,
   review,
+  posts,
   onBack,
   onReview,
+  onPost,
 }: {
   pr: Pr
   review: Review | undefined
+  posts: Map<Remark, Post>
   onBack: () => void
   onReview: () => void
+  onPost: (commit: string, remark: Remark) => void
 }) {
   const running = review?.state === 'running'
 
@@ -240,7 +313,7 @@ function PrPage({
         </div>
       </div>
 
-      <ReviewResult review={review} />
+      <ReviewResult review={review} posts={posts} onPost={onPost} />
     </div>
   )
 }
@@ -248,9 +321,11 @@ function PrPage({
 export function PrApp({
   load = fetchMyPrs,
   review = reviewPr,
+  post = postRemark,
 }: {
   load?: () => Promise<Pr[]>
-  review?: (pr: Pr) => Promise<Finding[]>
+  review?: (pr: Pr) => Promise<Reviewed>
+  post?: (pr: Pr, commit: string, remark: Remark) => Promise<string>
 }) {
   const [prs, setPrs] = useState<Pr[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -258,6 +333,7 @@ export function PrApp({
   const [picked, setPicked] = useState<string | null>(null)
   const [opened, setOpened] = useState<Pr | null>(null)
   const [reviews, setReviews] = useState<Map<string, Review>>(new Map())
+  const [posts, setPosts] = useState<Map<Remark, Post>>(new Map())
 
   const refresh = () => {
     setLoading(true)
@@ -277,8 +353,17 @@ export function PrApp({
   const startReview = (pr: Pr) => {
     setReview(pr, { state: 'running' })
     review(pr)
-      .then((findings) => setReview(pr, { state: 'done', findings }))
+      .then(({ commit, remarks }) => setReview(pr, { state: 'done', commit, remarks }))
       .catch((failure) => setReview(pr, { state: 'failed', error: errorMessage(failure) }))
+  }
+
+  const setPost = (remark: Remark, next: Post) => setPosts((all) => new Map(all).set(remark, next))
+
+  const startPost = (pr: Pr, commit: string, remark: Remark) => {
+    setPost(remark, { state: 'posting' })
+    post(pr, commit, remark)
+      .then((url) => setPost(remark, { state: 'posted', url }))
+      .catch((failure) => setPost(remark, { state: 'failed', error: errorMessage(failure) }))
   }
 
   const pick = (repo: string | null) => {
@@ -338,8 +423,10 @@ export function PrApp({
         <PrPage
           pr={opened}
           review={reviews.get(opened.url)}
+          posts={posts}
           onBack={() => setOpened(null)}
           onReview={() => startReview(opened)}
+          onPost={(commit, remark) => startPost(opened, commit, remark)}
         />
       ) : (
         <div style={{ flexGrow: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
