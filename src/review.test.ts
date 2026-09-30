@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { claudeArgs, readFindings } from './review'
+import { claudeArgs, diffLines, readFindings } from './review'
 
 const FINDING = { path: 'web/fade.ts', line: 19, body: 'Deze fade schrijft diepte.' }
 
@@ -42,5 +42,40 @@ describe('claudeArgs', () => {
     const args = claudeArgs('Review this')
 
     expect(args[args.indexOf('--tools') + 1]).toBe('')
+  })
+})
+
+const DIFF = `diff --git a/src/limits.ts b/src/limits.ts
+index 1111111..2222222 100644
+--- a/src/limits.ts
++++ b/src/limits.ts
+@@ -10,4 +10,5 @@ export function limit() {
+ const a = 1
+-const b = 2
++const b = 3
++const c = 4
+ const d = 5
+@@ -40,2 +41,2 @@
+ keep()
++++ b/other.ts
+diff --git a/old.ts b/old.ts
+deleted file mode 100644
+--- a/old.ts
++++ /dev/null
+@@ -1,1 +0,0 @@
+-gone()
+`
+
+describe('diffLines', () => {
+  it('keeps the new line numbers of added and unchanged lines', () => {
+    expect([...diffLines(DIFF).get('src/limits.ts')!]).toEqual([10, 11, 12, 13, 41, 42])
+  })
+
+  it('reads an added line that starts with ++ as a line, not a file', () => {
+    expect(diffLines(DIFF).has('other.ts')).toBe(false)
+  })
+
+  it('has no lines for a deleted file', () => {
+    expect([...diffLines(DIFF).keys()]).toEqual(['src/limits.ts'])
   })
 })

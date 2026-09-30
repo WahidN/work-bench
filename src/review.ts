@@ -8,6 +8,10 @@ const run = promisify(execFile)
 
 export type Finding = { path: string; line: number; body: string }
 
+export type Remark = Finding & { inDiff: boolean }
+
+export type Reviewed = { commit: string; remarks: Remark[] }
+
 type ExecFailure = Error & { killed?: boolean; stdout?: string }
 
 const TIMEOUT_MS = 15 * 60 * 1000
@@ -76,6 +80,31 @@ export function claudeArgs(prompt: string): string[] {
   ]
 }
 
+export function diffLines(diff: string): Map<string, Set<number>> {
+  const files = new Map<string, Set<number>>()
+  let lines: Set<number> | undefined
+  let next = 0
+  // An added line can start with `+++ ` too, so a file name only counts before the first hunk.
+  let inHeader = false
+
+  for (const text of diff.split('\n')) {
+    if (text.startsWith('diff --git ')) {
+      inHeader = true
+      lines = undefined
+    } else if (inHeader && text.startsWith('+++ b/')) {
+      lines = new Set()
+      files.set(text.slice('+++ b/'.length), lines)
+    } else if (text.startsWith('@@ ')) {
+      inHeader = false
+      next = Number(text.match(/\+(\d+)/)?.[1])
+    } else if (!inHeader && lines && (text.startsWith('+') || text.startsWith(' '))) {
+      lines.add(next)
+      next += 1
+    }
+  }
+  return files
+}
+
 export function readFindings(stdout: string): Finding[] {
   const output = JSON.parse(stdout)
   const messages = Array.isArray(output) ? output : [output]
@@ -88,7 +117,8 @@ export function readFindings(stdout: string): Finding[] {
   return findings
 }
 
-export async function reviewPr(pr: Pr): Promise<Finding[]> {
+export async function reviewPr(pr: Pr): Promise<Reviewed> {
+  const { stdout: commit } = await run('gh', ['pr', 'view', pr.url, '--json=headRefOid', '--jq=.headRefOid'])
   const { stdout: diff } = await run('gh', ['pr', 'diff', pr.url], { maxBuffer: DIFF_MAX_BYTES })
 
   const claude = run('claude', claudeArgs(reviewPrompt(pr.title)), {
@@ -106,5 +136,11 @@ export async function reviewPr(pr: Pr): Promise<Finding[]> {
       return failure.stdout
     },
   )
-  return readFindings(stdout)
+
+  const lines = diffLines(diff)
+  const remarks = readFindings(stdout).map((finding) => ({
+    ...finding,
+    inDiff: lines.get(finding.path)?.has(finding.line) ?? false,
+  }))
+  return { commit: commit.trim(), remarks }
 }
