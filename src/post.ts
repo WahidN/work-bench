@@ -8,6 +8,18 @@ const run = promisify(execFile)
 
 type ExecFailure = Error & { stderr?: string }
 
+export type Posted = { id: number; url: string }
+
+async function gh(args: string[]): Promise<string> {
+  try {
+    const { stdout } = await run('gh', args)
+    return stdout.trim()
+  } catch (failure) {
+    // The command line holds the whole text, so gh's own message says more.
+    throw new Error((failure as ExecFailure).stderr?.trim() || (failure as Error).message)
+  }
+}
+
 export function postArgs(pr: Pr, commit: string, finding: Finding): string[] {
   return [
     'api',
@@ -23,16 +35,18 @@ export function postArgs(pr: Pr, commit: string, finding: Finding): string[] {
     '-f',
     'side=RIGHT',
     '--jq',
-    '.html_url',
+    '{id, url: .html_url}',
   ]
 }
 
-export async function postRemark(pr: Pr, commit: string, finding: Finding): Promise<string> {
-  try {
-    const { stdout } = await run('gh', postArgs(pr, commit, finding))
-    return stdout.trim()
-  } catch (failure) {
-    // The command line holds the whole remark, so gh's own message says more.
-    throw new Error((failure as ExecFailure).stderr?.trim() || (failure as Error).message)
-  }
+export async function postRemark(pr: Pr, commit: string, finding: Finding): Promise<Posted> {
+  return JSON.parse(await gh(postArgs(pr, commit, finding)))
+}
+
+export function replyArgs(pr: Pr, commentId: number, body: string): string[] {
+  return ['api', `repos/${pr.repo}/pulls/${pr.number}/comments/${commentId}/replies`, '-f', `body=${body}`, '--jq', '.html_url']
+}
+
+export async function replyTo(pr: Pr, commentId: number, body: string): Promise<string> {
+  return gh(replyArgs(pr, commentId, body))
 }
