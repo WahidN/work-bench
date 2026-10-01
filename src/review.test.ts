@@ -110,3 +110,28 @@ describe('failedRunOutput', () => {
     expect(failedRunOutput(failure({ stdout: '{"type":"result"}' }))).toBe('{"type":"result"}')
   })
 })
+
+describe('diffLines with paths git escapes', () => {
+  it('drops the tab git puts after a path with a space', () => {
+    const diff = `diff --git a/docs/Getting started.md b/docs/Getting started.md
+--- a/docs/Getting started.md\t
++++ b/docs/Getting started.md\t
+@@ -1,1 +1,2 @@
+ Hallo
++Wereld
+`
+
+    expect([...diffLines(diff).get('docs/Getting started.md')!]).toEqual([1, 2])
+  })
+
+  it('unquotes a path git wrote with octal escapes for its UTF-8 bytes', () => {
+    const diff = `diff --git "a/ja/\\347\\267\\250.md" "b/ja/\\347\\267\\250.md"
+--- "a/ja/\\347\\267\\250.md"
++++ "b/ja/\\347\\267\\250.md"
+@@ -0,0 +1,1 @@
++Hallo
+`
+
+    expect([...diffLines(diff).keys()]).toEqual(['ja/編.md'])
+  })
+})

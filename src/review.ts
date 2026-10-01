@@ -45,8 +45,8 @@ and no other remark to lean on. Write each one so it reads as a comment a
 colleague left on that line.
 
 Only comment on lines the diff shows as added or unchanged. Use the line number
-from the new version of the file, and give the file path exactly as the diff
-spells it.
+from the new version of the file, and give the file path from the repo root as
+plain text: no a/ or b/ prefix, no quotes and no escapes.
 
 Say something only where it is worth a colleague's time. Few sharp remarks beat a
 list of everything noticed. If the change is fine, return no findings at all.
@@ -80,6 +80,26 @@ export function claudeArgs(prompt: string): string[] {
   ]
 }
 
+const ESCAPES: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13 }
+
+// git quotes a path with special or non-ASCII characters, with octal escapes for its UTF-8 bytes.
+function unquote(quoted: string): string {
+  const bytes: number[] = []
+  for (const [, octal, escaped, plain] of quoted.slice(1, -1).matchAll(/\\([0-7]{3})|\\(.)|([^\\]+)/g)) {
+    if (octal) bytes.push(parseInt(octal, 8))
+    else if (escaped) bytes.push(ESCAPES[escaped] ?? escaped.charCodeAt(0))
+    else bytes.push(...new TextEncoder().encode(plain))
+  }
+  return new TextDecoder().decode(new Uint8Array(bytes))
+}
+
+// git ends a path that has a space with a tab. `/dev/null` has no `b/`, so a deleted file gives none.
+function newPath(header: string): string | undefined {
+  const raw = header.replace(/\t$/, '')
+  const path = raw.startsWith('"') ? unquote(raw) : raw
+  return path.startsWith('b/') ? path.slice('b/'.length) : undefined
+}
+
 export function diffLines(diff: string): Map<string, Set<number>> {
   const files = new Map<string, Set<number>>()
   let lines: Set<number> | undefined
@@ -91,9 +111,11 @@ export function diffLines(diff: string): Map<string, Set<number>> {
     if (text.startsWith('diff --git ')) {
       inHeader = true
       lines = undefined
-    } else if (inHeader && text.startsWith('+++ b/')) {
+    } else if (inHeader && text.startsWith('+++ ')) {
+      const path = newPath(text.slice('+++ '.length))
+      if (path === undefined) continue
       lines = new Set()
-      files.set(text.slice('+++ b/'.length), lines)
+      files.set(path, lines)
     } else if (text.startsWith('@@ ')) {
       inHeader = false
       next = Number(text.match(/\+(\d+)/)?.[1])
