@@ -13,6 +13,7 @@ export type Pr = {
   author: string
   updatedAt: string
   reasons: Reason[]
+  commented?: boolean
 }
 
 export type SearchResult = {
@@ -44,11 +45,18 @@ export async function fetchLogin(): Promise<string> {
 }
 
 export async function fetchMyPrs(): Promise<Pr[]> {
-  const [assigned, review] = await Promise.all([
+  const [assigned, review, commented] = await Promise.all([
     search('--assignee=@me'),
     search('--review-requested=@me'),
+    // Only a marker, so the list still shows when this search fails.
+    search('--commenter=@me').catch(() => []),
   ])
-  return mergePrs(assigned, review)
+  return markCommented(mergePrs(assigned, review), commented)
+}
+
+export function markCommented(prs: Pr[], commented: SearchResult[]): Pr[] {
+  const urls = new Set(commented.map((result) => result.url))
+  return prs.map((pr) => ({ ...pr, commented: urls.has(pr.url) }))
 }
 
 export function mergePrs(assigned: SearchResult[], review: SearchResult[]): Pr[] {
