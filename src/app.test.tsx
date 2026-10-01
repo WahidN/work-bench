@@ -1,10 +1,13 @@
 import { mkdirSync } from 'node:fs'
+import type { ComponentProps } from 'react'
 import { describe, expect, it } from 'vitest'
 import { connectTest } from '@gpuix/react/automation'
 import { createTestRoot, hasNativeTestRenderer } from '@gpuix/react/testing'
 
 import { PrApp } from './app'
+import type { Fixed } from './fix'
 import type { Pr, Reason } from './github'
+import type { Posted } from './post'
 import type { Remark, Reviewed } from './review'
 
 const describeNative = hasNativeTestRenderer ? describe : describe.skip
@@ -28,13 +31,22 @@ const PRS = [
 ]
 const TITLES = PRS.map((entry) => entry.title)
 
-async function mount(
-  load: () => Promise<Pr[]>,
-  review: (pr: Pr) => Promise<Reviewed> = async () => ({ commit: 'abc123', remarks: [] }),
-  post: (pr: Pr, commit: string, remark: Remark) => Promise<string> = async () => '',
-) {
+type Fakes = Partial<ComponentProps<typeof PrApp>>
+
+// Every dependency is faked, so no test can reach the real gh or claude.
+async function mount(load: () => Promise<Pr[]>, fakes: Fakes = {}) {
   const { render, renderer } = createTestRoot({ width: 960, height: 680 })
-  render(<PrApp load={load} review={review} post={post} />)
+  render(
+    <PrApp
+      load={load}
+      review={async () => ({ commit: 'abc123', remarks: [] })}
+      post={async () => ({ id: 1, url: '' })}
+      fix={async () => ({ state: 'nothing', reason: '' })}
+      reply={async () => ''}
+      whoami={async () => 'nobody'}
+      {...fakes}
+    />,
+  )
   const app = await connectTest(renderer)
   return { app, renderer }
 }
@@ -111,13 +123,12 @@ describeNative('pr review', () => {
   it('reviews a pull request and keeps the remarks after going back', async () => {
     let finish: (reviewed: Reviewed) => void = () => {}
     let calls = 0
-    const { app, renderer } = await mount(
-      async () => PRS,
-      () => {
+    const { app, renderer } = await mount(async () => PRS, {
+      review: () => {
         calls += 1
         return new Promise((resolve) => (finish = resolve))
       },
-    )
+    })
     await app.getByTestId('repo-acme/api').waitFor()
     await app.getByTestId('repo-acme/api').click()
     await app.getByTestId('pr-acme/api#2').click()
@@ -156,10 +167,9 @@ describeNative('pr review', () => {
   })
 
   it('shows why a review failed and lets you start a new one', async () => {
-    const { app, renderer } = await mount(
-      async () => PRS,
-      () => Promise.reject(new Error('claude is not logged in')),
-    )
+    const { app, renderer } = await mount(async () => PRS, {
+      review: () => Promise.reject(new Error('claude is not logged in')),
+    })
     await app.getByTestId('pr-acme/web#1').waitFor()
     await app.getByTestId('pr-acme/web#1').click()
     await app.getByTestId('review').click()
@@ -177,12 +187,11 @@ const OUTSIDE: Remark = {
   body: 'Deze check staat buiten de diff, dus GitHub weigert een comment op deze regel.',
 }
 
-async function openReviewed(post: (pr: Pr, commit: string, remark: Remark) => Promise<string>) {
-  const { app, renderer } = await mount(
-    async () => PRS,
-    async () => ({ commit: 'abc123', remarks: [REMARK, OUTSIDE] }),
-    post,
-  )
+async function openReviewed(fakes: Fakes) {
+  const { app, renderer } = await mount(async () => PRS, {
+    review: async () => ({ commit: 'abc123', remarks: [REMARK, OUTSIDE] }),
+    ...fakes,
+  })
   await app.getByTestId('pr-acme/api#2').waitFor()
   await app.getByTestId('pr-acme/api#2').click()
   await app.getByTestId('review').click()
@@ -193,10 +202,12 @@ async function openReviewed(post: (pr: Pr, commit: string, remark: Remark) => Pr
 describeNative('review posting', () => {
   it('posts a remark once, on the reviewed commit', async () => {
     const posted: [string, string, Remark][] = []
-    let answer: (url: string) => void = () => {}
-    const { app, renderer } = await openReviewed((pr, commit, remark) => {
-      posted.push([pr.url, commit, remark])
-      return new Promise((resolve) => (answer = resolve))
+    let answer: (posted: Posted) => void = () => {}
+    const { app, renderer } = await openReviewed({
+      post: (pr, commit, remark) => {
+        posted.push([pr.url, commit, remark])
+        return new Promise((resolve) => (answer = resolve))
+      },
     })
 
     await app.getByTestId('post-0').click()
@@ -204,7 +215,7 @@ describeNative('review posting', () => {
     await app.getByTestId('post-0').click()
     expect(posted).toEqual([['https://github.com/acme/api/pull/2', 'abc123', REMARK]])
 
-    answer('https://github.com/acme/api/pull/2#discussion_r1')
+    answer({ id: 1, url: 'https://github.com/acme/api/pull/2#discussion_r1' })
     await app.getByText('Posted').waitFor()
     expect(await app.getByTestId('post-0').count()).toBe(0)
 
@@ -218,13 +229,122 @@ describeNative('review posting', () => {
   })
 
   it('shows why a post failed and lets you post again', async () => {
-    const { app } = await openReviewed(() =>
-      Promise.reject(new Error('Validation Failed (HTTP 422)')),
-    )
+    const { app } = await openReviewed({ post: () => Promise.reject(new Error('Validation Failed (HTTP 422)')) })
 
     await app.getByTestId('post-0').click()
     await app.getByText('Validation Failed (HTTP 422)').waitFor()
     expect(await app.getByTestId('post-0').count()).toBe(1)
+
+    await app.close()
+  })
+})
+
+const FIXED: Fixed = { state: 'fixed', commit: 'abc1234', reply: 'De teller staat nu in Redis.' }
+
+describeNative('fixing a remark', () => {
+  it('fixes a posted remark, replies under its comment, and lets one fix run at a time', async () => {
+    let land: (fixed: Fixed) => void = () => {}
+    let fixes = 0
+    const replies: [string, number, string][] = []
+    const { app, renderer } = await openReviewed({
+      whoami: async () => 'sam',
+      post: async () => ({ id: 42, url: 'https://github.com/acme/api/pull/2#discussion_r42' }),
+      fix: () => {
+        fixes += 1
+        return new Promise((resolve) => (land = resolve))
+      },
+      reply: async (pr, id, body) => {
+        replies.push([pr.url, id, body])
+        return ''
+      },
+    })
+
+    await app.getByTestId('post-0').click()
+    await app.getByText('Posted').waitFor()
+    await app.getByTestId('fix-0').click()
+    await app.getByText('Fixing').waitFor()
+    await app.getByTestId('fix-1').click()
+    expect(fixes).toBe(1)
+
+    land(FIXED)
+    await app.getByText('Replied under the comment on GitHub').waitFor()
+    expect(replies).toEqual([
+      ['https://github.com/acme/api/pull/2', 42, 'Gefixt in abc1234. De teller staat nu in Redis.'],
+    ])
+    expect(renderer.getPaintedText()).toContain('Fixed in abc1234')
+
+    mkdirSync('screenshots', { recursive: true })
+    renderer.captureScreenshot('screenshots/pr-fix.png')
+
+    await app.close()
+  })
+
+  it('posts nothing when the fixed remark is not on GitHub', async () => {
+    let replies = 0
+    const { app, renderer } = await openReviewed({
+      whoami: async () => 'sam',
+      fix: async () => FIXED,
+      reply: async () => {
+        replies += 1
+        return ''
+      },
+    })
+
+    await app.getByTestId('fix-0').click()
+    await app.getByText('Fixed in abc1234').waitFor()
+    expect(replies).toBe(0)
+    expect(renderer.getPaintedText().join(' ')).not.toContain('Replied')
+
+    await app.close()
+  })
+
+  it('shows a failed reply next to the pushed commit', async () => {
+    const { app } = await openReviewed({
+      whoami: async () => 'sam',
+      post: async () => ({ id: 42, url: '' }),
+      fix: async () => FIXED,
+      reply: () => Promise.reject(new Error('Not Found (HTTP 404)')),
+    })
+
+    await app.getByTestId('post-0').click()
+    await app.getByText('Posted').waitFor()
+    await app.getByTestId('fix-0').click()
+    await app.getByText('The reply failed: Not Found (HTTP 404)').waitFor()
+    await app.getByText('Fixed in abc1234').waitFor()
+
+    await app.close()
+  })
+
+  it('has no Fix button on a pull request someone else wrote', async () => {
+    const { app } = await openReviewed({ whoami: async () => 'someone-else' })
+
+    expect(await app.getByTestId('fix-0').count()).toBe(0)
+
+    await app.close()
+  })
+
+  it('says when Claude changed nothing, and lets you try again', async () => {
+    const { app } = await openReviewed({
+      whoami: async () => 'sam',
+      fix: async () => ({ state: 'nothing', reason: 'De limiet telt al per gebruiker.' }),
+    })
+
+    await app.getByTestId('fix-0').click()
+    await app.getByText('Claude changed nothing. De limiet telt al per gebruiker.').waitFor()
+    expect(await app.getByTestId('fix-0').count()).toBe(1)
+
+    await app.close()
+  })
+
+  it('shows why a fix failed, and lets you try again', async () => {
+    const { app } = await openReviewed({
+      whoami: async () => 'sam',
+      fix: () => Promise.reject(new Error('The branch moved on while Claude worked. Nothing was pushed.')),
+    })
+
+    await app.getByTestId('fix-0').click()
+    await app.getByText('The branch moved on while Claude worked. Nothing was pushed.').waitFor()
+    expect(await app.getByTestId('fix-0').count()).toBe(1)
 
     await app.close()
   })
