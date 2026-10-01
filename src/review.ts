@@ -12,7 +12,7 @@ export type Remark = Finding & { inDiff: boolean }
 
 export type Reviewed = { commit: string; remarks: Remark[] }
 
-type ExecFailure = Error & { killed?: boolean; stdout?: string }
+type ExecFailure = Error & { killed?: boolean; stdout?: string; stderr?: string }
 
 const TIMEOUT_MS = 15 * 60 * 1000
 const DIFF_MAX_BYTES = 32 * 1024 * 1024
@@ -110,11 +110,19 @@ export function readFindings(stdout: string): Finding[] {
   const messages = Array.isArray(output) ? output : [output]
   const result = messages.find((message) => message.type === 'result')
   if (!result) throw new Error('Claude gave no answer')
-  if (result.is_error) throw new Error(result.result || 'Claude failed')
+  if (result.is_error) throw new Error(result.result || result.errors?.join('\n') || 'Claude failed')
 
   const findings = result.structured_output?.findings
   if (!Array.isArray(findings)) throw new Error('Claude gave no remarks list')
   return findings
+}
+
+// A failed run exits 1 but still prints its result, which says why better than the exit code.
+export function failedRunOutput(failure: ExecFailure): string {
+  if (failure.killed) throw new Error('Claude did not finish within 15 minutes')
+  // The message holds the whole command line, prompt included, so stderr says why far better.
+  if (!failure.stdout) throw new Error(failure.stderr?.trim() || failure.message)
+  return failure.stdout
 }
 
 export async function reviewPr(pr: Pr): Promise<Reviewed> {
@@ -127,15 +135,7 @@ export async function reviewPr(pr: Pr): Promise<Reviewed> {
   })
   claude.child.stdin?.end(diff)
 
-  // A failed run exits 1 but still prints its result, which says why better than the exit code.
-  const stdout = await claude.then(
-    (done) => done.stdout,
-    (failure: ExecFailure) => {
-      if (failure.killed) throw new Error('Claude did not finish within 15 minutes')
-      if (!failure.stdout) throw failure
-      return failure.stdout
-    },
-  )
+  const stdout = await claude.then((done) => done.stdout, failedRunOutput)
 
   const lines = diffLines(diff)
   const remarks = readFindings(stdout).map((finding) => ({
