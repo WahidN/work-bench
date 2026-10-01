@@ -127,14 +127,17 @@ export function diffLines(diff: string): Map<string, Set<number>> {
   return files
 }
 
-export function readFindings(stdout: string): Finding[] {
+export function readAnswer(stdout: string) {
   const output = JSON.parse(stdout)
   const messages = Array.isArray(output) ? output : [output]
   const result = messages.find((message) => message.type === 'result')
   if (!result) throw new Error('Claude gave no answer')
   if (result.is_error) throw new Error(result.result || result.errors?.join('\n') || 'Claude failed')
+  return result.structured_output
+}
 
-  const findings = result.structured_output?.findings
+export function readFindings(stdout: string): Finding[] {
+  const findings = readAnswer(stdout)?.findings
   if (!Array.isArray(findings)) throw new Error('Claude gave no remarks list')
   return findings
 }
