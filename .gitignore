@@ -1,3 +1,4 @@
 .DS_Store
-.superpowers/
-docs/
+node_modules/
+screenshots/
+openspec/
