@@ -5,6 +5,7 @@ import { connectTest } from '@gpuix/react/automation'
 import { createTestRoot, hasNativeTestRenderer } from '@gpuix/react/testing'
 
 import { PrApp } from './app'
+import type { Thread } from './comments'
 import type { Fixed } from './fix'
 import type { Pr, Reason } from './github'
 import type { Posted } from './post'
@@ -44,6 +45,7 @@ async function mount(load: () => Promise<Pr[]>, fakes: Fakes = {}) {
       fix={async () => ({ state: 'nothing', reason: '' })}
       reply={async () => ''}
       whoami={async () => 'nobody'}
+      comments={async () => []}
       {...fakes}
     />,
   )
@@ -372,6 +374,111 @@ describeNative('fixing a remark', () => {
     await app.getByTestId('fix-0').click()
     await app.getByText('The branch moved on while Claude worked. Nothing was pushed.').waitFor()
     expect(await app.getByTestId('fix-0').count()).toBe(1)
+
+    await app.close()
+  })
+})
+
+function thread(id: number, author: string, body: string, fields: Partial<Thread> = {}): Thread {
+  return {
+    id,
+    url: `https://github.com/acme/api/pull/2#discussion_r${id}`,
+    author,
+    path: 'src/limits.ts',
+    line: 12,
+    outdated: false,
+    body,
+    replies: [],
+    ...fields,
+  }
+}
+
+describeNative('comments from GitHub', () => {
+  it('marks the pull requests you commented on in the list', async () => {
+    const { app, renderer } = await mount(async () => [PRS[0], { ...PRS[1], commented: true }, PRS[2]])
+    await app.getByText('Add rate limits').waitFor()
+
+    expect(renderer.getPaintedText().filter((text) => text === 'Commented')).toHaveLength(1)
+    expect(await app.getByTestId('pr-acme/api#2').textContent()).toContain('Commented')
+
+    await app.close()
+  })
+
+  it('brings back your posted remarks with their replies, and a colleague comment read-only', async () => {
+    const replies: [number, string][] = []
+    const { app, renderer } = await mount(async () => PRS, {
+      whoami: async () => 'sam',
+      comments: async () => [
+        thread(10, 'sam', 'Deze limiet telt per proces.', {
+          replies: [{ author: 'sam', body: 'Gefixt in abc1234. De teller staat nu in Redis.' }],
+        }),
+        thread(11, 'kim', 'Kan deze naam duidelijker?', { line: 20 }),
+        thread(12, 'sam', 'Deze check mist een test.', { line: 40, outdated: true }),
+      ],
+      fix: async () => FIXED,
+      reply: async (pr, id, body) => {
+        replies.push([id, body])
+        return ''
+      },
+    })
+    await app.getByTestId('pr-acme/api#2').waitFor()
+    await app.getByTestId('pr-acme/api#2').click()
+    await app.getByTestId('finding-thread-10').waitFor()
+
+    expect(await app.getByTestId('finding-thread-10').textContent()).toContain('Posted')
+    expect(renderer.getPaintedText()).toContain('sam: Gefixt in abc1234. De teller staat nu in Redis.')
+    const colleague = await app.getByTestId('finding-thread-11').textContent()
+    expect(colleague).toContain('kim')
+    expect(colleague).not.toContain('Fix')
+    expect(colleague).not.toContain('Post')
+    expect(await app.getByTestId('finding-thread-12').textContent()).toContain('outdated')
+
+    mkdirSync('screenshots', { recursive: true })
+    renderer.captureScreenshot('screenshots/pr-comments.png')
+
+    await app.getByTestId('fix-thread-10').click()
+    await app.getByText('Replied under the comment on GitHub').waitFor()
+    expect(replies).toEqual([[10, 'Gefixt in abc1234. De teller staat nu in Redis.']])
+
+    await app.close()
+  })
+
+  it('shows a remark posted in this window once when its comment loads again', async () => {
+    let loads = 0
+    const { app } = await openReviewed({
+      post: async () => ({ id: 7, url: 'https://github.com/acme/api/pull/2#discussion_r7' }),
+      comments: async () => (loads++ === 0 ? [] : [thread(7, 'sam', REMARK.body)]),
+    })
+
+    await app.getByTestId('post-0').click()
+    await app.getByText('Posted').waitFor()
+    await app.getByTestId('back').click()
+    await app.getByTestId('pr-acme/api#2').click()
+    await app.getByTestId('finding-0').waitFor()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    expect(loads).toBe(2)
+    expect(await app.getByText(REMARK.body).count()).toBe(1)
+
+    await app.close()
+  })
+
+  it('says why the comments did not load, and a review still works', async () => {
+    let reviews = 0
+    const { app } = await mount(async () => PRS, {
+      comments: () => Promise.reject(new Error('HTTP 404: Not Found')),
+      review: async () => {
+        reviews += 1
+        return { commit: 'abc123', remarks: [REMARK] }
+      },
+    })
+    await app.getByTestId('pr-acme/api#2').waitFor()
+    await app.getByTestId('pr-acme/api#2').click()
+    await app.getByText('The comments did not load: HTTP 404: Not Found').waitFor()
+
+    await app.getByTestId('review').click()
+    await app.getByTestId('finding-0').waitFor()
+    expect(reviews).toBe(1)
 
     await app.close()
   })
