@@ -49,13 +49,14 @@ export async function findClone(repo: string, root = PROJECTS): Promise<string> 
   throw new Error(`No clone of ${repo} in ~/Documents/Projecten`)
 }
 
-export function fixPrompt(pr: Pr, finding: Finding): string {
+export function fixPrompt(pr: Pr, finding: Finding, context = ''): string {
+  const extra = context.trim() ? `\nExtra context from the author of the pull request:\n\n${context.trim()}\n` : ''
   return `You are fixing one review remark on the pull request titled "${pr.title}".
 
 The remark is about \`${finding.path}\`, around line ${finding.line}:
 
 ${finding.body}
-
+${extra}
 Make the smallest change in the working tree that answers this remark. Read the
 current file first, because the line number may have moved. Change nothing else.
 
@@ -91,7 +92,7 @@ export function readFix(stdout: string): { message: string; reply: string } {
   return { message: answer.message.trim(), reply: String(answer.reply ?? '').trim() }
 }
 
-export async function fixRemark(pr: Pr, finding: Finding, root = PROJECTS): Promise<Fixed> {
+export async function fixRemark(pr: Pr, finding: Finding, context = '', root = PROJECTS): Promise<Fixed> {
   const { stdout } = await run('gh', ['pr', 'view', pr.url, '--json=headRefName,isCrossRepository'])
   const { headRefName: branch, isCrossRepository } = JSON.parse(stdout)
   if (isCrossRepository) throw new Error('This pull request comes from a fork, so its branch is not in origin')
@@ -105,7 +106,7 @@ export async function fixRemark(pr: Pr, finding: Finding, root = PROJECTS): Prom
   await git(clone, ['worktree', 'add', '--detach', worktree, tip])
 
   try {
-    const claude = run('claude', fixArgs(fixPrompt(pr, finding)), { cwd: worktree, timeout: TIMEOUT_MS })
+    const claude = run('claude', fixArgs(fixPrompt(pr, finding, context)), { cwd: worktree, timeout: TIMEOUT_MS })
     claude.child.stdin?.end()
     const { message, reply } = readFix(await claude.then((done) => done.stdout, failedRunOutput))
 
