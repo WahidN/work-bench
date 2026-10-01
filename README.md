@@ -6,6 +6,8 @@ Open a pull request and press Review with Claude. Claude reads the diff and writ
 
 On your own pull request, press Fix on a remark. Claude changes the code in a temporary worktree of your clone under `~/Documents/Projecten`, and the app commits and pushes it to the branch, without force and without hooks. A posted remark gets a reply under it that says how it was fixed. Pull in your clone before you push from there again.
 
+When you open a pull request, its inline comments on GitHub load with their replies, so the remarks you posted are back after a restart. The list marks the pull requests you commented on.
+
 Built with [GPUIX](https://gpuix.dev): React and TypeScript on Bun, drawn on the GPU by [GPUI](https://gpui.rs).
 
 ## Requirements
