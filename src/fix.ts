@@ -99,9 +99,10 @@ export async function fixRemark(pr: Pr, finding: Finding, root = PROJECTS): Prom
   const clone = await findClone(pr.repo, root)
   // A remote-tracking ref, not FETCH_HEAD, so two fixes in one clone do not overwrite each other.
   await git(clone, ['fetch', 'origin', branch])
+  const tip = await git(clone, ['rev-parse', `refs/remotes/origin/${branch}`])
   const worktree = await mkdtemp(join(tmpdir(), 'workbench-fix-'))
   // Detached, because the clone may have this branch checked out, and git allows only one checkout per branch.
-  await git(clone, ['worktree', 'add', '--detach', worktree, `origin/${branch}`])
+  await git(clone, ['worktree', 'add', '--detach', worktree, tip])
 
   try {
     const claude = run('claude', fixArgs(fixPrompt(pr, finding)), { cwd: worktree, timeout: TIMEOUT_MS })
@@ -112,9 +113,12 @@ export async function fixRemark(pr: Pr, finding: Finding, root = PROJECTS): Prom
 
     await git(worktree, ['add', '-A'])
     await git(worktree, ['commit', '--no-verify', '-m', message])
-    await git(worktree, ['push', '--no-verify', 'origin', `HEAD:refs/heads/${branch}`]).catch((failure: Error) => {
-      if (/\[rejected\]|fetch first|non-fast-forward/.test(failure.message)) {
-        throw new Error('The branch moved on while Claude worked. Nothing was pushed.')
+    // The lease holds the push to the fetched tip: a fast-forward when nothing changed, and refused when
+    // the branch moved on or was deleted, so a merged pull request does not get its branch back.
+    const lease = `--force-with-lease=refs/heads/${branch}:${tip}`
+    await git(worktree, ['push', '--no-verify', lease, 'origin', `HEAD:refs/heads/${branch}`]).catch((failure: Error) => {
+      if (/\[rejected\]|fetch first|non-fast-forward|stale info/.test(failure.message)) {
+        throw new Error('The branch moved on or was deleted while Claude worked. Nothing was pushed.')
       }
       throw failure
     })

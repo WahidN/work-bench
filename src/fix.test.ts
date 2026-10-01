@@ -85,6 +85,7 @@ const FINDING = { path: 'a.ts', line: 1, body: 'Deze regel mist de fix.' }
 const FAKE_CLAUDE = `#!/bin/sh
 cat > /dev/null
 if [ "$FAKE_CLAUDE" != nothing ]; then echo "fixed()" >> a.ts; fi
+if [ "$FAKE_CLAUDE" = delete ]; then git --git-dir="$FAKE_ORIGIN" update-ref -d refs/heads/feat/x; fi
 if [ "$FAKE_CLAUDE" = move ]; then
   export GIT_AUTHOR_NAME=colleague GIT_AUTHOR_EMAIL=c@x GIT_COMMITTER_NAME=colleague GIT_COMMITTER_EMAIL=c@x
   tree=$(git --git-dir="$FAKE_ORIGIN" rev-parse 'feat/x^{tree}')
@@ -177,6 +178,14 @@ describe('fixRemark', () => {
 
     await expect(fixRemark(PR, FINDING, projects)).rejects.toThrow('The branch moved on')
     expect(git(origin, 'log', '-1', '--format=%s', 'feat/x')).toBe('push from a colleague')
+    expect(worktrees()).toBe(1)
+  })
+
+  it('does not bring back a branch that was deleted while Claude worked', async () => {
+    process.env.FAKE_CLAUDE = 'delete'
+
+    await expect(fixRemark(PR, FINDING, projects)).rejects.toThrow('moved on or was deleted')
+    expect(git(origin, 'branch', '--list', 'feat/x')).toBe('')
     expect(worktrees()).toBe(1)
   })
 
