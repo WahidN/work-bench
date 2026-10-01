@@ -36,6 +36,8 @@ type Post =
 
 type Reply = 'none' | 'sending' | 'sent' | { error: string }
 
+type Draft = { open: boolean; text: string }
+
 type LoadedThread = { thread: Thread; remark: Remark }
 
 type Loaded = { state: 'loading' } | { state: 'done'; items: LoadedThread[] } | { state: 'failed'; error: string }
@@ -193,14 +195,17 @@ function FixControl({
   name,
   fix,
   waiting,
+  open,
   onFix,
 }: {
   name: string
   fix: Fix | undefined
   waiting: boolean
+  open: boolean
   onFix: () => void
 }) {
   if (fix?.state === 'fixed') return <Status text={`Fixed in ${fix.commit}`} color={C.secondary} />
+  if (open) return null
 
   const fixing = fix?.state === 'fixing'
   return <Button testId={`fix-${name}`} label={fixing ? 'Fixing' : 'Fix'} onClick={fixing || waiting ? undefined : onFix} />
@@ -208,6 +213,51 @@ function FixControl({
 
 function Note({ text, color }: { text: string; color: string }) {
   return <text style={{ fontSize: 12, lineHeight: 18, color }}>{text}</text>
+}
+
+function FixBox({
+  name,
+  text,
+  waiting,
+  onType,
+  onStart,
+  onCancel,
+}: {
+  name: string
+  text: string
+  waiting: boolean
+  onType: (text: string) => void
+  onStart: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 4 }}>
+      <textarea
+        testId={`context-${name}`}
+        value={text}
+        placeholder="Extra context for Claude, optional. For example which option to pick, or what to leave alone."
+        minRows={2}
+        maxRows={6}
+        onChange={(event) => onType(event.value ?? '')}
+        style={{
+          width: '100%',
+          padding: 10,
+          borderRadius: 7,
+          borderWidth: 1,
+          borderColor: C.border,
+          backgroundColor: C.sidebar,
+          fontSize: 13,
+          lineHeight: 20,
+          color: C.text,
+        }}
+      />
+      <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <div style={{ flexGrow: 1 }} />
+        <Button testId={`cancel-fix-${name}`} label="Cancel" onClick={onCancel} />
+        <Button testId={`start-fix-${name}`} label="Start fix" color={C.accent} onClick={waiting ? undefined : onStart} />
+      </div>
+    </div>
+  )
 }
 
 function FixNote({ fix }: { fix: Fix | undefined }) {
@@ -229,6 +279,8 @@ function RemarkRow({
   waiting,
   onPost,
   onFix,
+  draft,
+  onDraft,
   author,
   outdated = false,
   replies = [],
@@ -240,7 +292,9 @@ function RemarkRow({
   canFix: boolean
   waiting: boolean
   onPost: () => void
-  onFix: () => void
+  onFix: (context: string) => void
+  draft: Draft | undefined
+  onDraft: (next: Draft) => void
   // Set for someone else's comment, which can only be read.
   author?: string
   outdated?: boolean
@@ -267,7 +321,15 @@ function RemarkRow({
         {outdated ? <text style={{ fontSize: 12, color: C.ghost }}>outdated</text> : null}
         {author ? <text style={{ fontSize: 12, color: C.secondary }}>{author}</text> : null}
         <div style={{ flexGrow: 1 }} />
-        {canFix && !author ? <FixControl name={name} fix={fix} waiting={waiting} onFix={onFix} /> : null}
+        {canFix && !author ? (
+          <FixControl
+            name={name}
+            fix={fix}
+            waiting={waiting}
+            open={draft?.open ?? false}
+            onFix={() => onDraft({ open: true, text: draft?.text ?? '' })}
+          />
+        ) : null}
         {author ? null : <PostControl name={name} remark={remark} post={post} onPost={onPost} />}
       </div>
       <text style={{ fontSize: 13, lineHeight: 20, color: C.text }}>{remark.body}</text>
@@ -275,6 +337,16 @@ function RemarkRow({
         <Note key={index} text={`${reply.author}: ${reply.body}`} color={C.secondary} />
       ))}
       {post?.state === 'failed' ? <Note text={post.error} color={C.error} /> : null}
+      {canFix && !author && draft?.open ? (
+        <FixBox
+          name={name}
+          text={draft.text}
+          waiting={waiting}
+          onType={(text) => onDraft({ open: true, text })}
+          onStart={() => onFix(draft.text)}
+          onCancel={() => onDraft({ open: false, text: draft.text })}
+        />
+      ) : null}
       <FixNote fix={fix} />
     </div>
   )
@@ -286,16 +358,20 @@ function ReviewResult({
   fixes,
   canFix,
   waiting,
+  drafts,
   onPost,
   onFix,
+  onDraft,
 }: {
   review: Review | undefined
   posts: Map<Remark, Post>
   fixes: Map<Remark, Fix>
   canFix: boolean
   waiting: boolean
+  drafts: Map<Remark, Draft>
   onPost: (commit: string, remark: Remark) => void
-  onFix: (remark: Remark) => void
+  onFix: (remark: Remark, context: string) => void
+  onDraft: (remark: Remark, next: Draft) => void
 }) {
   if (!review) {
     return (
@@ -325,7 +401,9 @@ function ReviewResult({
           canFix={canFix}
           waiting={waiting}
           onPost={() => onPost(review.commit, remark)}
-          onFix={() => onFix(remark)}
+          onFix={(context) => onFix(remark, context)}
+          draft={drafts.get(remark)}
+          onDraft={(next) => onDraft(remark, next)}
         />
       ))}
     </>
@@ -346,10 +424,12 @@ function PrPage({
   posts,
   fixes,
   canFix,
+  drafts,
   onBack,
   onReview,
   onPost,
   onFix,
+  onDraft,
 }: {
   pr: Pr
   review: Review | undefined
@@ -358,10 +438,12 @@ function PrPage({
   posts: Map<Remark, Post>
   fixes: Map<Remark, Fix>
   canFix: boolean
+  drafts: Map<Remark, Draft>
   onBack: () => void
   onReview: () => void
   onPost: (commit: string, remark: Remark) => void
-  onFix: (remark: Remark) => void
+  onFix: (remark: Remark, context: string) => void
+  onDraft: (remark: Remark, next: Draft) => void
 }) {
   const running = review?.state === 'running'
   const reviewed = review?.state === 'done' ? review.remarks : []
@@ -426,7 +508,9 @@ function PrPage({
             canFix={canFix}
             waiting={fixing}
             onPost={() => {}}
-            onFix={() => onFix(remark)}
+            onFix={(context) => onFix(remark, context)}
+            draft={drafts.get(remark)}
+            onDraft={(next) => onDraft(remark, next)}
             author={thread.author === me ? undefined : thread.author}
             outdated={thread.outdated}
             replies={thread.replies}
@@ -438,8 +522,10 @@ function PrPage({
           fixes={fixes}
           canFix={canFix}
           waiting={fixing}
+          drafts={drafts}
           onPost={onPost}
           onFix={onFix}
+          onDraft={onDraft}
         />
       </virtual-list>
     </div>
@@ -458,7 +544,7 @@ export function PrApp({
   load?: () => Promise<Pr[]>
   review?: (pr: Pr) => Promise<Reviewed>
   post?: (pr: Pr, commit: string, remark: Remark) => Promise<Posted>
-  fix?: (pr: Pr, remark: Remark) => Promise<Fixed>
+  fix?: (pr: Pr, remark: Remark, context: string) => Promise<Fixed>
   reply?: (pr: Pr, commentId: number, body: string) => Promise<string>
   whoami?: () => Promise<string>
   comments?: (pr: Pr) => Promise<Thread[]>
@@ -471,6 +557,7 @@ export function PrApp({
   const [reviews, setReviews] = useState<Map<string, Review>>(new Map())
   const [posts, setPosts] = useState<Map<Remark, Post>>(new Map())
   const [fixes, setFixes] = useState<Map<Remark, Fix>>(new Map())
+  const [drafts, setDrafts] = useState<Map<Remark, Draft>>(new Map())
   const [me, setMe] = useState<string | null>(null)
   const [loaded, setLoaded] = useState<Map<string, Loaded>>(new Map())
   // The same comment keeps the same remark object across reloads, so its post and fix state stay with it.
@@ -545,9 +632,13 @@ export function PrApp({
 
   const setFix = (remark: Remark, next: Fix) => setFixes((all) => new Map(all).set(remark, next))
 
-  const startFix = (pr: Pr, remark: Remark) => {
+  const setDraft = (remark: Remark, next: Draft) => setDrafts((all) => new Map(all).set(remark, next))
+
+  // The text stays in the draft, so a failed fix can be tried again with it.
+  const startFix = (pr: Pr, remark: Remark, context: string) => {
+    setDraft(remark, { open: false, text: context })
     setFix(remark, { state: 'fixing' })
-    fix(pr, remark)
+    fix(pr, remark, context)
       .then((outcome) => {
         if (outcome.state === 'nothing') return setFix(remark, { state: 'nothing', reason: outcome.reason })
 
@@ -629,7 +720,9 @@ export function PrApp({
           onBack={() => setOpened(null)}
           onReview={() => startReview(opened)}
           onPost={(commit, remark) => startPost(opened, commit, remark)}
-          onFix={(remark) => startFix(opened, remark)}
+          drafts={drafts}
+          onFix={(remark, context) => startFix(opened, remark, context)}
+          onDraft={setDraft}
         />
       ) : (
         <div style={{ flexGrow: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
