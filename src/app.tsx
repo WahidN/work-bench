@@ -266,6 +266,7 @@ function ReviewResult({
   posts,
   fixes,
   canFix,
+  waiting,
   onPost,
   onFix,
 }: {
@@ -273,6 +274,7 @@ function ReviewResult({
   posts: Map<Remark, Post>
   fixes: Map<Remark, Fix>
   canFix: boolean
+  waiting: boolean
   onPost: (commit: string, remark: Remark) => void
   onFix: (remark: Remark) => void
 }) {
@@ -291,9 +293,6 @@ function ReviewResult({
   if (review.remarks.length === 0) {
     return <Message text="Claude found nothing to remark on" color={C.secondary} />
   }
-
-  // Two fixes on one branch would race each other's push, so one runs at a time.
-  const waiting = review.remarks.some((remark) => fixes.get(remark)?.state === 'fixing')
 
   return (
     <virtual-list estimatedItemHeight={120} style={{ flexGrow: 1, minHeight: 0 }}>
@@ -336,6 +335,8 @@ function PrPage({
   onFix: (remark: Remark) => void
 }) {
   const running = review?.state === 'running'
+  // One fix per pull request: two would race each other's push, and a new review would drop the running one.
+  const fixing = review?.state === 'done' && review.remarks.some((remark) => fixes.get(remark)?.state === 'fixing')
 
   return (
     <div style={{ flexGrow: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -356,7 +357,7 @@ function PrPage({
           testId="review"
           label={running ? 'Reviewing' : review ? 'Review again' : 'Review with Claude'}
           color={C.accent}
-          onClick={running ? undefined : onReview}
+          onClick={running || fixing ? undefined : onReview}
         />
       </div>
 
@@ -380,7 +381,15 @@ function PrPage({
         </div>
       </div>
 
-      <ReviewResult review={review} posts={posts} fixes={fixes} canFix={canFix} onPost={onPost} onFix={onFix} />
+      <ReviewResult
+        review={review}
+        posts={posts}
+        fixes={fixes}
+        canFix={canFix}
+        waiting={fixing}
+        onPost={onPost}
+        onFix={onFix}
+      />
     </div>
   )
 }

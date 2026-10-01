@@ -279,6 +279,33 @@ describeNative('fixing a remark', () => {
     await app.close()
   })
 
+  it('keeps Review again off while a fix runs, so the fix stays in view', async () => {
+    let reviews = 0
+    let fixes = 0
+    const { app, renderer } = await openReviewed({
+      whoami: async () => 'sam',
+      review: async () => {
+        reviews += 1
+        return { commit: 'abc123', remarks: [REMARK, OUTSIDE] }
+      },
+      fix: () => {
+        fixes += 1
+        return new Promise(() => {})
+      },
+    })
+
+    await app.getByTestId('fix-0').click()
+    await app.getByText('Fixing').waitFor()
+    await app.getByTestId('review').click()
+    await app.getByTestId('fix-1').click()
+
+    expect(reviews).toBe(1)
+    expect(fixes).toBe(1)
+    expect(renderer.getPaintedText()).toContain('Fixing')
+
+    await app.close()
+  })
+
   it('posts nothing when the fixed remark is not on GitHub', async () => {
     let replies = 0
     const { app, renderer } = await openReviewed({
