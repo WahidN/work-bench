@@ -8,6 +8,10 @@ const run = promisify(execFile)
 
 export type Finding = { path: string; line: number; body: string }
 
+export type Remark = Finding & { inDiff: boolean }
+
+export type Reviewed = { commit: string; remarks: Remark[] }
+
 type ExecFailure = Error & { killed?: boolean; stdout?: string; stderr?: string }
 
 const TIMEOUT_MS = 15 * 60 * 1000
@@ -41,8 +45,8 @@ and no other remark to lean on. Write each one so it reads as a comment a
 colleague left on that line.
 
 Only comment on lines the diff shows as added or unchanged. Use the line number
-from the new version of the file, and give the file path exactly as the diff
-spells it.
+from the new version of the file, and give the file path from the repo root as
+plain text: no a/ or b/ prefix, no quotes and no escapes.
 
 Say something only where it is worth a colleague's time. Few sharp remarks beat a
 list of everything noticed. If the change is fine, return no findings at all.
@@ -76,6 +80,53 @@ export function claudeArgs(prompt: string): string[] {
   ]
 }
 
+const ESCAPES: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13 }
+
+// git quotes a path with special or non-ASCII characters, with octal escapes for its UTF-8 bytes.
+function unquote(quoted: string): string {
+  const bytes: number[] = []
+  for (const [, octal, escaped, plain] of quoted.slice(1, -1).matchAll(/\\([0-7]{3})|\\(.)|([^\\]+)/g)) {
+    if (octal) bytes.push(parseInt(octal, 8))
+    else if (escaped) bytes.push(ESCAPES[escaped] ?? escaped.charCodeAt(0))
+    else bytes.push(...new TextEncoder().encode(plain))
+  }
+  return new TextDecoder().decode(new Uint8Array(bytes))
+}
+
+// git ends a path that has a space with a tab. `/dev/null` has no `b/`, so a deleted file gives none.
+function newPath(header: string): string | undefined {
+  const raw = header.replace(/\t$/, '')
+  const path = raw.startsWith('"') ? unquote(raw) : raw
+  return path.startsWith('b/') ? path.slice('b/'.length) : undefined
+}
+
+export function diffLines(diff: string): Map<string, Set<number>> {
+  const files = new Map<string, Set<number>>()
+  let lines: Set<number> | undefined
+  let next = 0
+  // An added line can start with `+++ ` too, so a file name only counts before the first hunk.
+  let inHeader = false
+
+  for (const text of diff.split('\n')) {
+    if (text.startsWith('diff --git ')) {
+      inHeader = true
+      lines = undefined
+    } else if (inHeader && text.startsWith('+++ ')) {
+      const path = newPath(text.slice('+++ '.length))
+      if (path === undefined) continue
+      lines = new Set()
+      files.set(path, lines)
+    } else if (text.startsWith('@@ ')) {
+      inHeader = false
+      next = Number(text.match(/\+(\d+)/)?.[1])
+    } else if (!inHeader && lines && (text.startsWith('+') || text.startsWith(' '))) {
+      lines.add(next)
+      next += 1
+    }
+  }
+  return files
+}
+
 export function readFindings(stdout: string): Finding[] {
   const output = JSON.parse(stdout)
   const messages = Array.isArray(output) ? output : [output]
@@ -96,7 +147,8 @@ export function failedRunOutput(failure: ExecFailure): string {
   return failure.stdout
 }
 
-export async function reviewPr(pr: Pr): Promise<Finding[]> {
+export async function reviewPr(pr: Pr): Promise<Reviewed> {
+  const { stdout: commit } = await run('gh', ['pr', 'view', pr.url, '--json=headRefOid', '--jq=.headRefOid'])
   const { stdout: diff } = await run('gh', ['pr', 'diff', pr.url], { maxBuffer: DIFF_MAX_BYTES })
 
   const claude = run('claude', claudeArgs(reviewPrompt(pr.title)), {
@@ -106,5 +158,11 @@ export async function reviewPr(pr: Pr): Promise<Finding[]> {
   claude.child.stdin?.end(diff)
 
   const stdout = await claude.then((done) => done.stdout, failedRunOutput)
-  return readFindings(stdout)
+
+  const lines = diffLines(diff)
+  const remarks = readFindings(stdout).map((finding) => ({
+    ...finding,
+    inDiff: lines.get(finding.path)?.has(finding.line) ?? false,
+  }))
+  return { commit: commit.trim(), remarks }
 }
