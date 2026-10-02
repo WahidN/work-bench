@@ -45,7 +45,10 @@ export async function findClone(repo: string, root = PROJECTS): Promise<string> 
   for (let depth = 0; depth < CLONE_DEPTH && level.length > 0; depth++) {
     const next: string[] = []
     for (const dir of level) {
-      const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+      const entries = await readdir(dir, { withFileTypes: true }).catch((failure) => {
+        if (dir === root) throw failure
+        return []
+      })
       for (const entry of entries) {
         if (entry.isDirectory() && !entry.name.startsWith('.') && !SKIPPED.has(entry.name)) next.push(join(dir, entry.name))
       }
@@ -58,11 +61,13 @@ export async function findClone(repo: string, root = PROJECTS): Promise<string> 
     }
     level = next
   }
-  throw new Error(`No clone of ${repo} under ~/Documents/Projecten`)
+  throw new Error(`No clone of ${repo} within ${CLONE_DEPTH} levels of ~/Documents/Projecten`)
 }
 
 export function fixPrompt(pr: Pr, finding: Finding, context = ''): string {
-  const extra = context.trim() ? `\nExtra context from the author of the pull request:\n\n${context.trim()}\n` : ''
+  const extra = context.trim()
+    ? `\nExtra context from the author of the pull request:\n\n${context.trim()}\n\nDo not quote or mention this context in the reply.\n`
+    : ''
   return `You are fixing one review remark on the pull request titled "${pr.title}".
 
 The remark is about \`${finding.path}\`, around line ${finding.line}:
