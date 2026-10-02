@@ -46,6 +46,7 @@ async function mount(load: () => Promise<Pr[]>, fakes: Fakes = {}) {
       reply={async () => ''}
       whoami={async () => 'nobody'}
       comments={async () => []}
+      openUrl={() => {}}
       {...fakes}
     />,
   )
@@ -578,6 +579,25 @@ describeNative('fix context', () => {
     await app.getByTestId('start-fix-0').click()
 
     expect(contexts).toEqual(['Gebruik reduce.', 'Gebruik reduce.'])
+
+    await app.close()
+  })
+})
+
+describeNative('link to the pull request', () => {
+  it('opens the pull request on GitHub and stays on its page', async () => {
+    const opened: string[] = []
+    const { app, renderer } = await mount(async () => PRS, { openUrl: (url) => opened.push(url) })
+    await app.getByTestId('pr-acme/api#2').waitFor()
+    await app.getByTestId('pr-acme/api#2').click()
+    await app.getByTestId('open-on-github').click()
+
+    expect(opened).toEqual(['https://github.com/acme/api/pull/2'])
+    expect(renderer.getPaintedText()).toContain('Add rate limits')
+    expect(await app.getByTestId('back').count()).toBe(1)
+
+    mkdirSync('screenshots', { recursive: true })
+    renderer.captureScreenshot('screenshots/pr-link.png')
 
     await app.close()
   })
