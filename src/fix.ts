@@ -45,7 +45,10 @@ export async function findClone(repo: string, root = PROJECTS): Promise<string> 
   for (let depth = 0; depth < CLONE_DEPTH && level.length > 0; depth++) {
     const next: string[] = []
     for (const dir of level) {
-      const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+      const entries = await readdir(dir, { withFileTypes: true }).catch((failure) => {
+        if (dir === root) throw failure
+        return []
+      })
       for (const entry of entries) {
         if (entry.isDirectory() && !entry.name.startsWith('.') && !SKIPPED.has(entry.name)) next.push(join(dir, entry.name))
       }
