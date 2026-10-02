@@ -44,7 +44,7 @@ type Loaded = { state: 'loading' } | { state: 'done'; items: LoadedThread[] } | 
 
 type Fix =
   | { state: 'fixing' }
-  | { state: 'fixed'; commit: string; reply: Reply }
+  | { state: 'fixed'; commit: string; answer: string; reply: Reply }
   | { state: 'nothing'; reason: string }
   | { state: 'failed'; error: string }
 
@@ -356,6 +356,7 @@ function ReviewResult({
   review,
   posts,
   fixes,
+  replies,
   canFix,
   waiting,
   drafts,
@@ -366,6 +367,7 @@ function ReviewResult({
   review: Review | undefined
   posts: Map<Remark, Post>
   fixes: Map<Remark, Fix>
+  replies: Map<number, Thread['replies']>
   canFix: boolean
   waiting: boolean
   drafts: Map<Remark, Draft>
@@ -391,21 +393,25 @@ function ReviewResult({
 
   return (
     <>
-      {review.remarks.map((remark, index) => (
-        <RemarkRow
-          key={`remark-${index}`}
-          name={String(index)}
-          remark={remark}
-          post={posts.get(remark)}
-          fix={fixes.get(remark)}
-          canFix={canFix}
-          waiting={waiting}
-          onPost={() => onPost(review.commit, remark)}
-          onFix={(context) => onFix(remark, context)}
-          draft={drafts.get(remark)}
-          onDraft={(next) => onDraft(remark, next)}
-        />
-      ))}
+      {review.remarks.map((remark, index) => {
+        const post = posts.get(remark)
+        return (
+          <RemarkRow
+            key={`remark-${index}`}
+            name={String(index)}
+            remark={remark}
+            post={post}
+            fix={fixes.get(remark)}
+            canFix={canFix}
+            waiting={waiting}
+            onPost={() => onPost(review.commit, remark)}
+            onFix={(context) => onFix(remark, context)}
+            draft={drafts.get(remark)}
+            onDraft={(next) => onDraft(remark, next)}
+            replies={post?.state === 'posted' ? replies.get(post.id) : undefined}
+          />
+        )
+      })}
     </>
   )
 }
@@ -449,7 +455,9 @@ function PrPage({
   const reviewed = review?.state === 'done' ? review.remarks : []
   // A remark posted in this window comes back from GitHub too. Show it once, as the remark.
   const postedHere = new Set(reviewed.map((remark) => posts.get(remark)).flatMap((post) => (post?.state === 'posted' ? [post.id] : [])))
-  const threads = loaded?.state === 'done' ? loaded.items.filter((item) => !postedHere.has(item.thread.id)) : []
+  const items = loaded?.state === 'done' ? loaded.items : []
+  const threads = items.filter((item) => !postedHere.has(item.thread.id))
+  const replies = new Map(items.map(({ thread }) => [thread.id, thread.replies] as const))
   // One fix per pull request: two would race each other's push, and a new review would drop the running one.
   const fixing = [...threads.map((item) => item.remark), ...reviewed].some((remark) => fixes.get(remark)?.state === 'fixing')
 
@@ -505,7 +513,7 @@ function PrPage({
             remark={remark}
             post={posts.get(remark)}
             fix={fixes.get(remark)}
-            canFix={canFix}
+            canFix={canFix && !thread.outdated}
             waiting={fixing}
             onPost={() => {}}
             onFix={(context) => onFix(remark, context)}
@@ -520,6 +528,7 @@ function PrPage({
           review={review}
           posts={posts}
           fixes={fixes}
+          replies={replies}
           canFix={canFix}
           waiting={fixing}
           drafts={drafts}
@@ -562,9 +571,11 @@ export function PrApp({
   const [loaded, setLoaded] = useState<Map<string, Loaded>>(new Map())
   // The same comment keeps the same remark object across reloads, so its post and fix state stay with it.
   const threadRemarks = useRef(new Map<number, Remark>())
-  // A fix takes minutes, so it reads the posts as they are when it lands, not when it started.
+  // A fix or post lands later, so it reads the other side as it is then, not when it started.
   const latestPosts = useRef(posts)
   latestPosts.current = posts
+  const latestFixes = useRef(fixes)
+  latestFixes.current = fixes
 
   const refresh = () => {
     setLoading(true)
@@ -593,7 +604,11 @@ export function PrApp({
   const startPost = (pr: Pr, commit: string, remark: Remark) => {
     setPost(remark, { state: 'posting' })
     post(pr, commit, remark)
-      .then((posted) => setPost(remark, { state: 'posted', ...posted }))
+      .then((posted) => {
+        setPost(remark, { state: 'posted', ...posted })
+        const fixed = latestFixes.current.get(remark)
+        if (fixed?.state === 'fixed' && fixed.reply === 'none') sendReply(pr, remark, posted.id, fixed.commit, fixed.answer)
+      })
       .catch((failure) => setPost(remark, { state: 'failed', error: errorMessage(failure) }))
   }
 
@@ -634,6 +649,15 @@ export function PrApp({
 
   const setDraft = (remark: Remark, next: Draft) => setDrafts((all) => new Map(all).set(remark, next))
 
+  const sendReply = (pr: Pr, remark: Remark, commentId: number, commit: string, answer: string) => {
+    const fixed = (next: Reply) => setFix(remark, { state: 'fixed', commit, answer, reply: next })
+    fixed('sending')
+    return reply(pr, commentId, `Gefixt in ${commit}. ${answer}`).then(
+      () => fixed('sent'),
+      (failure) => fixed({ error: errorMessage(failure) }),
+    )
+  }
+
   // The text stays in the draft, so a failed fix can be tried again with it.
   const startFix = (pr: Pr, remark: Remark, context: string) => {
     setDraft(remark, { open: false, text: context })
@@ -643,14 +667,10 @@ export function PrApp({
         if (outcome.state === 'nothing') return setFix(remark, { state: 'nothing', reason: outcome.reason })
 
         const posted = latestPosts.current.get(remark)
-        if (posted?.state !== 'posted') return setFix(remark, { state: 'fixed', commit: outcome.commit, reply: 'none' })
-
-        const fixed = (next: Reply) => setFix(remark, { state: 'fixed', commit: outcome.commit, reply: next })
-        fixed('sending')
-        return reply(pr, posted.id, `Gefixt in ${outcome.commit}. ${outcome.reply}`).then(
-          () => fixed('sent'),
-          (failure) => fixed({ error: errorMessage(failure) }),
-        )
+        if (posted?.state !== 'posted') {
+          return setFix(remark, { state: 'fixed', commit: outcome.commit, answer: outcome.reply, reply: 'none' })
+        }
+        return sendReply(pr, remark, posted.id, outcome.commit, outcome.reply)
       })
       .catch((failure) => setFix(remark, { state: 'failed', error: errorMessage(failure) }))
   }
