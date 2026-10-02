@@ -42,7 +42,7 @@ type Loaded = { state: 'loading' } | { state: 'done'; items: LoadedThread[] } | 
 
 type Fix =
   | { state: 'fixing' }
-  | { state: 'fixed'; commit: string; reply: Reply }
+  | { state: 'fixed'; commit: string; answer: string; reply: Reply }
   | { state: 'nothing'; reason: string }
   | { state: 'failed'; error: string }
 
@@ -484,9 +484,11 @@ export function PrApp({
   const [loaded, setLoaded] = useState<Map<string, Loaded>>(new Map())
   // The same comment keeps the same remark object across reloads, so its post and fix state stay with it.
   const threadRemarks = useRef(new Map<number, Remark>())
-  // A fix takes minutes, so it reads the posts as they are when it lands, not when it started.
+  // A fix or post lands later, so it reads the other side as it is then, not when it started.
   const latestPosts = useRef(posts)
   latestPosts.current = posts
+  const latestFixes = useRef(fixes)
+  latestFixes.current = fixes
 
   const refresh = () => {
     setLoading(true)
@@ -515,7 +517,11 @@ export function PrApp({
   const startPost = (pr: Pr, commit: string, remark: Remark) => {
     setPost(remark, { state: 'posting' })
     post(pr, commit, remark)
-      .then((posted) => setPost(remark, { state: 'posted', ...posted }))
+      .then((posted) => {
+        setPost(remark, { state: 'posted', ...posted })
+        const fixed = latestFixes.current.get(remark)
+        if (fixed?.state === 'fixed' && fixed.reply === 'none') sendReply(pr, remark, posted.id, fixed.commit, fixed.answer)
+      })
       .catch((failure) => setPost(remark, { state: 'failed', error: errorMessage(failure) }))
   }
 
@@ -554,6 +560,15 @@ export function PrApp({
 
   const setFix = (remark: Remark, next: Fix) => setFixes((all) => new Map(all).set(remark, next))
 
+  const sendReply = (pr: Pr, remark: Remark, commentId: number, commit: string, answer: string) => {
+    const fixed = (next: Reply) => setFix(remark, { state: 'fixed', commit, answer, reply: next })
+    fixed('sending')
+    return reply(pr, commentId, `Gefixt in ${commit}. ${answer}`).then(
+      () => fixed('sent'),
+      (failure) => fixed({ error: errorMessage(failure) }),
+    )
+  }
+
   const startFix = (pr: Pr, remark: Remark) => {
     setFix(remark, { state: 'fixing' })
     fix(pr, remark)
@@ -561,14 +576,10 @@ export function PrApp({
         if (outcome.state === 'nothing') return setFix(remark, { state: 'nothing', reason: outcome.reason })
 
         const posted = latestPosts.current.get(remark)
-        if (posted?.state !== 'posted') return setFix(remark, { state: 'fixed', commit: outcome.commit, reply: 'none' })
-
-        const fixed = (next: Reply) => setFix(remark, { state: 'fixed', commit: outcome.commit, reply: next })
-        fixed('sending')
-        return reply(pr, posted.id, `Gefixt in ${outcome.commit}. ${outcome.reply}`).then(
-          () => fixed('sent'),
-          (failure) => fixed({ error: errorMessage(failure) }),
-        )
+        if (posted?.state !== 'posted') {
+          return setFix(remark, { state: 'fixed', commit: outcome.commit, answer: outcome.reply, reply: 'none' })
+        }
+        return sendReply(pr, remark, posted.id, outcome.commit, outcome.reply)
       })
       .catch((failure) => setFix(remark, { state: 'failed', error: errorMessage(failure) }))
   }
