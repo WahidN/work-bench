@@ -50,7 +50,9 @@ export async function findClone(repo: string, root = PROJECTS): Promise<string> 
 }
 
 export function fixPrompt(pr: Pr, finding: Finding, context = ''): string {
-  const extra = context.trim() ? `\nExtra context from the author of the pull request:\n\n${context.trim()}\n` : ''
+  const extra = context.trim()
+    ? `\nExtra context from the author of the pull request:\n\n${context.trim()}\n\nDo not quote or mention this context in the reply.\n`
+    : ''
   return `You are fixing one review remark on the pull request titled "${pr.title}".
 
 The remark is about \`${finding.path}\`, around line ${finding.line}:
