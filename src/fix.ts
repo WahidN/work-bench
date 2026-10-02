@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, readdir } from 'node:fs/promises'
+import { access, mkdtemp, readdir } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -14,6 +14,8 @@ export type Fixed = { state: 'fixed'; commit: string; reply: string } | { state:
 type ExecFailure = Error & { stderr?: string }
 
 const PROJECTS = join(homedir(), 'Documents', 'Projecten')
+const CLONE_DEPTH = 4
+const SKIPPED = new Set(['node_modules', 'vendor', 'dist', 'build'])
 const TIMEOUT_MS = 15 * 60 * 1000
 
 const SCHEMA = {
@@ -36,17 +38,27 @@ export function repoOf(remote: string): string | undefined {
   return remote.trim().match(/github\.com[:/](.+?)(?:\.git)?\/?$/)?.[1]
 }
 
+// Clones often sit in a group folder, or even inside another clone, so this looks a few levels deep.
+// Level by level, so the clone nearest to the root wins.
 export async function findClone(repo: string, root = PROJECTS): Promise<string> {
-  const folders = (await readdir(root, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort()
-  for (const folder of folders) {
-    const dir = join(root, folder)
-    const remote = await git(dir, ['config', '--get', 'remote.origin.url']).catch(() => '')
-    if (repoOf(remote)?.toLowerCase() === repo.toLowerCase()) return dir
+  let level = [root]
+  for (let depth = 0; depth < CLONE_DEPTH && level.length > 0; depth++) {
+    const next: string[] = []
+    for (const dir of level) {
+      const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+      for (const entry of entries) {
+        if (entry.isDirectory() && !entry.name.startsWith('.') && !SKIPPED.has(entry.name)) next.push(join(dir, entry.name))
+      }
+    }
+    next.sort()
+    for (const dir of next) {
+      if (!(await access(join(dir, '.git')).then(() => true, () => false))) continue
+      const remote = await git(dir, ['config', '--get', 'remote.origin.url']).catch(() => '')
+      if (repoOf(remote)?.toLowerCase() === repo.toLowerCase()) return dir
+    }
+    level = next
   }
-  throw new Error(`No clone of ${repo} in ~/Documents/Projecten`)
+  throw new Error(`No clone of ${repo} under ~/Documents/Projecten`)
 }
 
 export function fixPrompt(pr: Pr, finding: Finding, context = ''): string {

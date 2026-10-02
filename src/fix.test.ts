@@ -40,6 +40,25 @@ describe('findClone', () => {
     expect(await findClone('wahidn/work-bench', root)).toBe(join(root, 'workbench'))
   })
 
+  it('finds a clone in a group folder or inside another clone, nearest first', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'projects-'))
+    mkdirSync(join(root, 'Praktikon'))
+    repo(join(root, 'Praktikon'), 'inkt-app', 'git@github.com:LinkuNijmegen/inkt-app.git')
+    repo(join(root, 'Praktikon'), 'docker', 'git@github.com:linku-bergop4/docker.git')
+    mkdirSync(join(root, 'Praktikon', 'docker', 'apps'))
+    repo(join(root, 'Praktikon', 'docker', 'apps'), 'symfony', 'git@github.com:linku-bergop4/bergop4-symfony2.git')
+    mkdirSync(join(root, 'aaa'))
+    repo(join(root, 'aaa'), 'deeper', 'git@github.com:acme/api.git')
+    repo(root, 'zzz', 'git@github.com:acme/api.git')
+    mkdirSync(join(root, 'web', 'node_modules'), { recursive: true })
+    repo(join(root, 'web', 'node_modules'), 'pkg', 'git@github.com:acme/hidden.git')
+
+    expect(await findClone('LinkuNijmegen/inkt-app', root)).toBe(join(root, 'Praktikon', 'inkt-app'))
+    expect(await findClone('linku-bergop4/bergop4-symfony2', root)).toBe(join(root, 'Praktikon', 'docker', 'apps', 'symfony'))
+    expect(await findClone('acme/api', root)).toBe(join(root, 'zzz'))
+    await expect(findClone('acme/hidden', root)).rejects.toThrow('No clone of acme/hidden')
+  })
+
   it('says which repo it could not find', async () => {
     const root = mkdtempSync(join(tmpdir(), 'projects-'))
 
