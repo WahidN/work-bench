@@ -3,7 +3,7 @@ import { render } from '@gpuix/react'
 
 import { loadComments, type Thread } from './comments'
 import { fixRemark, type Fixed } from './fix'
-import { fetchLogin, fetchMyPrs, type Pr, type Reason } from './github'
+import { fetchLogin, fetchMyPrs, openInBrowser, type Pr, type Reason } from './github'
 import { inRepo, repoCounts, shortName } from './repos'
 import { postRemark, replyTo, type Posted } from './post'
 import { reviewPr, type Remark, type Reviewed } from './review'
@@ -426,6 +426,7 @@ function PrPage({
   canFix,
   drafts,
   onBack,
+  onOpen,
   onReview,
   onPost,
   onFix,
@@ -440,6 +441,7 @@ function PrPage({
   canFix: boolean
   drafts: Map<Remark, Draft>
   onBack: () => void
+  onOpen: () => void
   onReview: () => void
   onPost: (commit: string, remark: Remark) => void
   onFix: (remark: Remark, context: string) => void
@@ -493,6 +495,13 @@ function PrPage({
             {`${shortName(pr.repo)}#${pr.number}`}
           </text>
           <text style={{ fontSize: 12, color: C.ghost }}>{pr.author}</text>
+          <div
+            testId="open-on-github"
+            onClick={onOpen}
+            style={{ cursor: 'pointer', paddingLeft: 6, paddingRight: 6, borderRadius: 5, hover: { backgroundColor: C.hover } }}
+          >
+            <text style={{ fontSize: 12, color: C.accent }}>Open on GitHub</text>
+          </div>
         </div>
       </div>
 
@@ -540,6 +549,7 @@ export function PrApp({
   reply = replyTo,
   whoami = fetchLogin,
   comments = loadComments,
+  openUrl = openInBrowser,
 }: {
   load?: () => Promise<Pr[]>
   review?: (pr: Pr) => Promise<Reviewed>
@@ -548,6 +558,7 @@ export function PrApp({
   reply?: (pr: Pr, commentId: number, body: string) => Promise<string>
   whoami?: () => Promise<string>
   comments?: (pr: Pr) => Promise<Thread[]>
+  openUrl?: (url: string) => void
 }) {
   const [prs, setPrs] = useState<Pr[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -718,6 +729,7 @@ export function PrApp({
           fixes={fixes}
           canFix={me !== null && opened.author === me}
           onBack={() => setOpened(null)}
+          onOpen={() => openUrl(opened.url)}
           onReview={() => startReview(opened)}
           onPost={(commit, remark) => startPost(opened, commit, remark)}
           drafts={drafts}

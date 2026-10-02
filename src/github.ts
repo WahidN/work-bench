@@ -39,6 +39,10 @@ async function search(filter: string): Promise<SearchResult[]> {
   return JSON.parse(stdout)
 }
 
+export function openInBrowser(url: string): void {
+  run('open', [url]).catch(() => {})
+}
+
 export async function fetchLogin(): Promise<string> {
   const { stdout } = await run('gh', ['api', 'user', '--jq', '.login'])
   return stdout.trim()
