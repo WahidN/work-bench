@@ -423,7 +423,7 @@ function PrPage({
             remark={remark}
             post={posts.get(remark)}
             fix={fixes.get(remark)}
-            canFix={canFix}
+            canFix={canFix && !thread.outdated}
             waiting={fixing}
             onPost={() => {}}
             onFix={() => onFix(remark)}
