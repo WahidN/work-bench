@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { render } from '@gpuix/react'
 
-import { fetchMyPrs, type Pr, type Reason } from './github'
+import { fixRemark, type Fixed } from './fix'
+import { fetchLogin, fetchMyPrs, type Pr, type Reason } from './github'
 import { inRepo, repoCounts, shortName } from './repos'
-import { postRemark } from './post'
+import { postRemark, replyTo, type Posted } from './post'
 import { reviewPr, type Remark, type Reviewed } from './review'
 
 // GPUI does not inherit `color`, so every <text> sets one from here.
@@ -29,7 +30,15 @@ type Review =
 
 type Post =
   | { state: 'posting' }
-  | { state: 'posted'; url: string }
+  | { state: 'posted'; id: number; url: string }
+  | { state: 'failed'; error: string }
+
+type Reply = 'none' | 'sending' | 'sent' | { error: string }
+
+type Fix =
+  | { state: 'fixing' }
+  | { state: 'fixed'; commit: string; answer: string; reply: Reply }
+  | { state: 'nothing'; reason: string }
   | { state: 'failed'; error: string }
 
 function errorMessage(error: unknown): string {
@@ -174,16 +183,55 @@ function PostControl({
   return <Button testId={`post-${index}`} label={posting ? 'Posting' : 'Post'} onClick={posting ? undefined : onPost} />
 }
 
+function FixControl({
+  index,
+  fix,
+  waiting,
+  onFix,
+}: {
+  index: number
+  fix: Fix | undefined
+  waiting: boolean
+  onFix: () => void
+}) {
+  if (fix?.state === 'fixed') return <Status text={`Fixed in ${fix.commit}`} color={C.secondary} />
+
+  const fixing = fix?.state === 'fixing'
+  return <Button testId={`fix-${index}`} label={fixing ? 'Fixing' : 'Fix'} onClick={fixing || waiting ? undefined : onFix} />
+}
+
+function Note({ text, color }: { text: string; color: string }) {
+  return <text style={{ fontSize: 12, lineHeight: 18, color }}>{text}</text>
+}
+
+function FixNote({ fix }: { fix: Fix | undefined }) {
+  if (fix?.state === 'nothing') return <Note text={`Claude changed nothing. ${fix.reason}`} color={C.secondary} />
+  if (fix?.state === 'failed') return <Note text={fix.error} color={C.error} />
+  if (fix?.state !== 'fixed') return null
+  if (fix.reply === 'sending') return <Note text="Replying under the comment on GitHub" color={C.secondary} />
+  if (fix.reply === 'sent') return <Note text="Replied under the comment on GitHub" color={C.secondary} />
+  if (typeof fix.reply === 'object') return <Note text={`The reply failed: ${fix.reply.error}`} color={C.error} />
+  return null
+}
+
 function RemarkRow({
   index,
   remark,
   post,
+  fix,
+  canFix,
+  waiting,
   onPost,
+  onFix,
 }: {
   index: number
   remark: Remark
   post: Post | undefined
+  fix: Fix | undefined
+  canFix: boolean
+  waiting: boolean
   onPost: () => void
+  onFix: () => void
 }) {
   return (
     <div
@@ -203,12 +251,12 @@ function RemarkRow({
     >
       <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 28 }}>
         <text style={{ flexGrow: 1, fontSize: 12, color: C.accent }}>{`${remark.path}:${remark.line}`}</text>
+        {canFix ? <FixControl index={index} fix={fix} waiting={waiting} onFix={onFix} /> : null}
         <PostControl index={index} remark={remark} post={post} onPost={onPost} />
       </div>
       <text style={{ fontSize: 13, lineHeight: 20, color: C.text }}>{remark.body}</text>
-      {post?.state === 'failed' ? (
-        <text style={{ fontSize: 12, lineHeight: 18, color: C.error }}>{post.error}</text>
-      ) : null}
+      {post?.state === 'failed' ? <Note text={post.error} color={C.error} /> : null}
+      <FixNote fix={fix} />
     </div>
   )
 }
@@ -216,11 +264,19 @@ function RemarkRow({
 function ReviewResult({
   review,
   posts,
+  fixes,
+  canFix,
+  waiting,
   onPost,
+  onFix,
 }: {
   review: Review | undefined
   posts: Map<Remark, Post>
+  fixes: Map<Remark, Fix>
+  canFix: boolean
+  waiting: boolean
   onPost: (commit: string, remark: Remark) => void
+  onFix: (remark: Remark) => void
 }) {
   if (!review) {
     return (
@@ -246,7 +302,11 @@ function ReviewResult({
           index={index}
           remark={remark}
           post={posts.get(remark)}
+          fix={fixes.get(remark)}
+          canFix={canFix}
+          waiting={waiting}
           onPost={() => onPost(review.commit, remark)}
+          onFix={() => onFix(remark)}
         />
       ))}
     </virtual-list>
@@ -257,18 +317,26 @@ function PrPage({
   pr,
   review,
   posts,
+  fixes,
+  canFix,
   onBack,
   onReview,
   onPost,
+  onFix,
 }: {
   pr: Pr
   review: Review | undefined
   posts: Map<Remark, Post>
+  fixes: Map<Remark, Fix>
+  canFix: boolean
   onBack: () => void
   onReview: () => void
   onPost: (commit: string, remark: Remark) => void
+  onFix: (remark: Remark) => void
 }) {
   const running = review?.state === 'running'
+  // One fix per pull request: two would race each other's push, and a new review would drop the running one.
+  const fixing = review?.state === 'done' && review.remarks.some((remark) => fixes.get(remark)?.state === 'fixing')
 
   return (
     <div style={{ flexGrow: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -289,7 +357,7 @@ function PrPage({
           testId="review"
           label={running ? 'Reviewing' : review ? 'Review again' : 'Review with Claude'}
           color={C.accent}
-          onClick={running ? undefined : onReview}
+          onClick={running || fixing ? undefined : onReview}
         />
       </div>
 
@@ -313,7 +381,15 @@ function PrPage({
         </div>
       </div>
 
-      <ReviewResult review={review} posts={posts} onPost={onPost} />
+      <ReviewResult
+        review={review}
+        posts={posts}
+        fixes={fixes}
+        canFix={canFix}
+        waiting={fixing}
+        onPost={onPost}
+        onFix={onFix}
+      />
     </div>
   )
 }
@@ -322,10 +398,16 @@ export function PrApp({
   load = fetchMyPrs,
   review = reviewPr,
   post = postRemark,
+  fix = fixRemark,
+  reply = replyTo,
+  whoami = fetchLogin,
 }: {
   load?: () => Promise<Pr[]>
   review?: (pr: Pr) => Promise<Reviewed>
-  post?: (pr: Pr, commit: string, remark: Remark) => Promise<string>
+  post?: (pr: Pr, commit: string, remark: Remark) => Promise<Posted>
+  fix?: (pr: Pr, remark: Remark) => Promise<Fixed>
+  reply?: (pr: Pr, commentId: number, body: string) => Promise<string>
+  whoami?: () => Promise<string>
 }) {
   const [prs, setPrs] = useState<Pr[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -334,6 +416,13 @@ export function PrApp({
   const [opened, setOpened] = useState<Pr | null>(null)
   const [reviews, setReviews] = useState<Map<string, Review>>(new Map())
   const [posts, setPosts] = useState<Map<Remark, Post>>(new Map())
+  const [fixes, setFixes] = useState<Map<Remark, Fix>>(new Map())
+  const [me, setMe] = useState<string | null>(null)
+  // A fix or post lands later, so it reads the other side as it is then, not when it started.
+  const latestPosts = useRef(posts)
+  latestPosts.current = posts
+  const latestFixes = useRef(fixes)
+  latestFixes.current = fixes
 
   const refresh = () => {
     setLoading(true)
@@ -362,8 +451,42 @@ export function PrApp({
   const startPost = (pr: Pr, commit: string, remark: Remark) => {
     setPost(remark, { state: 'posting' })
     post(pr, commit, remark)
-      .then((url) => setPost(remark, { state: 'posted', url }))
+      .then((posted) => {
+        setPost(remark, { state: 'posted', ...posted })
+        const fixed = latestFixes.current.get(remark)
+        if (fixed?.state === 'fixed' && fixed.reply === 'none') sendReply(pr, remark, posted.id, fixed.commit, fixed.answer)
+      })
       .catch((failure) => setPost(remark, { state: 'failed', error: errorMessage(failure) }))
+  }
+
+  useEffect(() => {
+    whoami().then(setMe, () => setMe(null))
+  }, [])
+
+  const setFix = (remark: Remark, next: Fix) => setFixes((all) => new Map(all).set(remark, next))
+
+  const sendReply = (pr: Pr, remark: Remark, commentId: number, commit: string, answer: string) => {
+    const fixed = (next: Reply) => setFix(remark, { state: 'fixed', commit, answer, reply: next })
+    fixed('sending')
+    return reply(pr, commentId, `Gefixt in ${commit}. ${answer}`).then(
+      () => fixed('sent'),
+      (failure) => fixed({ error: errorMessage(failure) }),
+    )
+  }
+
+  const startFix = (pr: Pr, remark: Remark) => {
+    setFix(remark, { state: 'fixing' })
+    fix(pr, remark)
+      .then((outcome) => {
+        if (outcome.state === 'nothing') return setFix(remark, { state: 'nothing', reason: outcome.reason })
+
+        const posted = latestPosts.current.get(remark)
+        if (posted?.state !== 'posted') {
+          return setFix(remark, { state: 'fixed', commit: outcome.commit, answer: outcome.reply, reply: 'none' })
+        }
+        return sendReply(pr, remark, posted.id, outcome.commit, outcome.reply)
+      })
+      .catch((failure) => setFix(remark, { state: 'failed', error: errorMessage(failure) }))
   }
 
   const pick = (repo: string | null) => {
@@ -424,9 +547,12 @@ export function PrApp({
           pr={opened}
           review={reviews.get(opened.url)}
           posts={posts}
+          fixes={fixes}
+          canFix={me !== null && opened.author === me}
           onBack={() => setOpened(null)}
           onReview={() => startReview(opened)}
           onPost={(commit, remark) => startPost(opened, commit, remark)}
+          onFix={(remark) => startFix(opened, remark)}
         />
       ) : (
         <div style={{ flexGrow: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>

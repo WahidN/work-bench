@@ -38,6 +38,11 @@ async function search(filter: string): Promise<SearchResult[]> {
   return JSON.parse(stdout)
 }
 
+export async function fetchLogin(): Promise<string> {
+  const { stdout } = await run('gh', ['api', 'user', '--jq', '.login'])
+  return stdout.trim()
+}
+
 export async function fetchMyPrs(): Promise<Pr[]> {
   const [assigned, review] = await Promise.all([
     search('--assignee=@me'),
