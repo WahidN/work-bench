@@ -189,6 +189,13 @@ const OUTSIDE: Remark = {
   body: 'Deze check staat buiten de diff, dus GitHub weigert een comment op deze regel.',
 }
 
+// Fix opens a box for extra context first, and Start fix sends the remark with it to Claude.
+async function pressFix(app: Awaited<ReturnType<typeof connectTest>>, name: string, context = '') {
+  await app.getByTestId(`fix-${name}`).click()
+  if (context) await app.getByTestId(`context-${name}`).fill(context)
+  await app.getByTestId(`start-fix-${name}`).click()
+}
+
 async function openReviewed(fakes: Fakes) {
   const { app, renderer } = await mount(async () => PRS, {
     review: async () => ({ commit: 'abc123', remarks: [REMARK, OUTSIDE] }),
@@ -263,7 +270,7 @@ describeNative('fixing a remark', () => {
 
     await app.getByTestId('post-0').click()
     await app.getByText('Posted').waitFor()
-    await app.getByTestId('fix-0').click()
+    await pressFix(app, '0')
     await app.getByText('Fixing').waitFor()
     await app.getByTestId('fix-1').click()
     expect(fixes).toBe(1)
@@ -296,7 +303,7 @@ describeNative('fixing a remark', () => {
       },
     })
 
-    await app.getByTestId('fix-0').click()
+    await pressFix(app, '0')
     await app.getByText('Fixing').waitFor()
     await app.getByTestId('review').click()
     await app.getByTestId('fix-1').click()
@@ -319,7 +326,7 @@ describeNative('fixing a remark', () => {
       },
     })
 
-    await app.getByTestId('fix-0').click()
+    await pressFix(app, '0')
     await app.getByText('Fixed in abc1234').waitFor()
     expect(replies).toBe(0)
     expect(renderer.getPaintedText().join(' ')).not.toContain('Replied')
@@ -337,7 +344,7 @@ describeNative('fixing a remark', () => {
 
     await app.getByTestId('post-0').click()
     await app.getByText('Posted').waitFor()
-    await app.getByTestId('fix-0').click()
+    await pressFix(app, '0')
     await app.getByText('The reply failed: Not Found (HTTP 404)').waitFor()
     await app.getByText('Fixed in abc1234').waitFor()
 
@@ -358,7 +365,7 @@ describeNative('fixing a remark', () => {
       fix: async () => ({ state: 'nothing', reason: 'De limiet telt al per gebruiker.' }),
     })
 
-    await app.getByTestId('fix-0').click()
+    await pressFix(app, '0')
     await app.getByText('Claude changed nothing. De limiet telt al per gebruiker.').waitFor()
     expect(await app.getByTestId('fix-0').count()).toBe(1)
 
@@ -371,7 +378,7 @@ describeNative('fixing a remark', () => {
       fix: () => Promise.reject(new Error('The branch moved on while Claude worked. Nothing was pushed.')),
     })
 
-    await app.getByTestId('fix-0').click()
+    await pressFix(app, '0')
     await app.getByText('The branch moved on while Claude worked. Nothing was pushed.').waitFor()
     expect(await app.getByTestId('fix-0').count()).toBe(1)
 
@@ -436,7 +443,7 @@ describeNative('comments from GitHub', () => {
     mkdirSync('screenshots', { recursive: true })
     renderer.captureScreenshot('screenshots/pr-comments.png')
 
-    await app.getByTestId('fix-thread-10').click()
+    await pressFix(app, 'thread-10')
     await app.getByText('Replied under the comment on GitHub').waitFor()
     expect(replies).toEqual([[10, 'Gefixt in abc1234. De teller staat nu in Redis.']])
 
@@ -479,6 +486,98 @@ describeNative('comments from GitHub', () => {
     await app.getByTestId('review').click()
     await app.getByTestId('finding-0').waitFor()
     expect(reviews).toBe(1)
+
+    await app.close()
+  })
+})
+
+describeNative('fix context', () => {
+  it('hands your context to the fix and keeps it out of the reply', async () => {
+    const contexts: string[] = []
+    const replies: string[] = []
+    const { app, renderer } = await openReviewed({
+      whoami: async () => 'sam',
+      post: async () => ({ id: 42, url: '' }),
+      fix: async (pr, remark, context) => {
+        contexts.push(context)
+        return FIXED
+      },
+      reply: async (pr, id, body) => {
+        replies.push(body)
+        return ''
+      },
+    })
+
+    await app.getByTestId('post-0').click()
+    await app.getByText('Posted').waitFor()
+    await app.getByTestId('fix-0').click()
+    await app.getByTestId('context-0').fill('Gebruik de teller in Redis, zoals in src/auth.ts.')
+    mkdirSync('screenshots', { recursive: true })
+    renderer.captureScreenshot('screenshots/pr-fix-context.png')
+    await app.getByTestId('start-fix-0').click()
+    await app.getByText('Replied under the comment on GitHub').waitFor()
+
+    expect(contexts).toEqual(['Gebruik de teller in Redis, zoals in src/auth.ts.'])
+    expect(replies).toEqual(['Gefixt in abc1234. De teller staat nu in Redis.'])
+    expect(await app.getByTestId('context-0').count()).toBe(0)
+
+    await app.close()
+  })
+
+  it('starts a fix without context from an empty box', async () => {
+    const contexts: string[] = []
+    const { app } = await openReviewed({
+      whoami: async () => 'sam',
+      fix: async (pr, remark, context) => {
+        contexts.push(context)
+        return FIXED
+      },
+    })
+
+    await pressFix(app, '0')
+    await app.getByText('Fixed in abc1234').waitFor()
+    expect(contexts).toEqual([''])
+
+    await app.close()
+  })
+
+  it('closes the box on Cancel without starting a fix', async () => {
+    let fixes = 0
+    const { app } = await openReviewed({
+      whoami: async () => 'sam',
+      fix: async () => {
+        fixes += 1
+        return FIXED
+      },
+    })
+
+    await app.getByTestId('fix-0').click()
+    await app.getByTestId('context-0').fill('Toch niet.')
+    await app.getByTestId('cancel-fix-0').click()
+
+    expect(fixes).toBe(0)
+    expect(await app.getByTestId('context-0').count()).toBe(0)
+    expect(await app.getByTestId('fix-0').count()).toBe(1)
+
+    await app.close()
+  })
+
+  it('keeps your text for the next try after a failed fix', async () => {
+    const contexts: string[] = []
+    const { app } = await openReviewed({
+      whoami: async () => 'sam',
+      fix: (pr, remark, context) => {
+        contexts.push(context)
+        return Promise.reject(new Error('The branch moved on or was deleted while Claude worked. Nothing was pushed.'))
+      },
+    })
+
+    await pressFix(app, '0', 'Gebruik reduce.')
+    await app.getByText('The branch moved on or was deleted while Claude worked. Nothing was pushed.').waitFor()
+    await app.getByTestId('fix-0').click()
+    await app.getByTestId('start-fix-0').click()
+
+    expect(contexts).toEqual(['Gebruik reduce.', 'Gebruik reduce.'])
 
     await app.close()
   })

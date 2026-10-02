@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { findClone, fixArgs, fixRemark, readFix, repoOf } from './fix'
+import { findClone, fixArgs, fixPrompt, fixRemark, readFix, repoOf } from './fix'
 import type { Pr } from './github'
 
 const git = (dir: string, ...args: string[]) =>
@@ -84,6 +84,7 @@ const FINDING = { path: 'a.ts', line: 1, body: 'Deze regel mist de fix.' }
 
 const FAKE_CLAUDE = `#!/bin/sh
 cat > /dev/null
+printf '%s' "$2" > "$FAKE_ORIGIN.prompt"
 if [ "$FAKE_CLAUDE" != nothing ]; then echo "fixed()" >> a.ts; fi
 if [ "$FAKE_CLAUDE" = delete ]; then git --git-dir="$FAKE_ORIGIN" update-ref -d refs/heads/feat/x; fi
 if [ "$FAKE_CLAUDE" = move ]; then
@@ -150,7 +151,7 @@ describe('fixRemark', () => {
   it('pushes the fix past a failing hook and leaves your working copy alone', async () => {
     process.env.FAKE_CLAUDE = 'edit'
 
-    const fixed = await fixRemark(PR, FINDING, projects)
+    const fixed = await fixRemark(PR, FINDING, '', projects)
 
     expect(fixed).toEqual({
       state: 'fixed',
@@ -168,7 +169,7 @@ describe('fixRemark', () => {
     process.env.FAKE_CLAUDE = 'nothing'
     const before = git(origin, 'rev-parse', 'feat/x')
 
-    expect(await fixRemark(PR, FINDING, projects)).toEqual({ state: 'nothing', reason: 'De fix staat erin.' })
+    expect(await fixRemark(PR, FINDING, '', projects)).toEqual({ state: 'nothing', reason: 'De fix staat erin.' })
     expect(git(origin, 'rev-parse', 'feat/x')).toBe(before)
     expect(worktrees()).toBe(1)
   })
@@ -176,7 +177,7 @@ describe('fixRemark', () => {
   it('refuses to push over a branch that moved on while Claude worked', async () => {
     process.env.FAKE_CLAUDE = 'move'
 
-    await expect(fixRemark(PR, FINDING, projects)).rejects.toThrow('The branch moved on')
+    await expect(fixRemark(PR, FINDING, '', projects)).rejects.toThrow('The branch moved on')
     expect(git(origin, 'log', '-1', '--format=%s', 'feat/x')).toBe('push from a colleague')
     expect(worktrees()).toBe(1)
   })
@@ -184,14 +185,37 @@ describe('fixRemark', () => {
   it('does not bring back a branch that was deleted while Claude worked', async () => {
     process.env.FAKE_CLAUDE = 'delete'
 
-    await expect(fixRemark(PR, FINDING, projects)).rejects.toThrow('moved on or was deleted')
+    await expect(fixRemark(PR, FINDING, '', projects)).rejects.toThrow('moved on or was deleted')
     expect(git(origin, 'branch', '--list', 'feat/x')).toBe('')
     expect(worktrees()).toBe(1)
+  })
+
+  it('hands your context to Claude next to the remark', async () => {
+    process.env.FAKE_CLAUDE = 'edit'
+
+    await fixRemark(PR, FINDING, 'Gebruik de bestaande `limit` helper.', projects)
+
+    const prompt = readFileSync(`${origin}.prompt`, 'utf8')
+    expect(prompt).toContain(FINDING.body)
+    expect(prompt).toContain('Gebruik de bestaande `limit` helper.')
   })
 
   it('refuses a pull request from a fork', async () => {
     process.env.FAKE_FORK = 'true'
 
-    await expect(fixRemark(PR, FINDING, projects)).rejects.toThrow('fork')
+    await expect(fixRemark(PR, FINDING, '', projects)).rejects.toThrow('fork')
+  })
+})
+
+describe('fixPrompt', () => {
+  it('adds your context after the remark', () => {
+    const prompt = fixPrompt(PR, FINDING, 'Gebruik `reduce`.')
+
+    expect(prompt).toContain('Extra context from the author of the pull request:\n\nGebruik `reduce`.')
+    expect(prompt.indexOf('Gebruik `reduce`.')).toBeGreaterThan(prompt.indexOf(FINDING.body))
+  })
+
+  it('leaves the context out when there is none', () => {
+    expect(fixPrompt(PR, FINDING, '  ')).not.toContain('Extra context')
   })
 })
