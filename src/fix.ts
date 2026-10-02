@@ -58,7 +58,7 @@ export async function findClone(repo: string, root = PROJECTS): Promise<string> 
     }
     level = next
   }
-  throw new Error(`No clone of ${repo} under ~/Documents/Projecten`)
+  throw new Error(`No clone of ${repo} within ${CLONE_DEPTH} levels of ~/Documents/Projecten`)
 }
 
 export function fixPrompt(pr: Pr, finding: Finding, context = ''): string {
