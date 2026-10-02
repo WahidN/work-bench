@@ -284,6 +284,7 @@ function ReviewResult({
   review,
   posts,
   fixes,
+  replies,
   canFix,
   waiting,
   onPost,
@@ -292,6 +293,7 @@ function ReviewResult({
   review: Review | undefined
   posts: Map<Remark, Post>
   fixes: Map<Remark, Fix>
+  replies: Map<number, Thread['replies']>
   canFix: boolean
   waiting: boolean
   onPost: (commit: string, remark: Remark) => void
@@ -315,19 +317,23 @@ function ReviewResult({
 
   return (
     <>
-      {review.remarks.map((remark, index) => (
-        <RemarkRow
-          key={`remark-${index}`}
-          name={String(index)}
-          remark={remark}
-          post={posts.get(remark)}
-          fix={fixes.get(remark)}
-          canFix={canFix}
-          waiting={waiting}
-          onPost={() => onPost(review.commit, remark)}
-          onFix={() => onFix(remark)}
-        />
-      ))}
+      {review.remarks.map((remark, index) => {
+        const post = posts.get(remark)
+        return (
+          <RemarkRow
+            key={`remark-${index}`}
+            name={String(index)}
+            remark={remark}
+            post={post}
+            fix={fixes.get(remark)}
+            canFix={canFix}
+            waiting={waiting}
+            onPost={() => onPost(review.commit, remark)}
+            onFix={() => onFix(remark)}
+            replies={post?.state === 'posted' ? replies.get(post.id) : undefined}
+          />
+        )
+      })}
     </>
   )
 }
@@ -367,7 +373,9 @@ function PrPage({
   const reviewed = review?.state === 'done' ? review.remarks : []
   // A remark posted in this window comes back from GitHub too. Show it once, as the remark.
   const postedHere = new Set(reviewed.map((remark) => posts.get(remark)).flatMap((post) => (post?.state === 'posted' ? [post.id] : [])))
-  const threads = loaded?.state === 'done' ? loaded.items.filter((item) => !postedHere.has(item.thread.id)) : []
+  const items = loaded?.state === 'done' ? loaded.items : []
+  const threads = items.filter((item) => !postedHere.has(item.thread.id))
+  const replies = new Map(items.map(({ thread }) => [thread.id, thread.replies] as const))
   // One fix per pull request: two would race each other's push, and a new review would drop the running one.
   const fixing = [...threads.map((item) => item.remark), ...reviewed].some((remark) => fixes.get(remark)?.state === 'fixing')
 
@@ -436,6 +444,7 @@ function PrPage({
           review={review}
           posts={posts}
           fixes={fixes}
+          replies={replies}
           canFix={canFix}
           waiting={fixing}
           onPost={onPost}
