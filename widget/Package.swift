@@ -10,6 +10,7 @@ let package = Package(
     .target(name: "WidgetCore"),
     .target(name: "WidgetUI", dependencies: ["WidgetCore"], swiftSettings: onMainActor),
     .executableTarget(name: "WorkbenchWidget", dependencies: ["WidgetCore", "WidgetUI"], swiftSettings: onMainActor),
+    .executableTarget(name: "RenderPreviews", dependencies: ["WidgetCore", "WidgetUI"], swiftSettings: onMainActor),
     .testTarget(name: "WidgetCoreTests", dependencies: ["WidgetCore"]),
   ]
 )
