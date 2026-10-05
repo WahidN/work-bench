@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { render } from '@gpuix/react'
+import { render, useGpuix } from '@gpuix/react'
 
+import { listenForOrders, orderFeed, readOrder, sendOrder, type Order, type OrderFeed } from './commands'
 import { loadComments, type Thread } from './comments'
 import { fixRemark, type Fixed } from './fix'
 import { fetchLogin, fetchMyPrs, openInBrowser, type Pr, type Reason } from './github'
@@ -559,6 +560,7 @@ export function PrApp({
   whoami = fetchLogin,
   comments = loadComments,
   openUrl = openInBrowser,
+  orders,
 }: {
   load?: () => Promise<Pr[]>
   review?: (pr: Pr) => Promise<Reviewed>
@@ -568,12 +570,16 @@ export function PrApp({
   whoami?: () => Promise<string>
   comments?: (pr: Pr) => Promise<Thread[]>
   openUrl?: (url: string) => void
+  orders?: OrderFeed['subscribe']
 }) {
   const [prs, setPrs] = useState<Pr[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [picked, setPicked] = useState<string | null>(null)
   const [opened, setOpened] = useState<Pr | null>(null)
+  const [order, setOrder] = useState<Order | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const { renderer } = useGpuix()
   const [reviews, setReviews] = useState<Map<string, Review>>(new Map())
   const [posts, setPosts] = useState<Map<Remark, Post>>(new Map())
   const [fixes, setFixes] = useState<Map<Remark, Fix>>(new Map())
@@ -590,6 +596,7 @@ export function PrApp({
 
   const refresh = () => {
     setLoading(true)
+    setNotice(null)
     load()
       .then((fresh) => {
         setPrs(fresh)
@@ -609,6 +616,41 @@ export function PrApp({
       .then(({ commit, remarks }) => setReview(pr, { state: 'done', commit, remarks }))
       .catch((failure) => setReview(pr, { state: 'failed', error: errorMessage(failure) }))
   }
+
+  // A review or a fix already runs on it: an order opens the page, but starts nothing on top.
+  const busy = (pr: Pr) => {
+    const current = reviews.get(pr.url)
+    const comments = loaded.get(pr.url)
+    const remarks = [
+      ...(current?.state === 'done' ? current.remarks : []),
+      ...(comments?.state === 'done' ? comments.items.map((item) => item.remark) : []),
+    ]
+    return current?.state === 'running' || remarks.some((remark) => fixes.get(remark)?.state === 'fixing')
+  }
+
+  // Orders come from another launch, like the widget, so the window comes forward for each one.
+  useEffect(
+    () =>
+      orders?.((next) => {
+        renderer?.activateWindow?.()
+        if (next) setOrder(next)
+      }),
+    [],
+  )
+
+  useEffect(() => {
+    if (!order || prs === null) return
+    setOrder(null)
+    const pr = prs.find((entry) => entry.url === order.url)
+    if (!pr) {
+      setOpened(null)
+      setNotice(`This pull request is not in your list: ${order.url}`)
+      return
+    }
+    setNotice(null)
+    setOpened(pr)
+    if (order.review && !busy(pr)) startReview(pr)
+  }, [order, prs])
 
   const setPost = (remark: Remark, next: Post) => setPosts((all) => new Map(all).set(remark, next))
 
@@ -792,6 +834,11 @@ export function PrApp({
             </div>
           </div>
 
+          {notice ? (
+            <div style={{ flexShrink: 0, paddingLeft: 20, paddingRight: 20, paddingBottom: 8 }}>
+              <text style={{ fontSize: 12, lineHeight: 18, color: C.secondary }}>{notice}</text>
+            </div>
+          ) : null}
           {error ? (
             <Message text={error} color={C.error} />
           ) : prs === null ? (
@@ -821,8 +868,20 @@ export function PrApp({
 const isEntryPoint =
   typeof Bun !== 'undefined' && (Bun.isStandaloneExecutable || Bun.main === import.meta.path)
 
+async function takeOrders(): Promise<OrderFeed> {
+  const first = readOrder(process.argv.slice(2))
+  // Another Workbench is open: hand it the order and quit, so there is only ever one window.
+  if (await sendOrder(first)) process.exit(0)
+  const feed = orderFeed(first)
+  await listenForOrders(feed.push)
+  return feed
+}
+
 if (isEntryPoint) {
-  render(<PrApp />, {
+  // `bun --hot` runs this file again on every save, so the socket and its feed are kept on `globalThis`.
+  const shared = globalThis as { workbenchOrders?: OrderFeed }
+  shared.workbenchOrders ??= await takeOrders()
+  render(<PrApp orders={shared.workbenchOrders.subscribe} />, {
     title: 'Workbench',
     width: 960,
     height: 680,
