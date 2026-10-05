@@ -10,6 +10,8 @@ When you open a pull request, its inline comments on GitHub load with their repl
 
 Built with [GPUIX](https://gpuix.dev): React and TypeScript on Bun, drawn on the GPU by [GPUI](https://gpui.rs).
 
+Other programs can steer Workbench. `bun src/app.tsx --pr <url>` opens that pull request, and `--review` also starts a review. When Workbench already runs, the order goes to that window instead of a new one. `bun src/cli.ts prs` prints your open pull requests as JSON.
+
 ## Requirements
 
 - macOS on Apple Silicon
