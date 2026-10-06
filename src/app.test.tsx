@@ -48,6 +48,8 @@ async function mount(load: () => Promise<Pr[]>, fakes: Fakes = {}) {
       whoami={async () => 'nobody'}
       comments={async () => []}
       openUrl={() => {}}
+      loadHidden={async () => []}
+      saveHidden={async () => {}}
       {...fakes}
     />,
   )
@@ -651,6 +653,81 @@ describeNative('orders from outside the window', () => {
     await app.getByText('This pull request is not in your list: https://github.com/acme/api/pull/99').waitFor()
     expect(renderer.getPaintedText()).toContain('Fix the login form')
     expect(reviews).toBe(0)
+
+    await app.close()
+  })
+})
+
+describeNative('hidden repos', () => {
+  it('hides a repo from the list and saves it', async () => {
+    const saved: string[][] = []
+    const { app, renderer } = await mount(async () => PRS, { saveHidden: async (repos) => void saved.push(repos) })
+    await app.getByTestId('repo-acme/web').waitFor()
+    await app.getByTestId('repo-acme/web').hover()
+    await app.getByTestId('hide-acme/web').click()
+    await app.getByTestId('hidden-acme/web').waitFor()
+
+    const painted = renderer.getPaintedText()
+    expect(painted).toContain('Add rate limits')
+    expect(painted).not.toContain('Fix the login form')
+    expect(painted).not.toContain('Use the new header')
+    expect(saved).toEqual([['acme/web']])
+
+    mkdirSync('screenshots', { recursive: true })
+    renderer.captureScreenshot('screenshots/hidden-repos.png')
+
+    await app.close()
+  })
+
+  it('starts with the saved hidden repos and shows one again on a click', async () => {
+    const saved: string[][] = []
+    const { app, renderer } = await mount(async () => PRS, {
+      loadHidden: async () => ['acme/web'],
+      saveHidden: async (repos) => void saved.push(repos),
+    })
+    await app.getByTestId('hidden-acme/web').waitFor()
+    expect(renderer.getPaintedText()).not.toContain('Fix the login form')
+
+    await app.getByTestId('hidden-acme/web').click()
+    await app.getByText('Fix the login form').waitFor()
+    expect(saved).toEqual([[]])
+
+    await app.close()
+  })
+
+  it('goes back to All when the picked repo gets hidden', async () => {
+    const { app, renderer } = await mount(async () => PRS)
+    await app.getByTestId('repo-acme/api').waitFor()
+    await app.getByTestId('repo-acme/api').click()
+    await app.getByTestId('repo-acme/api').hover()
+    await app.getByTestId('hide-acme/api').click()
+    await app.getByText('Fix the login form').waitFor()
+
+    expect(renderer.getPaintedText()).toEqual(expect.arrayContaining(['Fix the login form', 'Use the new header']))
+
+    await app.close()
+  })
+
+  it('closes the open pull request when its repo gets hidden', async () => {
+    const { app, renderer } = await mount(async () => PRS)
+    await app.getByText('Add rate limits').waitFor()
+    await app.getByText('Add rate limits').click()
+    await app.getByTestId('back').waitFor()
+    await app.getByTestId('repo-acme/api').hover()
+    await app.getByTestId('hide-acme/api').click()
+    await app.getByText('Fix the login form').waitFor()
+
+    expect(renderer.getPaintedText()).not.toContain('Review with Claude')
+
+    await app.close()
+  })
+
+  it('treats an order for a hidden repo as not in the list', async () => {
+    const url = 'https://github.com/acme/api/pull/2'
+    const feed = orderFeed({ url, review: false })
+    const { app } = await mount(async () => PRS, { orders: feed.subscribe, loadHidden: async () => ['acme/api'] })
+
+    await app.getByText(`This pull request is not in your list: ${url}`).waitFor()
 
     await app.close()
   })

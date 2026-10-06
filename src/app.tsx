@@ -5,7 +5,8 @@ import { listenForOrders, orderFeed, readOrder, sendOrder, type Order, type Orde
 import { loadComments, type Thread } from './comments'
 import { fixRemark, type Fixed } from './fix'
 import { fetchLogin, fetchMyPrs, openInBrowser, type Pr, type Reason } from './github'
-import { inRepo, repoCounts, shortName } from './repos'
+import { loadHiddenRepos, saveHiddenRepos } from './hidden'
+import { inRepo, repoCounts, shortName, withoutHidden } from './repos'
 import { postRemark, replyTo, type Posted } from './post'
 import { reviewPr, type Remark, type Reviewed } from './review'
 
@@ -53,39 +54,73 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+type RowAction = { testId: string; label: string; onClick: () => void }
+
 function SidebarRow({
   testId,
   label,
   count,
   active,
+  dimmed = false,
+  action,
   onClick,
 }: {
   testId: string
   label: string
   count: number
   active: boolean
+  dimmed?: boolean
+  action?: RowAction
   onClick: () => void
 }) {
+  const [hovered, setHovered] = useState(false)
+  const showAction = hovered && action
+
+  // The action sits beside the clickable part, not in it, so its click does not also pick the row.
   return (
     <div
-      testId={testId}
-      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
         display: 'flex',
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 10,
         height: 30,
-        paddingLeft: 8,
-        paddingRight: 8,
         borderRadius: 7,
-        cursor: 'pointer',
         backgroundColor: active ? C.active : undefined,
         hover: active ? undefined : { backgroundColor: C.hover },
       }}
     >
-      <text style={{ flexGrow: 1, fontSize: 13, color: active ? C.text : C.secondary }}>{label}</text>
-      <text style={{ fontSize: 12, color: C.ghost }}>{String(count)}</text>
+      <div
+        testId={testId}
+        onClick={onClick}
+        style={{
+          flexGrow: 1,
+          minWidth: 0,
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 10,
+          paddingLeft: 8,
+          paddingRight: showAction ? 0 : 8,
+          cursor: 'pointer',
+        }}
+      >
+        <text style={{ flexGrow: 1, fontSize: 13, color: dimmed ? C.ghost : active ? C.text : C.secondary }}>
+          {label}
+        </text>
+        {showAction ? null : <text style={{ fontSize: 12, color: C.ghost }}>{String(count)}</text>}
+      </div>
+      {showAction ? (
+        <div
+          testId={action.testId}
+          onClick={action.onClick}
+          style={{ height: '100%', display: 'flex', alignItems: 'center', paddingLeft: 8, paddingRight: 8, cursor: 'pointer' }}
+        >
+          <text style={{ fontSize: 12, color: C.secondary }}>{action.label}</text>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -560,6 +595,8 @@ export function PrApp({
   whoami = fetchLogin,
   comments = loadComments,
   openUrl = openInBrowser,
+  loadHidden = loadHiddenRepos,
+  saveHidden = saveHiddenRepos,
   orders,
 }: {
   load?: () => Promise<Pr[]>
@@ -570,9 +607,12 @@ export function PrApp({
   whoami?: () => Promise<string>
   comments?: (pr: Pr) => Promise<Thread[]>
   openUrl?: (url: string) => void
+  loadHidden?: () => Promise<string[]>
+  saveHidden?: (repos: string[]) => Promise<void>
   orders?: OrderFeed['subscribe']
 }) {
   const [prs, setPrs] = useState<Pr[] | null>(null)
+  const [hidden, setHidden] = useState<string[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [picked, setPicked] = useState<string | null>(null)
@@ -608,6 +648,15 @@ export function PrApp({
 
   useEffect(refresh, [])
 
+  useEffect(() => {
+    loadHidden()
+      .catch((failure) => {
+        setNotice(`Could not read the hidden repos: ${errorMessage(failure)}`)
+        return []
+      })
+      .then(setHidden)
+  }, [])
+
   const setReview = (pr: Pr, next: Review) => setReviews((all) => new Map(all).set(pr.url, next))
 
   const startReview = (pr: Pr) => {
@@ -639,9 +688,9 @@ export function PrApp({
   )
 
   useEffect(() => {
-    if (!order || prs === null) return
+    if (!order || prs === null || hidden === null) return
     setOrder(null)
-    const pr = prs.find((entry) => entry.url === order.url)
+    const pr = withoutHidden(prs, hidden).find((entry) => entry.url === order.url)
     if (!pr) {
       setOpened(null)
       setNotice(`This pull request is not in your list: ${order.url}`)
@@ -650,7 +699,7 @@ export function PrApp({
     setNotice(null)
     setOpened(pr)
     if (order.review && !busy(pr)) startReview(pr)
-  }, [order, prs])
+  }, [order, prs, hidden])
 
   const setPost = (remark: Remark, next: Post) => setPosts((all) => new Map(all).set(remark, next))
 
@@ -733,10 +782,25 @@ export function PrApp({
     setOpened(null)
   }
 
-  const repos = useMemo(() => repoCounts(prs ?? []), [prs])
+  const changeHidden = (next: string[]) => {
+    setHidden(next)
+    saveHidden(next).catch((failure) => setNotice(`Could not save the hidden repos: ${errorMessage(failure)}`))
+  }
+
+  const hide = (hiding: string) => {
+    changeHidden([...(hidden ?? []), hiding])
+    if (picked === hiding) setPicked(null)
+    if (opened?.repo === hiding) setOpened(null)
+  }
+
+  const unhide = (showing: string) => changeHidden((hidden ?? []).filter((entry) => entry !== showing))
+
+  const listed = useMemo(() => (prs && hidden ? withoutHidden(prs, hidden) : null), [prs, hidden])
+  const repos = useMemo(() => repoCounts(listed ?? []), [listed])
+  const hiddenRepos = useMemo(() => repoCounts(prs ?? []).filter((entry) => hidden?.includes(entry.repo)), [prs, hidden])
   // A picked repo with nothing left after a refresh falls back to All.
   const repo = repos.some((entry) => entry.repo === picked) ? picked : null
-  const visible = inRepo(prs ?? [], repo)
+  const visible = inRepo(listed ?? [], repo)
 
   return (
     <div
@@ -765,7 +829,7 @@ export function PrApp({
         <SidebarRow
           testId="repo-all"
           label="All"
-          count={prs?.length ?? 0}
+          count={listed?.length ?? 0}
           active={repo === null}
           onClick={() => pick(null)}
         />
@@ -776,9 +840,30 @@ export function PrApp({
             label={shortName(entry.repo)}
             count={entry.count}
             active={entry.repo === repo}
+            action={{ testId: `hide-${entry.repo}`, label: 'Hide', onClick: () => hide(entry.repo) }}
             onClick={() => pick(entry.repo)}
           />
         ))}
+        {hiddenRepos.length > 0 ? (
+          <>
+            <div style={{ flexGrow: 1 }} />
+            <div style={{ height: 30, display: 'flex', alignItems: 'center', paddingLeft: 8 }}>
+              <text style={{ fontSize: 12, color: C.ghost }}>Hidden</text>
+            </div>
+            {hiddenRepos.map((entry) => (
+              <SidebarRow
+                key={entry.repo}
+                testId={`hidden-${entry.repo}`}
+                label={shortName(entry.repo)}
+                count={entry.count}
+                active={false}
+                dimmed
+                action={{ testId: `show-${entry.repo}`, label: 'Show', onClick: () => unhide(entry.repo) }}
+                onClick={() => unhide(entry.repo)}
+              />
+            ))}
+          </>
+        ) : null}
       </div>
 
       {opened ? (
@@ -841,7 +926,7 @@ export function PrApp({
           ) : null}
           {error ? (
             <Message text={error} color={C.error} />
-          ) : prs === null ? (
+          ) : listed === null ? (
             <Message text="Loading pull requests" color={C.secondary} />
           ) : visible.length === 0 ? (
             <Message text="No open pull requests" color={C.secondary} />
