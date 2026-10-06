@@ -12,6 +12,18 @@ Built with [GPUIX](https://gpuix.dev): React and TypeScript on Bun, drawn on the
 
 Other programs can steer Workbench. `bun src/app.tsx --pr <url>` opens that pull request, and `--review` also starts a review. When Workbench already runs, the order goes to that window instead of a new one. `bun src/cli.ts prs` prints your open pull requests as JSON.
 
+## Widget
+
+`widget/` holds a small Swift app: a floating circle with the number of your open pull requests, at the notch or on the right edge of the screen. A click opens a list of them, and a click on a pull request opens it in Workbench. Right-click the circle to move it, refresh the list or quit.
+
+```bash
+cd widget
+swift build -c release
+.build/release/WorkbenchWidget
+```
+
+It runs Workbench from `~/Documents/Projecten/workbench`. Use another folder with `-workbenchFolder <path>`, or save one with `defaults write WorkbenchWidget workbenchFolder <path>`.
+
 ## Requirements
 
 - macOS on Apple Silicon
