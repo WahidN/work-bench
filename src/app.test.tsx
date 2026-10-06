@@ -5,6 +5,7 @@ import { connectTest } from '@gpuix/react/automation'
 import { createTestRoot, hasNativeTestRenderer } from '@gpuix/react/testing'
 
 import { PrApp } from './app'
+import { orderFeed } from './commands'
 import type { Thread } from './comments'
 import type { Fixed } from './fix'
 import type { Pr, Reason } from './github'
@@ -598,6 +599,58 @@ describeNative('link to the pull request', () => {
 
     mkdirSync('screenshots', { recursive: true })
     renderer.captureScreenshot('screenshots/pr-link.png')
+
+    await app.close()
+  })
+})
+
+describeNative('orders from outside the window', () => {
+  const PR_URL = 'https://github.com/acme/api/pull/2'
+
+  it('opens the pull request an order names', async () => {
+    const feed = orderFeed({ url: PR_URL, review: false })
+    const { app, renderer } = await mount(async () => PRS, { orders: feed.subscribe })
+
+    await app.getByTestId('back').waitFor()
+    expect(renderer.getPaintedText()).toContain('Add rate limits')
+    expect(renderer.getPaintedText()).toContain('Review with Claude')
+
+    await app.close()
+  })
+
+  it('starts a review for an order with review, and not a second one while it runs', async () => {
+    const feed = orderFeed({ url: PR_URL, review: true })
+    let reviews = 0
+    const { app } = await mount(async () => PRS, {
+      orders: feed.subscribe,
+      review: () => {
+        reviews += 1
+        return new Promise(() => {})
+      },
+    })
+
+    await app.getByText('Reviewing').waitFor()
+    feed.push({ url: PR_URL, review: true })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(reviews).toBe(1)
+
+    await app.close()
+  })
+
+  it('says so when the pull request is not in the list', async () => {
+    const feed = orderFeed({ url: 'https://github.com/acme/api/pull/99', review: true })
+    let reviews = 0
+    const { app, renderer } = await mount(async () => PRS, {
+      orders: feed.subscribe,
+      review: async () => {
+        reviews += 1
+        return { commit: 'abc123', remarks: [] }
+      },
+    })
+
+    await app.getByText('This pull request is not in your list: https://github.com/acme/api/pull/99').waitFor()
+    expect(renderer.getPaintedText()).toContain('Fix the login form')
+    expect(reviews).toBe(0)
 
     await app.close()
   })
