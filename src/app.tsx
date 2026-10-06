@@ -76,6 +76,11 @@ function SidebarRow({
   const [hovered, setHovered] = useState(false)
   const showAction = hovered && action
 
+  // A hide or show moves the next row under the pointer, so the second click of a double click would hit that row.
+  const firstClick = (handler: () => void) => (event: { clickCount?: number }) => {
+    if ((event.clickCount ?? 1) === 1) handler()
+  }
+
   // The action sits beside the clickable part, not in it, so its click does not also pick the row.
   return (
     <div
@@ -93,7 +98,7 @@ function SidebarRow({
     >
       <div
         testId={testId}
-        onClick={onClick}
+        onClick={firstClick(onClick)}
         style={{
           flexGrow: 1,
           minWidth: 0,
@@ -115,7 +120,7 @@ function SidebarRow({
       {showAction ? (
         <div
           testId={action.testId}
-          onClick={action.onClick}
+          onClick={firstClick(action.onClick)}
           style={{ height: '100%', display: 'flex', alignItems: 'center', paddingLeft: 8, paddingRight: 8, cursor: 'pointer' }}
         >
           <text style={{ fontSize: 12, color: C.secondary }}>{action.label}</text>
