@@ -5,6 +5,7 @@ import { connectTest } from '@gpuix/react/automation'
 import { createTestRoot, hasNativeTestRenderer } from '@gpuix/react/testing'
 
 import { PrApp } from './app'
+import type { Thread } from './comments'
 import type { Fixed } from './fix'
 import type { Pr, Reason } from './github'
 import type { Posted } from './post'
@@ -44,6 +45,8 @@ async function mount(load: () => Promise<Pr[]>, fakes: Fakes = {}) {
       fix={async () => ({ state: 'nothing', reason: '' })}
       reply={async () => ''}
       whoami={async () => 'nobody'}
+      comments={async () => []}
+      openUrl={() => {}}
       {...fakes}
     />,
   )
@@ -187,6 +190,13 @@ const OUTSIDE: Remark = {
   body: 'Deze check staat buiten de diff, dus GitHub weigert een comment op deze regel.',
 }
 
+// Fix opens a box for extra context first, and Start fix sends the remark with it to Claude.
+async function pressFix(app: Awaited<ReturnType<typeof connectTest>>, name: string, context = '') {
+  await app.getByTestId(`fix-${name}`).click()
+  if (context) await app.getByTestId(`context-${name}`).fill(context)
+  await app.getByTestId(`start-fix-${name}`).click()
+}
+
 async function openReviewed(fakes: Fakes) {
   const { app, renderer } = await mount(async () => PRS, {
     review: async () => ({ commit: 'abc123', remarks: [REMARK, OUTSIDE] }),
@@ -261,7 +271,7 @@ describeNative('fixing a remark', () => {
 
     await app.getByTestId('post-0').click()
     await app.getByText('Posted').waitFor()
-    await app.getByTestId('fix-0').click()
+    await pressFix(app, '0')
     await app.getByText('Fixing').waitFor()
     await app.getByTestId('fix-1').click()
     expect(fixes).toBe(1)
@@ -294,7 +304,7 @@ describeNative('fixing a remark', () => {
       },
     })
 
-    await app.getByTestId('fix-0').click()
+    await pressFix(app, '0')
     await app.getByText('Fixing').waitFor()
     await app.getByTestId('review').click()
     await app.getByTestId('fix-1').click()
@@ -317,7 +327,7 @@ describeNative('fixing a remark', () => {
       },
     })
 
-    await app.getByTestId('fix-0').click()
+    await pressFix(app, '0')
     await app.getByText('Fixed in abc1234').waitFor()
     expect(replies).toBe(0)
     expect(renderer.getPaintedText().join(' ')).not.toContain('Replied')
@@ -335,7 +345,7 @@ describeNative('fixing a remark', () => {
 
     await app.getByTestId('post-0').click()
     await app.getByText('Posted').waitFor()
-    await app.getByTestId('fix-0').click()
+    await pressFix(app, '0')
     await app.getByText('The reply failed: Not Found (HTTP 404)').waitFor()
     await app.getByText('Fixed in abc1234').waitFor()
 
@@ -356,7 +366,7 @@ describeNative('fixing a remark', () => {
       fix: async () => ({ state: 'nothing', reason: 'De limiet telt al per gebruiker.' }),
     })
 
-    await app.getByTestId('fix-0').click()
+    await pressFix(app, '0')
     await app.getByText('Claude changed nothing. De limiet telt al per gebruiker.').waitFor()
     expect(await app.getByTestId('fix-0').count()).toBe(1)
 
@@ -369,9 +379,225 @@ describeNative('fixing a remark', () => {
       fix: () => Promise.reject(new Error('The branch moved on while Claude worked. Nothing was pushed.')),
     })
 
-    await app.getByTestId('fix-0').click()
+    await pressFix(app, '0')
     await app.getByText('The branch moved on while Claude worked. Nothing was pushed.').waitFor()
     expect(await app.getByTestId('fix-0').count()).toBe(1)
+
+    await app.close()
+  })
+})
+
+function thread(id: number, author: string, body: string, fields: Partial<Thread> = {}): Thread {
+  return {
+    id,
+    url: `https://github.com/acme/api/pull/2#discussion_r${id}`,
+    author,
+    path: 'src/limits.ts',
+    line: 12,
+    outdated: false,
+    body,
+    replies: [],
+    ...fields,
+  }
+}
+
+describeNative('comments from GitHub', () => {
+  it('marks the pull requests you commented on in the list', async () => {
+    const { app, renderer } = await mount(async () => [PRS[0], { ...PRS[1], commented: true }, PRS[2]])
+    await app.getByText('Add rate limits').waitFor()
+
+    expect(renderer.getPaintedText().filter((text) => text === 'Commented')).toHaveLength(1)
+    expect(await app.getByTestId('pr-acme/api#2').textContent()).toContain('Commented')
+
+    await app.close()
+  })
+
+  it('brings back your posted remarks with their replies, and a colleague comment read-only', async () => {
+    const replies: [number, string][] = []
+    const { app, renderer } = await mount(async () => PRS, {
+      whoami: async () => 'sam',
+      comments: async () => [
+        thread(10, 'sam', 'Deze limiet telt per proces.', {
+          replies: [{ author: 'sam', body: 'Gefixt in abc1234. De teller staat nu in Redis.' }],
+        }),
+        thread(11, 'kim', 'Kan deze naam duidelijker?', { line: 20 }),
+        thread(12, 'sam', 'Deze check mist een test.', { line: 40, outdated: true }),
+      ],
+      fix: async () => FIXED,
+      reply: async (pr, id, body) => {
+        replies.push([id, body])
+        return ''
+      },
+    })
+    await app.getByTestId('pr-acme/api#2').waitFor()
+    await app.getByTestId('pr-acme/api#2').click()
+    await app.getByTestId('finding-thread-10').waitFor()
+
+    expect(await app.getByTestId('finding-thread-10').textContent()).toContain('Posted')
+    expect(renderer.getPaintedText()).toContain('sam: Gefixt in abc1234. De teller staat nu in Redis.')
+    const colleague = await app.getByTestId('finding-thread-11').textContent()
+    expect(colleague).toContain('kim')
+    expect(colleague).not.toContain('Fix')
+    expect(colleague).not.toContain('Post')
+    expect(await app.getByTestId('finding-thread-12').textContent()).toContain('outdated')
+
+    mkdirSync('screenshots', { recursive: true })
+    renderer.captureScreenshot('screenshots/pr-comments.png')
+
+    await pressFix(app, 'thread-10')
+    await app.getByText('Replied under the comment on GitHub').waitFor()
+    expect(replies).toEqual([[10, 'Gefixt in abc1234. De teller staat nu in Redis.']])
+
+    await app.close()
+  })
+
+  it('shows a remark posted in this window once when its comment loads again', async () => {
+    let loads = 0
+    const { app } = await openReviewed({
+      post: async () => ({ id: 7, url: 'https://github.com/acme/api/pull/2#discussion_r7' }),
+      comments: async () => (loads++ === 0 ? [] : [thread(7, 'sam', REMARK.body)]),
+    })
+
+    await app.getByTestId('post-0').click()
+    await app.getByText('Posted').waitFor()
+    await app.getByTestId('back').click()
+    await app.getByTestId('pr-acme/api#2').click()
+    await app.getByTestId('finding-0').waitFor()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    expect(loads).toBe(2)
+    expect(await app.getByText(REMARK.body).count()).toBe(1)
+
+    await app.close()
+  })
+
+  it('says why the comments did not load, and a review still works', async () => {
+    let reviews = 0
+    const { app } = await mount(async () => PRS, {
+      comments: () => Promise.reject(new Error('HTTP 404: Not Found')),
+      review: async () => {
+        reviews += 1
+        return { commit: 'abc123', remarks: [REMARK] }
+      },
+    })
+    await app.getByTestId('pr-acme/api#2').waitFor()
+    await app.getByTestId('pr-acme/api#2').click()
+    await app.getByText('The comments did not load: HTTP 404: Not Found').waitFor()
+
+    await app.getByTestId('review').click()
+    await app.getByTestId('finding-0').waitFor()
+    expect(reviews).toBe(1)
+
+    await app.close()
+  })
+})
+
+describeNative('fix context', () => {
+  it('hands your context to the fix and keeps it out of the reply', async () => {
+    const contexts: string[] = []
+    const replies: string[] = []
+    const { app, renderer } = await openReviewed({
+      whoami: async () => 'sam',
+      post: async () => ({ id: 42, url: '' }),
+      fix: async (pr, remark, context) => {
+        contexts.push(context)
+        return FIXED
+      },
+      reply: async (pr, id, body) => {
+        replies.push(body)
+        return ''
+      },
+    })
+
+    await app.getByTestId('post-0').click()
+    await app.getByText('Posted').waitFor()
+    await app.getByTestId('fix-0').click()
+    await app.getByTestId('context-0').fill('Gebruik de teller in Redis, zoals in src/auth.ts.')
+    mkdirSync('screenshots', { recursive: true })
+    renderer.captureScreenshot('screenshots/pr-fix-context.png')
+    await app.getByTestId('start-fix-0').click()
+    await app.getByText('Replied under the comment on GitHub').waitFor()
+
+    expect(contexts).toEqual(['Gebruik de teller in Redis, zoals in src/auth.ts.'])
+    expect(replies).toEqual(['Gefixt in abc1234. De teller staat nu in Redis.'])
+    expect(await app.getByTestId('context-0').count()).toBe(0)
+
+    await app.close()
+  })
+
+  it('starts a fix without context from an empty box', async () => {
+    const contexts: string[] = []
+    const { app } = await openReviewed({
+      whoami: async () => 'sam',
+      fix: async (pr, remark, context) => {
+        contexts.push(context)
+        return FIXED
+      },
+    })
+
+    await pressFix(app, '0')
+    await app.getByText('Fixed in abc1234').waitFor()
+    expect(contexts).toEqual([''])
+
+    await app.close()
+  })
+
+  it('closes the box on Cancel without starting a fix', async () => {
+    let fixes = 0
+    const { app } = await openReviewed({
+      whoami: async () => 'sam',
+      fix: async () => {
+        fixes += 1
+        return FIXED
+      },
+    })
+
+    await app.getByTestId('fix-0').click()
+    await app.getByTestId('context-0').fill('Toch niet.')
+    await app.getByTestId('cancel-fix-0').click()
+
+    expect(fixes).toBe(0)
+    expect(await app.getByTestId('context-0').count()).toBe(0)
+    expect(await app.getByTestId('fix-0').count()).toBe(1)
+
+    await app.close()
+  })
+
+  it('keeps your text for the next try after a failed fix', async () => {
+    const contexts: string[] = []
+    const { app } = await openReviewed({
+      whoami: async () => 'sam',
+      fix: (pr, remark, context) => {
+        contexts.push(context)
+        return Promise.reject(new Error('The branch moved on or was deleted while Claude worked. Nothing was pushed.'))
+      },
+    })
+
+    await pressFix(app, '0', 'Gebruik reduce.')
+    await app.getByText('The branch moved on or was deleted while Claude worked. Nothing was pushed.').waitFor()
+    await app.getByTestId('fix-0').click()
+    await app.getByTestId('start-fix-0').click()
+
+    expect(contexts).toEqual(['Gebruik reduce.', 'Gebruik reduce.'])
+
+    await app.close()
+  })
+})
+
+describeNative('link to the pull request', () => {
+  it('opens the pull request on GitHub and stays on its page', async () => {
+    const opened: string[] = []
+    const { app, renderer } = await mount(async () => PRS, { openUrl: (url) => opened.push(url) })
+    await app.getByTestId('pr-acme/api#2').waitFor()
+    await app.getByTestId('pr-acme/api#2').click()
+    await app.getByTestId('open-on-github').click()
+
+    expect(opened).toEqual(['https://github.com/acme/api/pull/2'])
+    expect(renderer.getPaintedText()).toContain('Add rate limits')
+    expect(await app.getByTestId('back').count()).toBe(1)
+
+    mkdirSync('screenshots', { recursive: true })
+    renderer.captureScreenshot('screenshots/pr-link.png')
 
     await app.close()
   })

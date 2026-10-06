@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, readdir } from 'node:fs/promises'
+import { access, mkdtemp, readdir } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -14,6 +14,8 @@ export type Fixed = { state: 'fixed'; commit: string; reply: string } | { state:
 type ExecFailure = Error & { stderr?: string }
 
 const PROJECTS = join(homedir(), 'Documents', 'Projecten')
+const CLONE_DEPTH = 4
+const SKIPPED = new Set(['node_modules', 'vendor', 'dist', 'build'])
 const TIMEOUT_MS = 15 * 60 * 1000
 
 const SCHEMA = {
@@ -36,26 +38,42 @@ export function repoOf(remote: string): string | undefined {
   return remote.trim().match(/github\.com[:/](.+?)(?:\.git)?\/?$/)?.[1]
 }
 
+// Clones often sit in a group folder, or even inside another clone, so this looks a few levels deep.
+// Level by level, so the clone nearest to the root wins.
 export async function findClone(repo: string, root = PROJECTS): Promise<string> {
-  const folders = (await readdir(root, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort()
-  for (const folder of folders) {
-    const dir = join(root, folder)
-    const remote = await git(dir, ['config', '--get', 'remote.origin.url']).catch(() => '')
-    if (repoOf(remote)?.toLowerCase() === repo.toLowerCase()) return dir
+  let level = [root]
+  for (let depth = 0; depth < CLONE_DEPTH && level.length > 0; depth++) {
+    const next: string[] = []
+    for (const dir of level) {
+      const entries = await readdir(dir, { withFileTypes: true }).catch((failure) => {
+        if (dir === root) throw failure
+        return []
+      })
+      for (const entry of entries) {
+        if (entry.isDirectory() && !entry.name.startsWith('.') && !SKIPPED.has(entry.name)) next.push(join(dir, entry.name))
+      }
+    }
+    next.sort()
+    for (const dir of next) {
+      if (!(await access(join(dir, '.git')).then(() => true, () => false))) continue
+      const remote = await git(dir, ['config', '--get', 'remote.origin.url']).catch(() => '')
+      if (repoOf(remote)?.toLowerCase() === repo.toLowerCase()) return dir
+    }
+    level = next
   }
-  throw new Error(`No clone of ${repo} in ~/Documents/Projecten`)
+  throw new Error(`No clone of ${repo} within ${CLONE_DEPTH} levels of ~/Documents/Projecten`)
 }
 
-export function fixPrompt(pr: Pr, finding: Finding): string {
+export function fixPrompt(pr: Pr, finding: Finding, context = ''): string {
+  const extra = context.trim()
+    ? `\nExtra context from the author of the pull request:\n\n${context.trim()}\n\nDo not quote or mention this context in the reply.\n`
+    : ''
   return `You are fixing one review remark on the pull request titled "${pr.title}".
 
 The remark is about \`${finding.path}\`, around line ${finding.line}:
 
 ${finding.body}
-
+${extra}
 Make the smallest change in the working tree that answers this remark. Read the
 current file first, because the line number may have moved. Change nothing else.
 
@@ -91,7 +109,7 @@ export function readFix(stdout: string): { message: string; reply: string } {
   return { message: answer.message.trim(), reply: String(answer.reply ?? '').trim() }
 }
 
-export async function fixRemark(pr: Pr, finding: Finding, root = PROJECTS): Promise<Fixed> {
+export async function fixRemark(pr: Pr, finding: Finding, context = '', root = PROJECTS): Promise<Fixed> {
   const { stdout } = await run('gh', ['pr', 'view', pr.url, '--json=headRefName,isCrossRepository'])
   const { headRefName: branch, isCrossRepository } = JSON.parse(stdout)
   if (isCrossRepository) throw new Error('This pull request comes from a fork, so its branch is not in origin')
@@ -105,7 +123,7 @@ export async function fixRemark(pr: Pr, finding: Finding, root = PROJECTS): Prom
   await git(clone, ['worktree', 'add', '--detach', worktree, tip])
 
   try {
-    const claude = run('claude', fixArgs(fixPrompt(pr, finding)), { cwd: worktree, timeout: TIMEOUT_MS })
+    const claude = run('claude', fixArgs(fixPrompt(pr, finding, context)), { cwd: worktree, timeout: TIMEOUT_MS })
     claude.child.stdin?.end()
     const { message, reply } = readFix(await claude.then((done) => done.stdout, failedRunOutput))
 

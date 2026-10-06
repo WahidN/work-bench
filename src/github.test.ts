@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { mergePrs, type SearchResult } from './github'
+import { markCommented, mergePrs, type SearchResult } from './github'
 
 function result(number: number, updatedAt: string): SearchResult {
   return {
@@ -37,5 +37,18 @@ describe('mergePrs', () => {
 
     expect(pr.repo).toBe('acme/api')
     expect(pr.author).toBe('sam')
+  })
+})
+
+describe('markCommented', () => {
+  it('marks the listed pull requests you left a comment on', () => {
+    const prs = mergePrs([result(1, '2026-09-30T10:00:00Z'), result(2, '2026-09-30T11:00:00Z')], [])
+
+    const marked = markCommented(prs, [result(2, '2026-09-30T11:00:00Z'), result(9, '2026-09-30T12:00:00Z')])
+
+    expect(marked.map((pr) => [pr.number, pr.commented])).toEqual([
+      [2, true],
+      [1, false],
+    ])
   })
 })

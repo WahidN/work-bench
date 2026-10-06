@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { render } from '@gpuix/react'
 
+import { loadComments, type Thread } from './comments'
 import { fixRemark, type Fixed } from './fix'
-import { fetchLogin, fetchMyPrs, type Pr, type Reason } from './github'
+import { fetchLogin, fetchMyPrs, openInBrowser, type Pr, type Reason } from './github'
 import { inRepo, repoCounts, shortName } from './repos'
 import { postRemark, replyTo, type Posted } from './post'
 import { reviewPr, type Remark, type Reviewed } from './review'
@@ -34,6 +35,12 @@ type Post =
   | { state: 'failed'; error: string }
 
 type Reply = 'none' | 'sending' | 'sent' | { error: string }
+
+type Draft = { open: boolean; text: string }
+
+type LoadedThread = { thread: Thread; remark: Remark }
+
+type Loaded = { state: 'loading' } | { state: 'done'; items: LoadedThread[] } | { state: 'failed'; error: string }
 
 type Fix =
   | { state: 'fixing' }
@@ -111,6 +118,7 @@ function PrRow({ pr, onClick }: { pr: Pr; onClick: () => void }) {
             {REASON_LABEL[reason]}
           </text>
         ))}
+        {pr.commented ? <text style={{ fontSize: 12, color: C.secondary }}>Commented</text> : null}
       </div>
     </div>
   )
@@ -166,12 +174,12 @@ function Status({ text, color }: { text: string; color: string }) {
 }
 
 function PostControl({
-  index,
+  name,
   remark,
   post,
   onPost,
 }: {
-  index: number
+  name: string
   remark: Remark
   post: Post | undefined
   onPost: () => void
@@ -180,28 +188,76 @@ function PostControl({
   if (post?.state === 'posted') return <Status text="Posted" color={C.secondary} />
 
   const posting = post?.state === 'posting'
-  return <Button testId={`post-${index}`} label={posting ? 'Posting' : 'Post'} onClick={posting ? undefined : onPost} />
+  return <Button testId={`post-${name}`} label={posting ? 'Posting' : 'Post'} onClick={posting ? undefined : onPost} />
 }
 
 function FixControl({
-  index,
+  name,
   fix,
   waiting,
+  open,
   onFix,
 }: {
-  index: number
+  name: string
   fix: Fix | undefined
   waiting: boolean
+  open: boolean
   onFix: () => void
 }) {
   if (fix?.state === 'fixed') return <Status text={`Fixed in ${fix.commit}`} color={C.secondary} />
+  if (open) return null
 
   const fixing = fix?.state === 'fixing'
-  return <Button testId={`fix-${index}`} label={fixing ? 'Fixing' : 'Fix'} onClick={fixing || waiting ? undefined : onFix} />
+  return <Button testId={`fix-${name}`} label={fixing ? 'Fixing' : 'Fix'} onClick={fixing || waiting ? undefined : onFix} />
 }
 
 function Note({ text, color }: { text: string; color: string }) {
   return <text style={{ fontSize: 12, lineHeight: 18, color }}>{text}</text>
+}
+
+function FixBox({
+  name,
+  text,
+  waiting,
+  onType,
+  onStart,
+  onCancel,
+}: {
+  name: string
+  text: string
+  waiting: boolean
+  onType: (text: string) => void
+  onStart: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 4 }}>
+      <textarea
+        testId={`context-${name}`}
+        value={text}
+        placeholder="Extra context for Claude, optional. For example which option to pick, or what to leave alone."
+        minRows={2}
+        maxRows={6}
+        onChange={(event) => onType(event.value ?? '')}
+        style={{
+          width: '100%',
+          padding: 10,
+          borderRadius: 7,
+          borderWidth: 1,
+          borderColor: C.border,
+          backgroundColor: C.sidebar,
+          fontSize: 13,
+          lineHeight: 20,
+          color: C.text,
+        }}
+      />
+      <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <div style={{ flexGrow: 1 }} />
+        <Button testId={`cancel-fix-${name}`} label="Cancel" onClick={onCancel} />
+        <Button testId={`start-fix-${name}`} label="Start fix" color={C.accent} onClick={waiting ? undefined : onStart} />
+      </div>
+    </div>
+  )
 }
 
 function FixNote({ fix }: { fix: Fix | undefined }) {
@@ -215,7 +271,7 @@ function FixNote({ fix }: { fix: Fix | undefined }) {
 }
 
 function RemarkRow({
-  index,
+  name,
   remark,
   post,
   fix,
@@ -223,19 +279,30 @@ function RemarkRow({
   waiting,
   onPost,
   onFix,
+  draft,
+  onDraft,
+  author,
+  outdated = false,
+  replies = [],
 }: {
-  index: number
+  name: string
   remark: Remark
   post: Post | undefined
   fix: Fix | undefined
   canFix: boolean
   waiting: boolean
   onPost: () => void
-  onFix: () => void
+  onFix: (context: string) => void
+  draft: Draft | undefined
+  onDraft: (next: Draft) => void
+  // Set for someone else's comment, which can only be read.
+  author?: string
+  outdated?: boolean
+  replies?: Thread['replies']
 }) {
   return (
     <div
-      testId={`finding-${index}`}
+      testId={`finding-${name}`}
       style={{
         width: '100%',
         display: 'flex',
@@ -250,12 +317,36 @@ function RemarkRow({
       }}
     >
       <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 28 }}>
-        <text style={{ flexGrow: 1, fontSize: 12, color: C.accent }}>{`${remark.path}:${remark.line}`}</text>
-        {canFix ? <FixControl index={index} fix={fix} waiting={waiting} onFix={onFix} /> : null}
-        <PostControl index={index} remark={remark} post={post} onPost={onPost} />
+        <text style={{ fontSize: 12, color: C.accent }}>{`${remark.path}:${remark.line}`}</text>
+        {outdated ? <text style={{ fontSize: 12, color: C.ghost }}>outdated</text> : null}
+        {author ? <text style={{ fontSize: 12, color: C.secondary }}>{author}</text> : null}
+        <div style={{ flexGrow: 1 }} />
+        {canFix && !author ? (
+          <FixControl
+            name={name}
+            fix={fix}
+            waiting={waiting}
+            open={draft?.open ?? false}
+            onFix={() => onDraft({ open: true, text: draft?.text ?? '' })}
+          />
+        ) : null}
+        {author ? null : <PostControl name={name} remark={remark} post={post} onPost={onPost} />}
       </div>
       <text style={{ fontSize: 13, lineHeight: 20, color: C.text }}>{remark.body}</text>
+      {replies.map((reply, index) => (
+        <Note key={index} text={`${reply.author}: ${reply.body}`} color={C.secondary} />
+      ))}
       {post?.state === 'failed' ? <Note text={post.error} color={C.error} /> : null}
+      {canFix && !author && draft?.open ? (
+        <FixBox
+          name={name}
+          text={draft.text}
+          waiting={waiting}
+          onType={(text) => onDraft({ open: true, text })}
+          onStart={() => onFix(draft.text)}
+          onCancel={() => onDraft({ open: false, text: draft.text })}
+        />
+      ) : null}
       <FixNote fix={fix} />
     </div>
   )
@@ -265,18 +356,24 @@ function ReviewResult({
   review,
   posts,
   fixes,
+  replies,
   canFix,
   waiting,
+  drafts,
   onPost,
   onFix,
+  onDraft,
 }: {
   review: Review | undefined
   posts: Map<Remark, Post>
   fixes: Map<Remark, Fix>
+  replies: Map<number, Thread['replies']>
   canFix: boolean
   waiting: boolean
+  drafts: Map<Remark, Draft>
   onPost: (commit: string, remark: Remark) => void
-  onFix: (remark: Remark) => void
+  onFix: (remark: Remark, context: string) => void
+  onDraft: (remark: Remark, next: Draft) => void
 }) {
   if (!review) {
     return (
@@ -295,48 +392,76 @@ function ReviewResult({
   }
 
   return (
-    <virtual-list estimatedItemHeight={120} style={{ flexGrow: 1, minHeight: 0 }}>
-      {review.remarks.map((remark, index) => (
-        <RemarkRow
-          key={index}
-          index={index}
-          remark={remark}
-          post={posts.get(remark)}
-          fix={fixes.get(remark)}
-          canFix={canFix}
-          waiting={waiting}
-          onPost={() => onPost(review.commit, remark)}
-          onFix={() => onFix(remark)}
-        />
-      ))}
-    </virtual-list>
+    <>
+      {review.remarks.map((remark, index) => {
+        const post = posts.get(remark)
+        return (
+          <RemarkRow
+            key={`remark-${index}`}
+            name={String(index)}
+            remark={remark}
+            post={post}
+            fix={fixes.get(remark)}
+            canFix={canFix}
+            waiting={waiting}
+            onPost={() => onPost(review.commit, remark)}
+            onFix={(context) => onFix(remark, context)}
+            draft={drafts.get(remark)}
+            onDraft={(next) => onDraft(remark, next)}
+            replies={post?.state === 'posted' ? replies.get(post.id) : undefined}
+          />
+        )
+      })}
+    </>
   )
+}
+
+function CommentsStatus({ loaded }: { loaded: Loaded | undefined }) {
+  if (loaded?.state === 'loading') return <Message text="Loading the comments on GitHub" color={C.secondary} />
+  if (loaded?.state === 'failed') return <Message text={`The comments did not load: ${loaded.error}`} color={C.error} />
+  return null
 }
 
 function PrPage({
   pr,
   review,
+  loaded,
+  me,
   posts,
   fixes,
   canFix,
+  drafts,
   onBack,
+  onOpen,
   onReview,
   onPost,
   onFix,
+  onDraft,
 }: {
   pr: Pr
   review: Review | undefined
+  loaded: Loaded | undefined
+  me: string | null
   posts: Map<Remark, Post>
   fixes: Map<Remark, Fix>
   canFix: boolean
+  drafts: Map<Remark, Draft>
   onBack: () => void
+  onOpen: () => void
   onReview: () => void
   onPost: (commit: string, remark: Remark) => void
-  onFix: (remark: Remark) => void
+  onFix: (remark: Remark, context: string) => void
+  onDraft: (remark: Remark, next: Draft) => void
 }) {
   const running = review?.state === 'running'
+  const reviewed = review?.state === 'done' ? review.remarks : []
+  // A remark posted in this window comes back from GitHub too. Show it once, as the remark.
+  const postedHere = new Set(reviewed.map((remark) => posts.get(remark)).flatMap((post) => (post?.state === 'posted' ? [post.id] : [])))
+  const items = loaded?.state === 'done' ? loaded.items : []
+  const threads = items.filter((item) => !postedHere.has(item.thread.id))
+  const replies = new Map(items.map(({ thread }) => [thread.id, thread.replies] as const))
   // One fix per pull request: two would race each other's push, and a new review would drop the running one.
-  const fixing = review?.state === 'done' && review.remarks.some((remark) => fixes.get(remark)?.state === 'fixing')
+  const fixing = [...threads.map((item) => item.remark), ...reviewed].some((remark) => fixes.get(remark)?.state === 'fixing')
 
   return (
     <div style={{ flexGrow: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -378,18 +503,49 @@ function PrPage({
             {`${shortName(pr.repo)}#${pr.number}`}
           </text>
           <text style={{ fontSize: 12, color: C.ghost }}>{pr.author}</text>
+          <div
+            testId="open-on-github"
+            onClick={onOpen}
+            style={{ cursor: 'pointer', paddingLeft: 6, paddingRight: 6, borderRadius: 5, hover: { backgroundColor: C.hover } }}
+          >
+            <text style={{ fontSize: 12, color: C.accent }}>Open on GitHub</text>
+          </div>
         </div>
       </div>
 
-      <ReviewResult
-        review={review}
-        posts={posts}
-        fixes={fixes}
-        canFix={canFix}
-        waiting={fixing}
-        onPost={onPost}
-        onFix={onFix}
-      />
+      <virtual-list estimatedItemHeight={120} style={{ flexGrow: 1, minHeight: 0 }}>
+        <CommentsStatus loaded={loaded} />
+        {threads.map(({ thread, remark }) => (
+          <RemarkRow
+            key={`thread-${thread.id}`}
+            name={`thread-${thread.id}`}
+            remark={remark}
+            post={posts.get(remark)}
+            fix={fixes.get(remark)}
+            canFix={canFix && !thread.outdated}
+            waiting={fixing}
+            onPost={() => {}}
+            onFix={(context) => onFix(remark, context)}
+            draft={drafts.get(remark)}
+            onDraft={(next) => onDraft(remark, next)}
+            author={thread.author === me ? undefined : thread.author}
+            outdated={thread.outdated}
+            replies={thread.replies}
+          />
+        ))}
+        <ReviewResult
+          review={review}
+          posts={posts}
+          fixes={fixes}
+          replies={replies}
+          canFix={canFix}
+          waiting={fixing}
+          drafts={drafts}
+          onPost={onPost}
+          onFix={onFix}
+          onDraft={onDraft}
+        />
+      </virtual-list>
     </div>
   )
 }
@@ -401,13 +557,17 @@ export function PrApp({
   fix = fixRemark,
   reply = replyTo,
   whoami = fetchLogin,
+  comments = loadComments,
+  openUrl = openInBrowser,
 }: {
   load?: () => Promise<Pr[]>
   review?: (pr: Pr) => Promise<Reviewed>
   post?: (pr: Pr, commit: string, remark: Remark) => Promise<Posted>
-  fix?: (pr: Pr, remark: Remark) => Promise<Fixed>
+  fix?: (pr: Pr, remark: Remark, context: string) => Promise<Fixed>
   reply?: (pr: Pr, commentId: number, body: string) => Promise<string>
   whoami?: () => Promise<string>
+  comments?: (pr: Pr) => Promise<Thread[]>
+  openUrl?: (url: string) => void
 }) {
   const [prs, setPrs] = useState<Pr[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -417,7 +577,11 @@ export function PrApp({
   const [reviews, setReviews] = useState<Map<string, Review>>(new Map())
   const [posts, setPosts] = useState<Map<Remark, Post>>(new Map())
   const [fixes, setFixes] = useState<Map<Remark, Fix>>(new Map())
+  const [drafts, setDrafts] = useState<Map<Remark, Draft>>(new Map())
   const [me, setMe] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState<Map<string, Loaded>>(new Map())
+  // The same comment keeps the same remark object across reloads, so its post and fix state stay with it.
+  const threadRemarks = useRef(new Map<number, Remark>())
   // A fix or post lands later, so it reads the other side as it is then, not when it started.
   const latestPosts = useRef(posts)
   latestPosts.current = posts
@@ -463,7 +627,38 @@ export function PrApp({
     whoami().then(setMe, () => setMe(null))
   }, [])
 
+  const remarkFor = (thread: Thread): Remark => {
+    const known = threadRemarks.current.get(thread.id)
+    if (known) return known
+    const remark = { path: thread.path, line: thread.line, body: thread.body, inDiff: true }
+    threadRemarks.current.set(thread.id, remark)
+    return remark
+  }
+
+  const setComments = (pr: Pr, next: Loaded) => setLoaded((all) => new Map(all).set(pr.url, next))
+
+  useEffect(() => {
+    if (!opened) return
+    const pr = opened
+    // Keep the comments from the last visit on screen while they load again.
+    setLoaded((all) => (all.get(pr.url)?.state === 'done' ? all : new Map(all).set(pr.url, { state: 'loading' })))
+    comments(pr)
+      .then((threads) => {
+        const items = threads.map((thread) => ({ thread, remark: remarkFor(thread) }))
+        // Every loaded comment is on GitHub already, so a fix replies under it.
+        setPosts((all) => {
+          const next = new Map(all)
+          for (const { thread, remark } of items) next.set(remark, { state: 'posted', id: thread.id, url: thread.url })
+          return next
+        })
+        setComments(pr, { state: 'done', items })
+      })
+      .catch((failure) => setComments(pr, { state: 'failed', error: errorMessage(failure) }))
+  }, [opened?.url])
+
   const setFix = (remark: Remark, next: Fix) => setFixes((all) => new Map(all).set(remark, next))
+
+  const setDraft = (remark: Remark, next: Draft) => setDrafts((all) => new Map(all).set(remark, next))
 
   const sendReply = (pr: Pr, remark: Remark, commentId: number, commit: string, answer: string) => {
     const fixed = (next: Reply) => setFix(remark, { state: 'fixed', commit, answer, reply: next })
@@ -474,9 +669,11 @@ export function PrApp({
     )
   }
 
-  const startFix = (pr: Pr, remark: Remark) => {
+  // The text stays in the draft, so a failed fix can be tried again with it.
+  const startFix = (pr: Pr, remark: Remark, context: string) => {
+    setDraft(remark, { open: false, text: context })
     setFix(remark, { state: 'fixing' })
-    fix(pr, remark)
+    fix(pr, remark, context)
       .then((outcome) => {
         if (outcome.state === 'nothing') return setFix(remark, { state: 'nothing', reason: outcome.reason })
 
@@ -546,13 +743,18 @@ export function PrApp({
         <PrPage
           pr={opened}
           review={reviews.get(opened.url)}
+          loaded={loaded.get(opened.url)}
+          me={me}
           posts={posts}
           fixes={fixes}
           canFix={me !== null && opened.author === me}
           onBack={() => setOpened(null)}
+          onOpen={() => openUrl(opened.url)}
           onReview={() => startReview(opened)}
           onPost={(commit, remark) => startPost(opened, commit, remark)}
-          onFix={(remark) => startFix(opened, remark)}
+          drafts={drafts}
+          onFix={(remark, context) => startFix(opened, remark, context)}
+          onDraft={setDraft}
         />
       ) : (
         <div style={{ flexGrow: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
