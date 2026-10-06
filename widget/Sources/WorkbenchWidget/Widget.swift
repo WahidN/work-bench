@@ -6,10 +6,10 @@ import WidgetUI
 
 @Observable final class WidgetState {
   var list: ListState = .loading
-  var spot: Spot
+  var place: Place
 
-  init(spot: Spot) {
-    self.spot = spot
+  init(place: Place) {
+    self.place = place
   }
 
   var count: Int? {
@@ -25,7 +25,9 @@ final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
 struct CircleButton: View {
   let state: WidgetState
   let toggle: () -> Void
-  let move: @MainActor (Spot) -> Void
+  let move: @MainActor (Spot?) -> Void
+  let drag: () -> Void
+  let drop: () -> Void
   let refresh: () -> Void
   let quit: () -> Void
 
@@ -33,10 +35,12 @@ struct CircleButton: View {
     CircleView(count: state.count)
       .contentShape(Circle())
       .onTapGesture(perform: toggle)
+      // Past 3 points it is a drag, so a click stays a click.
+      .gesture(DragGesture(minimumDistance: 3).onChanged { _ in drag() }.onEnded { _ in drop() })
       .contextMenu {
-        Picker("Spot", selection: Binding(get: { state.spot }, set: move)) {
-          Text("At the notch").tag(Spot.notch)
-          Text("On the right edge").tag(Spot.rightEdge)
+        Picker("Spot", selection: Binding(get: { state.place.spot }, set: move)) {
+          Text("At the notch").tag(Spot?.some(.notch))
+          Text("On the right edge").tag(Spot?.some(.rightEdge))
         }
         .pickerStyle(.inline)
         Divider()
@@ -60,18 +64,26 @@ final class Widget: NSObject {
   private let workbench: Workbench
   private let circle = Widget.panel(size: CGSize(width: circleSize, height: circleSize))
   private let list = Widget.panel(size: listSize)
+  private var dragStart: (mouse: CGPoint, origin: CGPoint)?
 
   init(defaults: UserDefaults = .standard) {
     let folder = defaults.string(forKey: "workbenchFolder") ?? NSString(string: "~/Documents/Projecten/workbench").expandingTildeInPath
     workbench = Workbench(folder: URL(fileURLWithPath: folder))
-    state = WidgetState(spot: Spot(rawValue: defaults.string(forKey: "spot") ?? "") ?? .notch)
+    state = WidgetState(place: readPlace(
+      edge: defaults.string(forKey: "edge"),
+      along: defaults.object(forKey: "along") as? Double,
+      screen: defaults.object(forKey: "screen") as? Int,
+      spot: defaults.string(forKey: "spot")
+    ))
     super.init()
 
     // The panels hold these closures and the widget holds the panels, for as long as the app runs.
     circle.contentView = FirstClickHostingView(rootView: CircleButton(
       state: state,
       toggle: { [unowned self] in toggleList() },
-      move: { [unowned self] in move(to: $0) },
+      move: { [unowned self] in if let spot = $0 { move(to: Place(screen: nil, anchor: spot.anchor)) } },
+      drag: { [unowned self] in drag() },
+      drop: { [unowned self] in drop() },
       refresh: { [unowned self] in refresh() },
       quit: { NSApp.terminate(nil) }
     ))
@@ -101,14 +113,40 @@ final class Widget: NSObject {
     place()
   }
 
-  private func place() {
-    let screens = NSScreen.screens.map {
-      Screen(frame: $0.frame, visibleFrame: $0.visibleFrame, hasNotch: $0.safeAreaInsets.top > 0)
+  private var screens: [Screen] {
+    NSScreen.screens.map {
+      Screen(
+        id: ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.intValue ?? 0,
+        frame: $0.frame,
+        visibleFrame: $0.visibleFrame,
+        hasNotch: $0.safeAreaInsets.top > 0
+      )
     }
-    guard let screen = screenForCircle(screens) else { return }
-    let frame = circleFrame(for: state.spot, on: screen)
+  }
+
+  private func place() {
+    guard let (screen, anchor) = resolve(state.place, in: screens) else { return }
+    let frame = circleFrame(at: anchor, on: screen)
     circle.setFrame(frame, display: true)
-    list.setFrame(listFrame(for: state.spot, circle: frame, size: listSize, on: screen), display: true)
+    list.setFrame(listFrame(at: anchor, circle: frame, size: listSize, on: screen), display: true)
+  }
+
+  /// Follows the pointer in screen points. The gesture's own offset is measured in the window, which moves.
+  private func drag() {
+    let mouse = NSEvent.mouseLocation
+    guard let start = dragStart else {
+      dragStart = (mouse, circle.frame.origin)
+      list.orderOut(nil)
+      return
+    }
+    circle.setFrameOrigin(CGPoint(x: start.origin.x + mouse.x - start.mouse.x, y: start.origin.y + mouse.y - start.mouse.y))
+  }
+
+  private func drop() {
+    dragStart = nil
+    let center = CGPoint(x: circle.frame.midX, y: circle.frame.midY)
+    guard let screen = screen(containing: center, in: screens) else { return }
+    move(to: Place(screen: screen.id, anchor: snap(center, on: screen)))
   }
 
   private func toggleList() {
@@ -121,10 +159,14 @@ final class Widget: NSObject {
     refresh()
   }
 
-  private func move(to spot: Spot) {
-    state.spot = spot
-    UserDefaults.standard.set(spot.rawValue, forKey: "spot")
-    place()
+  private func move(to place: Place) {
+    state.place = place
+    let defaults = UserDefaults.standard
+    defaults.set(place.anchor.edge.rawValue, forKey: "edge")
+    defaults.set(place.anchor.along, forKey: "along")
+    defaults.set(place.screen, forKey: "screen")
+    defaults.removeObject(forKey: "spot")
+    self.place()
   }
 
   private func refresh() {

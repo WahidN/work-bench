@@ -14,7 +14,7 @@ Other programs can steer Workbench. `bun src/app.tsx --pr <url>` opens that pull
 
 ## Widget
 
-`widget/` holds a small Swift app: a floating circle with the number of your open pull requests, at the notch or on the right edge of the screen. A click opens a list of them, and a click on a pull request opens it in Workbench. Right-click the circle to move it, refresh the list or quit.
+`widget/` holds a small Swift app: a floating circle with the number of your open pull requests, at the notch or on the right edge of the screen. A click opens a list of them, and a click on a pull request opens it in Workbench. Drag the circle to any edge of any screen: it snaps to the nearest edge and stays there. Right-click it for the notch or right edge spot, to refresh the list, or to quit.
 
 ```bash
 cd widget
