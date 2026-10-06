@@ -47,8 +47,14 @@ type Loaded = { state: 'loading' } | { state: 'done'; items: LoadedThread[] } | 
 type Fix =
   | { state: 'fixing' }
   | { state: 'fixed'; commit: string; answer: string; reply: Reply }
-  | { state: 'nothing'; reason: string }
+  | { state: 'nothing'; reason: string; reply: Reply }
   | { state: 'failed'; error: string }
+
+type Answered = Extract<Fix, { reply: Reply }>
+
+function replyText(done: Answered): string {
+  return done.state === 'fixed' ? `Gefixt in ${done.commit}. ${done.answer}` : `Geen wijziging nodig. ${done.reason}`
+}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -249,7 +255,9 @@ function FixControl({
   if (open) return null
 
   const fixing = fix?.state === 'fixing'
-  return <Button testId={`fix-${name}`} label={fixing ? 'Fixing' : 'Fix'} onClick={fixing || waiting ? undefined : onFix} />
+  // A new try would be overwritten when this reply comes back.
+  const replying = fix?.state === 'nothing' && fix.reply === 'sending'
+  return <Button testId={`fix-${name}`} label={fixing ? 'Fixing' : 'Fix'} onClick={fixing || replying || waiting ? undefined : onFix} />
 }
 
 function Note({ text, color }: { text: string; color: string }) {
@@ -301,14 +309,25 @@ function FixBox({
   )
 }
 
+function ReplyNote({ reply }: { reply: Reply }) {
+  if (reply === 'sending') return <Note text="Replying under the comment on GitHub" color={C.secondary} />
+  if (reply === 'sent') return <Note text="Replied under the comment on GitHub" color={C.secondary} />
+  if (typeof reply === 'object') return <Note text={`The reply failed: ${reply.error}`} color={C.error} />
+  return null
+}
+
 function FixNote({ fix }: { fix: Fix | undefined }) {
-  if (fix?.state === 'nothing') return <Note text={`Claude changed nothing. ${fix.reason}`} color={C.secondary} />
+  if (fix?.state === 'nothing') {
+    return (
+      <>
+        <Note text={`Claude changed nothing. ${fix.reason}`} color={C.secondary} />
+        <ReplyNote reply={fix.reply} />
+      </>
+    )
+  }
   if (fix?.state === 'failed') return <Note text={fix.error} color={C.error} />
   if (fix?.state !== 'fixed') return null
-  if (fix.reply === 'sending') return <Note text="Replying under the comment on GitHub" color={C.secondary} />
-  if (fix.reply === 'sent') return <Note text="Replied under the comment on GitHub" color={C.secondary} />
-  if (typeof fix.reply === 'object') return <Note text={`The reply failed: ${fix.reply.error}`} color={C.error} />
-  return null
+  return <ReplyNote reply={fix.reply} />
 }
 
 function RemarkRow({
@@ -713,8 +732,8 @@ export function PrApp({
     post(pr, commit, remark)
       .then((posted) => {
         setPost(remark, { state: 'posted', ...posted })
-        const fixed = latestFixes.current.get(remark)
-        if (fixed?.state === 'fixed' && fixed.reply === 'none') sendReply(pr, remark, posted.id, fixed.commit, fixed.answer)
+        const done = latestFixes.current.get(remark)
+        if ((done?.state === 'fixed' || done?.state === 'nothing') && done.reply === 'none') sendReply(pr, remark, posted.id, done)
       })
       .catch((failure) => setPost(remark, { state: 'failed', error: errorMessage(failure) }))
   }
@@ -756,12 +775,12 @@ export function PrApp({
 
   const setDraft = (remark: Remark, next: Draft) => setDrafts((all) => new Map(all).set(remark, next))
 
-  const sendReply = (pr: Pr, remark: Remark, commentId: number, commit: string, answer: string) => {
-    const fixed = (next: Reply) => setFix(remark, { state: 'fixed', commit, answer, reply: next })
-    fixed('sending')
-    return reply(pr, commentId, `Gefixt in ${commit}. ${answer}`).then(
-      () => fixed('sent'),
-      (failure) => fixed({ error: errorMessage(failure) }),
+  const sendReply = (pr: Pr, remark: Remark, commentId: number, done: Answered) => {
+    const answered = (next: Reply) => setFix(remark, { ...done, reply: next })
+    answered('sending')
+    return reply(pr, commentId, replyText(done)).then(
+      () => answered('sent'),
+      (failure) => answered({ error: errorMessage(failure) }),
     )
   }
 
@@ -771,13 +790,13 @@ export function PrApp({
     setFix(remark, { state: 'fixing' })
     fix(pr, remark, context)
       .then((outcome) => {
-        if (outcome.state === 'nothing') return setFix(remark, { state: 'nothing', reason: outcome.reason })
-
+        const done: Answered =
+          outcome.state === 'nothing'
+            ? { state: 'nothing', reason: outcome.reason, reply: 'none' }
+            : { state: 'fixed', commit: outcome.commit, answer: outcome.reply, reply: 'none' }
         const posted = latestPosts.current.get(remark)
-        if (posted?.state !== 'posted') {
-          return setFix(remark, { state: 'fixed', commit: outcome.commit, answer: outcome.reply, reply: 'none' })
-        }
-        return sendReply(pr, remark, posted.id, outcome.commit, outcome.reply)
+        if (posted?.state !== 'posted') return setFix(remark, done)
+        return sendReply(pr, remark, posted.id, done)
       })
       .catch((failure) => setFix(remark, { state: 'failed', error: errorMessage(failure) }))
   }

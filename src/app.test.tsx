@@ -253,6 +253,7 @@ describeNative('review posting', () => {
 })
 
 const FIXED: Fixed = { state: 'fixed', commit: 'abc1234', reply: 'De teller staat nu in Redis.' }
+const UNCHANGED: Fixed = { state: 'nothing', reason: 'De limiet telt al per gebruiker.' }
 
 describeNative('fixing a remark', () => {
   it('fixes a posted remark, replies under its comment, and lets one fix run at a time', async () => {
@@ -364,14 +365,94 @@ describeNative('fixing a remark', () => {
   })
 
   it('says when Claude changed nothing, and lets you try again', async () => {
+    let replies = 0
     const { app } = await openReviewed({
       whoami: async () => 'sam',
-      fix: async () => ({ state: 'nothing', reason: 'De limiet telt al per gebruiker.' }),
+      fix: async () => UNCHANGED,
+      reply: async () => {
+        replies += 1
+        return ''
+      },
     })
 
     await pressFix(app, '0')
     await app.getByText('Claude changed nothing. De limiet telt al per gebruiker.').waitFor()
     expect(await app.getByTestId('fix-0').count()).toBe(1)
+    expect(replies).toBe(0)
+
+    await app.close()
+  })
+
+  it('replies under a posted remark when Claude changed nothing', async () => {
+    const replies: [string, number, string][] = []
+    const { app, renderer } = await openReviewed({
+      whoami: async () => 'sam',
+      post: async () => ({ id: 42, url: 'https://github.com/acme/api/pull/2#discussion_r42' }),
+      fix: async () => UNCHANGED,
+      reply: async (pr, id, body) => {
+        replies.push([pr.url, id, body])
+        return ''
+      },
+    })
+
+    await app.getByTestId('post-0').click()
+    await app.getByText('Posted').waitFor()
+    await pressFix(app, '0')
+    await app.getByText('Replied under the comment on GitHub').waitFor()
+    expect(replies).toEqual([
+      ['https://github.com/acme/api/pull/2', 42, 'Geen wijziging nodig. De limiet telt al per gebruiker.'],
+    ])
+    expect(renderer.getPaintedText()).toContain('Claude changed nothing. De limiet telt al per gebruiker.')
+    expect(await app.getByTestId('fix-0').count()).toBe(1)
+
+    mkdirSync('screenshots', { recursive: true })
+    renderer.captureScreenshot('screenshots/pr-fix-unchanged.png')
+
+    await app.close()
+  })
+
+  it('replies when you post the remark after Claude changed nothing', async () => {
+    const replies: [number, string][] = []
+    const { app } = await openReviewed({
+      whoami: async () => 'sam',
+      post: async () => ({ id: 42, url: '' }),
+      fix: async () => UNCHANGED,
+      reply: async (pr, id, body) => {
+        replies.push([id, body])
+        return ''
+      },
+    })
+
+    await pressFix(app, '0')
+    await app.getByText('Claude changed nothing. De limiet telt al per gebruiker.').waitFor()
+    expect(replies).toEqual([])
+
+    await app.getByTestId('post-0').click()
+    await app.getByText('Replied under the comment on GitHub').waitFor()
+    expect(replies).toEqual([[42, 'Geen wijziging nodig. De limiet telt al per gebruiker.']])
+
+    await app.close()
+  })
+
+  it('shows a failed reply after Claude changed nothing, and holds Fix while the reply is sent', async () => {
+    let refuse: (failure: Error) => void = () => {}
+    const { app } = await openReviewed({
+      whoami: async () => 'sam',
+      post: async () => ({ id: 42, url: '' }),
+      fix: async () => UNCHANGED,
+      reply: () => new Promise((_, reject) => (refuse = reject)),
+    })
+
+    await app.getByTestId('post-0').click()
+    await app.getByText('Posted').waitFor()
+    await pressFix(app, '0')
+    await app.getByText('Replying under the comment on GitHub').waitFor()
+    await app.getByTestId('fix-0').click()
+    expect(await app.getByTestId('start-fix-0').count()).toBe(0)
+
+    refuse(new Error('Not Found (HTTP 404)'))
+    await app.getByText('The reply failed: Not Found (HTTP 404)').waitFor()
+    await app.getByText('Claude changed nothing. De limiet telt al per gebruiker.').waitFor()
 
     await app.close()
   })
