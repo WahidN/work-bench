@@ -17,3 +17,7 @@ export function repoCounts(prs: Pr[]): RepoCount[] {
 export function inRepo(prs: Pr[], repo: string | null): Pr[] {
   return repo === null ? prs : prs.filter((pr) => pr.repo === repo)
 }
+
+export function withoutHidden(prs: Pr[], hidden: string[]): Pr[] {
+  return prs.filter((pr) => !hidden.includes(pr.repo))
+}

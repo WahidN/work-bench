@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Pr } from './github'
-import { inRepo, repoCounts } from './repos'
+import { inRepo, repoCounts, withoutHidden } from './repos'
 
 function pr(repo: string, number: number): Pr {
   return {
@@ -38,5 +38,15 @@ describe('inRepo', () => {
 
   it('keeps everything when no repo is picked', () => {
     expect(inRepo(prs, null)).toEqual(prs)
+  })
+})
+
+describe('withoutHidden', () => {
+  it('drops the pull requests of hidden repos', () => {
+    expect(withoutHidden(prs, ['acme/web']).map((entry) => entry.number)).toEqual([2])
+  })
+
+  it('keeps everything when nothing is hidden', () => {
+    expect(withoutHidden(prs, [])).toEqual(prs)
   })
 })
