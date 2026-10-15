@@ -47,6 +47,7 @@ async function mount(load: () => Promise<Pr[]>, fakes: Fakes = {}) {
       reply={async () => ''}
       whoami={async () => 'nobody'}
       comments={async () => []}
+      description={async () => ''}
       openUrl={() => {}}
       loadHidden={async () => []}
       saveHidden={async () => {}}
@@ -490,6 +491,100 @@ describeNative('comments from GitHub', () => {
     await app.getByTestId('review').click()
     await app.getByTestId('finding-0').waitFor()
     expect(reviews).toBe(1)
+
+    await app.close()
+  })
+})
+
+const DESCRIPTION = [
+  'De limiet telt nu per gebruiker in plaats van per proces.',
+  '',
+  '## Wat is veranderd',
+  '',
+  '- `RateLimiter` houdt de teller in Redis bij',
+  '- Zie [de issue](https://github.com/acme/api/issues/9) voor de achtergrond',
+].join('\n')
+
+async function openPr(fakes: Fakes) {
+  const { app, renderer } = await mount(async () => PRS, fakes)
+  await app.getByTestId('pr-acme/api#2').waitFor()
+  await app.getByTestId('pr-acme/api#2').click()
+  return { app, renderer }
+}
+
+describeNative('pr description', () => {
+  it('shows the description above the comments', async () => {
+    const { app, renderer } = await openPr({
+      description: async () => DESCRIPTION,
+      comments: async () => [thread(11, 'kim', 'Kan deze naam duidelijker?')],
+    })
+    await app.getByTestId('finding-thread-11').waitFor()
+    await app.getByTestId('description').waitFor()
+
+    expect(renderer.getPaintedText()).toEqual(expect.arrayContaining(['Wat is veranderd']))
+    expect((await app.getByTestId('description').bounds()).y).toBeLessThan(
+      (await app.getByTestId('finding-thread-11').bounds()).y,
+    )
+
+    mkdirSync('screenshots', { recursive: true })
+    renderer.captureScreenshot('screenshots/pr-description.png')
+
+    await app.close()
+  })
+
+  it('opens a link in the description in the browser and stays on the page', async () => {
+    const opened: string[] = []
+    const { app } = await openPr({
+      description: async () => '[Issue 9](https://github.com/acme/api/issues/9) is de achtergrond.',
+      openUrl: (url) => opened.push(url),
+    })
+    await app.getByType('markdown').waitFor()
+
+    // Only the link text takes the click, and here it starts at the left edge.
+    const { x, y, height } = await app.getByType('markdown').bounds()
+    await app.mouse.click({ x: x + 10, y: y + height / 2 })
+
+    expect(opened).toEqual(['https://github.com/acme/api/issues/9'])
+    expect(await app.getByTestId('back').count()).toBe(1)
+
+    await app.close()
+  })
+
+  it('opens no link that is not a web address', async () => {
+    const opened: string[] = []
+    const { app } = await openPr({
+      description: async () => '[Rekenmachine](file:///System/Applications/Calculator.app) staat lokaal.',
+      openUrl: (url) => opened.push(url),
+    })
+    await app.getByType('markdown').waitFor()
+
+    const { x, y, height } = await app.getByType('markdown').bounds()
+    await app.mouse.click({ x: x + 10, y: y + height / 2 })
+
+    expect(opened).toEqual([])
+
+    await app.close()
+  })
+
+  it('says so when the description is empty', async () => {
+    const { app } = await openPr({ description: async () => '' })
+
+    await app.getByText('No description').waitFor()
+
+    await app.close()
+  })
+
+  it('says why the description did not load, and the comments and a review still work', async () => {
+    const { app } = await openPr({
+      description: () => Promise.reject(new Error('HTTP 404: Not Found')),
+      comments: async () => [thread(11, 'kim', 'Kan deze naam duidelijker?')],
+      review: async () => ({ commit: 'abc123', remarks: [REMARK] }),
+    })
+
+    await app.getByText('The description did not load: HTTP 404: Not Found').waitFor()
+    await app.getByTestId('finding-thread-11').waitFor()
+    await app.getByTestId('review').click()
+    await app.getByTestId('finding-0').waitFor()
 
     await app.close()
   })
