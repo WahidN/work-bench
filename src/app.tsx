@@ -4,7 +4,7 @@ import { render, useGpuix } from '@gpuix/react'
 import { listenForOrders, orderFeed, readOrder, sendOrder, type Order, type OrderFeed } from './commands'
 import { loadComments, type Thread } from './comments'
 import { fixRemark, type Fixed } from './fix'
-import { fetchLogin, fetchMyPrs, openInBrowser, type Pr, type Reason } from './github'
+import { fetchLogin, fetchMyPrs, loadDescription, openInBrowser, type Pr, type Reason } from './github'
 import { loadHiddenRepos, saveHiddenRepos } from './hidden'
 import { inRepo, repoCounts, shortName, withoutHidden } from './repos'
 import { postRemark, replyTo, type Posted } from './post'
@@ -43,6 +43,8 @@ type Draft = { open: boolean; text: string }
 type LoadedThread = { thread: Thread; remark: Remark }
 
 type Loaded = { state: 'loading' } | { state: 'done'; items: LoadedThread[] } | { state: 'failed'; error: string }
+
+type Described = { state: 'loading' } | { state: 'done'; body: string } | { state: 'failed'; error: string }
 
 type Fix =
   | { state: 'fixing' }
@@ -482,10 +484,43 @@ function CommentsStatus({ loaded }: { loaded: Loaded | undefined }) {
   return null
 }
 
+const MARKDOWN_THEME = {
+  text: C.text,
+  textMuted: C.secondary,
+  textFaint: C.ghost,
+  border: C.border,
+  accent: C.accent,
+  metrics: { mdTextSize: 13, mdLineHeight: 20 },
+}
+
+function Description({ described, onLink }: { described: Described | undefined; onLink: (url: string) => void }) {
+  if (described?.state === 'loading') return <Message text="Loading the description" color={C.secondary} />
+  if (described?.state === 'failed') {
+    return <Message text={`The description did not load: ${described.error}`} color={C.error} />
+  }
+  if (described?.state !== 'done') return null
+
+  // Anyone can write the description, and `open` also starts apps and local files.
+  const openWebLink = (url: string | undefined) => {
+    if (url && /^https?:\/\//.test(url)) onLink(url)
+  }
+
+  return (
+    <div testId="description" style={{ paddingLeft: 24, paddingRight: 24, paddingBottom: 16 }}>
+      {described.body ? (
+        <markdown source={described.body} theme={MARKDOWN_THEME} onLinkClick={(event) => openWebLink(event.value)} />
+      ) : (
+        <text style={{ fontSize: 13, color: C.ghost }}>No description</text>
+      )}
+    </div>
+  )
+}
+
 function PrPage({
   pr,
   review,
   loaded,
+  described,
   me,
   posts,
   fixes,
@@ -493,6 +528,7 @@ function PrPage({
   drafts,
   onBack,
   onOpen,
+  onLink,
   onReview,
   onPost,
   onFix,
@@ -501,6 +537,7 @@ function PrPage({
   pr: Pr
   review: Review | undefined
   loaded: Loaded | undefined
+  described: Described | undefined
   me: string | null
   posts: Map<Remark, Post>
   fixes: Map<Remark, Fix>
@@ -508,6 +545,7 @@ function PrPage({
   drafts: Map<Remark, Draft>
   onBack: () => void
   onOpen: () => void
+  onLink: (url: string) => void
   onReview: () => void
   onPost: (commit: string, remark: Remark) => void
   onFix: (remark: Remark, context: string) => void
@@ -574,6 +612,7 @@ function PrPage({
       </div>
 
       <virtual-list estimatedItemHeight={120} style={{ flexGrow: 1, minHeight: 0 }}>
+        <Description described={described} onLink={onLink} />
         <CommentsStatus loaded={loaded} />
         {threads.map(({ thread, remark }) => (
           <RemarkRow
@@ -618,6 +657,7 @@ export function PrApp({
   reply = replyTo,
   whoami = fetchLogin,
   comments = loadComments,
+  description = loadDescription,
   openUrl = openInBrowser,
   loadHidden = loadHiddenRepos,
   saveHidden = saveHiddenRepos,
@@ -630,6 +670,7 @@ export function PrApp({
   reply?: (pr: Pr, commentId: number, body: string) => Promise<string>
   whoami?: () => Promise<string>
   comments?: (pr: Pr) => Promise<Thread[]>
+  description?: (pr: Pr) => Promise<string>
   openUrl?: (url: string) => void
   loadHidden?: () => Promise<string[]>
   saveHidden?: (repos: string[]) => Promise<void>
@@ -650,6 +691,7 @@ export function PrApp({
   const [drafts, setDrafts] = useState<Map<Remark, Draft>>(new Map())
   const [me, setMe] = useState<string | null>(null)
   const [loaded, setLoaded] = useState<Map<string, Loaded>>(new Map())
+  const [descriptions, setDescriptions] = useState<Map<string, Described>>(new Map())
   // The same comment keeps the same remark object across reloads, so its post and fix state stay with it.
   const threadRemarks = useRef(new Map<number, Remark>())
   // A fix or post lands later, so it reads the other side as it is then, not when it started.
@@ -769,6 +811,17 @@ export function PrApp({
         setComments(pr, { state: 'done', items })
       })
       .catch((failure) => setComments(pr, { state: 'failed', error: errorMessage(failure) }))
+  }, [opened?.url])
+
+  const setDescription = (pr: Pr, next: Described) => setDescriptions((all) => new Map(all).set(pr.url, next))
+
+  useEffect(() => {
+    if (!opened) return
+    const pr = opened
+    setDescriptions((all) => (all.get(pr.url)?.state === 'done' ? all : new Map(all).set(pr.url, { state: 'loading' })))
+    description(pr)
+      .then((body) => setDescription(pr, { state: 'done', body }))
+      .catch((failure) => setDescription(pr, { state: 'failed', error: errorMessage(failure) }))
   }, [opened?.url])
 
   const setFix = (remark: Remark, next: Fix) => setFixes((all) => new Map(all).set(remark, next))
@@ -895,12 +948,14 @@ export function PrApp({
           pr={opened}
           review={reviews.get(opened.url)}
           loaded={loaded.get(opened.url)}
+          described={descriptions.get(opened.url)}
           me={me}
           posts={posts}
           fixes={fixes}
           canFix={me !== null && opened.author === me}
           onBack={() => setOpened(null)}
           onOpen={() => openUrl(opened.url)}
+          onLink={openUrl}
           onReview={() => startReview(opened)}
           onPost={(commit, remark) => startPost(opened, commit, remark)}
           drafts={drafts}

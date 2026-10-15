@@ -48,6 +48,11 @@ export async function fetchLogin(): Promise<string> {
   return stdout.trim()
 }
 
+export async function loadDescription(pr: Pr): Promise<string> {
+  const { stdout } = await run('gh', ['api', `repos/${pr.repo}/pulls/${pr.number}`, '--jq', '.body // ""'])
+  return stdout.trim()
+}
+
 export async function fetchMyPrs(): Promise<Pr[]> {
   const [assigned, review, commented] = await Promise.all([
     search('--assignee=@me'),
