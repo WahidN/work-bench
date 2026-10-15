@@ -399,10 +399,22 @@ function thread(id: number, author: string, body: string, fields: Partial<Thread
     line: 12,
     outdated: false,
     body,
+    diff: '',
     replies: [],
     ...fields,
   }
 }
+
+const CODE = [
+  'diff --git a/src/limits.ts b/src/limits.ts',
+  '--- a/src/limits.ts',
+  '+++ b/src/limits.ts',
+  '@@ -9,3 +9,4 @@',
+  '   const max = 100',
+  '-  let count = 0',
+  '+  const perGebruiker = new Map<string, number>()',
+  '+  const key = user.id',
+].join('\n')
 
 describeNative('comments from GitHub', () => {
   it('marks the pull requests you commented on in the list', async () => {
@@ -450,6 +462,31 @@ describeNative('comments from GitHub', () => {
     await pressFix(app, 'thread-10')
     await app.getByText('Replied under the comment on GitHub').waitFor()
     expect(replies).toEqual([[10, 'Gefixt in abc1234. De teller staat nu in Redis.']])
+
+    await app.close()
+  })
+
+  it('shows the code above a loaded comment, and none for its reply', async () => {
+    const { app, renderer } = await mount(async () => PRS, {
+      comments: async () => [
+        thread(11, 'kim', 'Kan deze naam duidelijker?', {
+          diff: CODE,
+          replies: [{ author: 'sam', body: 'Klopt, die wordt `perUser`.' }],
+        }),
+      ],
+    })
+    await app.getByTestId('pr-acme/api#2').waitFor()
+    await app.getByTestId('pr-acme/api#2').click()
+    await app.getByTestId('code-thread-11').waitFor()
+
+    expect(await app.getByType('diff').count()).toBe(1)
+    expect(renderer.getPaintedText().join(' ')).toContain('perGebruiker')
+    expect((await app.getByTestId('code-thread-11').bounds()).y).toBeLessThan(
+      (await app.getByText('Kan deze naam duidelijker?').bounds()).y,
+    )
+
+    mkdirSync('screenshots', { recursive: true })
+    renderer.captureScreenshot('screenshots/pr-comment-code.png')
 
     await app.close()
   })

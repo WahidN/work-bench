@@ -324,6 +324,7 @@ function RemarkRow({
   onDraft,
   author,
   outdated = false,
+  diff = '',
   replies = [],
 }: {
   name: string
@@ -339,6 +340,7 @@ function RemarkRow({
   // Set for someone else's comment, which can only be read.
   author?: string
   outdated?: boolean
+  diff?: string
   replies?: Thread['replies']
 }) {
   return (
@@ -373,6 +375,7 @@ function RemarkRow({
         ) : null}
         {author ? null : <PostControl name={name} remark={remark} post={post} onPost={onPost} />}
       </div>
+      {diff ? <diff testId={`code-${name}`} patch={diff} style={{ marginBottom: 6 }} /> : null}
       <text style={{ fontSize: 13, lineHeight: 20, color: C.text }}>{remark.body}</text>
       {replies.map((reply, index) => (
         <Note key={index} text={`${reply.author}: ${reply.body}`} color={C.secondary} />
@@ -571,6 +574,7 @@ function PrPage({
             onDraft={(next) => onDraft(remark, next)}
             author={thread.author === me ? undefined : thread.author}
             outdated={thread.outdated}
+            diff={thread.diff}
             replies={thread.replies}
           />
         ))}
