@@ -1,0 +1,49 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "workbench",
+  "title": "Workbench",
+  "description": "Your open pull requests from Workbench, to open on GitHub or in Workbench.",
+  "icon": "icon.png",
+  "author": "wahid",
+  "license": "MIT",
+  "platforms": [
+    "macOS"
+  ],
+  "categories": [
+    "Developer Tools"
+  ],
+  "commands": [
+    {
+      "name": "pull-requests",
+      "title": "Pull Requests",
+      "description": "List your open pull requests",
+      "mode": "view"
+    }
+  ],
+  "preferences": [
+    {
+      "name": "workbenchFolder",
+      "type": "directory",
+      "title": "Workbench folder",
+      "description": "Your Workbench checkout. Leave empty for ~/Documents/Projecten/workbench.",
+      "required": false
+    }
+  ],
+  "scripts": {
+    "build": "ray build",
+    "dev": "ray develop",
+    "lint": "ray lint"
+  },
+  "dependencies": {
+    "@raycast/api": "^1.104.25",
+    "@raycast/utils": "^2.3.3"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^2.2.0",
+    "@types/node": "^22.19.17",
+    "@types/react": "^19.0.10",
+    "eslint": "^9.39.5",
+    "prettier": "^3.9.10",
+    "typescript": "^5.9.3"
+  }
+}
