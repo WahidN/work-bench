@@ -1,6 +1,6 @@
 import { getPreferenceValues } from '@raycast/api'
 import { execFile, spawn } from 'node:child_process'
-import { homedir } from 'node:os'
+import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 
@@ -22,11 +22,11 @@ function folder(): string {
   return getPreferenceValues<Preferences>().workbenchFolder || join(homedir(), 'Documents/Projecten/workbench')
 }
 
-// Raycast starts an extension without a PATH, so bun, gh and claude are not found.
+// Raycast starts an extension without PATH and USER: bun, gh and claude are not found, and claude misses its login.
 function environment(): NodeJS.ProcessEnv {
   const home = homedir()
   const PATH = ['/opt/homebrew/bin', `${home}/.bun/bin`, `${home}/.local/bin`, process.env.PATH ?? '/usr/bin:/bin']
-  return { ...process.env, PATH: PATH.join(':') }
+  return { ...process.env, PATH: PATH.join(':'), USER: process.env.USER ?? userInfo().username }
 }
 
 export async function listPrs(): Promise<Pr[]> {
