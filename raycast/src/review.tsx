@@ -1,9 +1,9 @@
 import { Action, ActionPanel, Color, Icon, Image, Keyboard, List, showToast, Toast } from '@raycast/api'
-import { MutatePromise, showFailureToast, useCachedPromise } from '@raycast/utils'
+import { showFailureToast, useCachedPromise } from '@raycast/utils'
 import { basename } from 'node:path'
 import { useEffect, useState } from 'react'
 
-import { listReviews, postRemark, startReview, type Pr, type Review } from './workbench'
+import { listReviews, postRemark, startReview, type Pr } from './workbench'
 
 const POLL_MS = 3000
 
@@ -30,16 +30,11 @@ export function useReviews() {
   return reviews
 }
 
-async function startReviewOf(url: string, mutate: MutatePromise<Review[] | undefined>) {
+async function startReviewOf(url: string, revalidate: () => void) {
   try {
-    await mutate(startReview(url), {
-      optimisticUpdate: (reviews = []) => [
-        ...reviews.filter((review) => review.url !== url),
-        { url, state: 'running', pid: 0 },
-      ],
-      // The review writes 'running' a moment after it starts, so reading now could still show the old review.
-      shouldRevalidateAfter: false,
-    })
+    // The launch lets go after half a second, and the review writes 'running' well before that.
+    await startReview(url)
+    revalidate()
     await showToast({
       style: Toast.Style.Success,
       title: 'Review started',
@@ -50,19 +45,19 @@ async function startReviewOf(url: string, mutate: MutatePromise<Review[] | undef
   }
 }
 
-export function ReviewAction({ url, mutate }: { url: string; mutate: MutatePromise<Review[] | undefined> }) {
+export function ReviewAction({ url, revalidate }: { url: string; revalidate: () => void }) {
   return (
     <Action
       title="Review with Claude"
       icon={Icon.Stars}
       shortcut={Keyboard.Shortcut.Common.Refresh}
-      onAction={() => startReviewOf(url, mutate)}
+      onAction={() => startReviewOf(url, revalidate)}
     />
   )
 }
 
 export function ReviewView({ pr }: { pr: Pr }) {
-  const { data, isLoading, mutate, revalidate } = useReviews()
+  const { data, isLoading, revalidate } = useReviews()
   // Kept after a post succeeds, so Post stays away until the file says 'Posted'.
   const [sent, setSent] = useState<string[]>([])
   const review = data?.find((saved) => saved.url === pr.url)
@@ -76,7 +71,7 @@ export function ReviewView({ pr }: { pr: Pr }) {
           description={review.error}
           actions={
             <ActionPanel>
-              <ReviewAction url={pr.url} mutate={mutate} />
+              <ReviewAction url={pr.url} revalidate={revalidate} />
             </ActionPanel>
           }
         />

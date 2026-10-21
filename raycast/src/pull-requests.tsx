@@ -1,5 +1,5 @@
 import { Action, ActionPanel, closeMainWindow, Color, Icon, Keyboard, List } from '@raycast/api'
-import { MutatePromise, showFailureToast, useCachedPromise } from '@raycast/utils'
+import { showFailureToast, useCachedPromise } from '@raycast/utils'
 
 import { ReviewAction, ReviewView, useReviews } from './review'
 import { listPrs, openInWorkbench, type Pr, type Review } from './workbench'
@@ -25,9 +25,9 @@ function reviewAccessories(review?: Review): List.Item.Accessory[] {
   return []
 }
 
-type PrItemProps = { pr: Pr; review?: Review; mutate: MutatePromise<Review[] | undefined> }
+type PrItemProps = { pr: Pr; review?: Review; revalidate: () => void }
 
-function PrItem({ pr, review, mutate }: PrItemProps) {
+function PrItem({ pr, review, revalidate }: PrItemProps) {
   return (
     <List.Item
       title={pr.title}
@@ -43,7 +43,7 @@ function PrItem({ pr, review, mutate }: PrItemProps) {
         <ActionPanel>
           <Action.OpenInBrowser url={pr.url} />
           <Action title="Open in Workbench" icon={Icon.Window} onAction={() => openPr(pr.url)} />
-          {review?.state === 'running' ? null : <ReviewAction url={pr.url} mutate={mutate} />}
+          {review?.state === 'running' ? null : <ReviewAction url={pr.url} revalidate={revalidate} />}
           {review ? (
             <Action.Push
               title="Show Review"
@@ -69,7 +69,9 @@ export default function PullRequests() {
       {error && !data ? (
         <List.EmptyView icon={Icon.Warning} title="Could not load pull requests" description={error.message} />
       ) : (
-        data?.map((pr) => <PrItem key={pr.url} pr={pr} review={reviewByUrl.get(pr.url)} mutate={reviews.mutate} />)
+        data?.map((pr) => (
+          <PrItem key={pr.url} pr={pr} review={reviewByUrl.get(pr.url)} revalidate={reviews.revalidate} />
+        ))
       )}
     </List>
   )
