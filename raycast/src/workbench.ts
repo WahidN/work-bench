@@ -16,6 +16,13 @@ export type Pr = {
   commented?: boolean
 }
 
+export type Remark = { path: string; line: number; body: string; inDiff: boolean; posted?: string }
+
+export type Review =
+  | { url: string; state: 'running'; pid: number }
+  | { url: string; state: 'done'; commit: string; remarks: Remark[] }
+  | { url: string; state: 'failed'; error: string }
+
 type ExecFailure = Error & { stderr?: string }
 
 function folder(): string {
@@ -29,28 +36,39 @@ function environment(): NodeJS.ProcessEnv {
   return { ...process.env, PATH: PATH.join(':'), USER: process.env.USER ?? userInfo().username }
 }
 
-export async function listPrs(): Promise<Pr[]> {
+async function ask<T>(args: string[]): Promise<T> {
   try {
-    const { stdout } = await run('bun', ['src/cli.ts', 'prs'], { cwd: folder(), env: environment() })
+    const { stdout } = await run('bun', ['src/cli.ts', ...args], { cwd: folder(), env: environment() })
     return JSON.parse(stdout)
   } catch (failure) {
     throw new Error((failure as ExecFailure).stderr?.trim() || (failure as Error).message)
   }
 }
 
-// When Workbench is not running, this launch becomes the window, so it must outlive Raycast.
-export function openInWorkbench(url: string): Promise<void> {
+export const listPrs = () => ask<Pr[]>(['prs'])
+
+export const listReviews = () => ask<Review[]>(['reviews'])
+
+export const postRemark = (url: string, commit: string, index: number) =>
+  ask<{ id: number; url: string }>(['post', url, commit, String(index)])
+
+// The launch must outlive Raycast: it becomes the Workbench window, or a review that takes minutes.
+function launch(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    const launch = spawn('bun', ['src/app.tsx', '--pr', url], {
+    const child = spawn('bun', args, {
       cwd: folder(),
       env: environment(),
       detached: true,
       stdio: 'ignore',
     })
-    launch.once('error', reject)
-    launch.once('spawn', () => {
-      launch.unref()
+    child.once('error', reject)
+    child.once('spawn', () => {
+      child.unref()
       resolve()
     })
   })
 }
+
+export const openInWorkbench = (url: string) => launch(['src/app.tsx', '--pr', url])
+
+export const startReview = (url: string) => launch(['src/cli.ts', 'review', url])
