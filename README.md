@@ -16,6 +16,8 @@ Built with [GPUIX](https://gpuix.dev): React and TypeScript on Bun, drawn on the
 
 Other programs can steer Workbench. `bun src/app.tsx --pr <url>` opens that pull request, and `--review` also starts a review. When Workbench already runs, the order goes to that window instead of a new one. `bun src/cli.ts prs` prints your open pull requests as JSON.
 
+`bun src/cli.ts review <url>` reviews a pull request without the window and saves the result in `~/.config/workbench/reviews/`, so it is still there when the program that started it is gone. `bun src/cli.ts reviews` prints the saved reviews, and `bun src/cli.ts post <url> <commit> <index>` posts one saved remark.
+
 ## Widget
 
 `widget/` holds a small Swift app: a floating circle with the number of your open pull requests, at the notch or on the right edge of the screen. A click opens a list of them, and a click on a pull request opens it in Workbench. Drag the circle to any edge of any screen: it snaps to the nearest edge and stays there. Right-click it for the notch or right edge spot, to refresh the list, or to quit.

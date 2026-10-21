@@ -20,7 +20,7 @@ async function gh(args: string[]): Promise<string> {
   }
 }
 
-export function postArgs(pr: Pr, commit: string, finding: Finding): string[] {
+export function postArgs(pr: Pick<Pr, 'repo' | 'number'>, commit: string, finding: Finding): string[] {
   return [
     'api',
     `repos/${pr.repo}/pulls/${pr.number}/comments`,
@@ -39,7 +39,7 @@ export function postArgs(pr: Pr, commit: string, finding: Finding): string[] {
   ]
 }
 
-export async function postRemark(pr: Pr, commit: string, finding: Finding): Promise<Posted> {
+export async function postRemark(pr: Pick<Pr, 'repo' | 'number'>, commit: string, finding: Finding): Promise<Posted> {
   return JSON.parse(await gh(postArgs(pr, commit, finding)))
 }
 
