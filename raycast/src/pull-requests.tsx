@@ -60,14 +60,13 @@ function PrItem({ pr, review, mutate }: PrItemProps) {
 }
 
 export default function PullRequests() {
-  // The error view below says what went wrong, so no toast on top of it.
-  const { data, error, isLoading } = useCachedPromise(listPrs, [], { onError: () => {} })
+  const { data, error, isLoading } = useCachedPromise(listPrs)
   const reviews = useReviews()
   const reviewByUrl = new Map(reviews.data?.map((review) => [review.url, review]))
 
   return (
     <List isLoading={isLoading} searchBarPlaceholder="Filter by title or repo">
-      {error ? (
+      {error && !data ? (
         <List.EmptyView icon={Icon.Warning} title="Could not load pull requests" description={error.message} />
       ) : (
         data?.map((pr) => <PrItem key={pr.url} pr={pr} review={reviewByUrl.get(pr.url)} mutate={reviews.mutate} />)

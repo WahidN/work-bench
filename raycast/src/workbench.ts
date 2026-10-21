@@ -1,10 +1,13 @@
 import { getPreferenceValues } from '@raycast/api'
 import { execFile, spawn } from 'node:child_process'
-import { homedir, userInfo } from 'node:os'
+import { closeSync, existsSync, openSync, readFileSync } from 'node:fs'
+import { homedir, tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 
 const run = promisify(execFile)
+
+const EARLY_EXIT_MS = 500
 
 export type Pr = {
   url: string
@@ -26,7 +29,11 @@ export type Review =
 type ExecFailure = Error & { stderr?: string }
 
 function folder(): string {
-  return getPreferenceValues<Preferences>().workbenchFolder || join(homedir(), 'Documents/Projecten/workbench')
+  const chosen = getPreferenceValues<Preferences>().workbenchFolder || join(homedir(), 'Documents/Projecten/workbench')
+  if (!existsSync(join(chosen, 'src', 'cli.ts'))) {
+    throw new Error(`No Workbench in ${chosen}. Pick it in the 'Workbench folder' preference.`)
+  }
+  return chosen
 }
 
 // Raycast starts an extension without PATH and USER: bun, gh and claude are not found, and claude misses its login.
@@ -53,18 +60,31 @@ export const postRemark = (url: string, commit: string, index: number) =>
   ask<{ id: number; url: string }>(['post', url, commit, String(index)])
 
 // The launch must outlive Raycast: it becomes the Workbench window, or a review that takes minutes.
+// Its output goes to a file, since a pipe breaks once Raycast lets go of it.
 function launch(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
+    const cwd = folder()
+    const log = join(tmpdir(), `workbench-raycast-${Date.now()}.log`)
+    const output = openSync(log, 'w')
     const child = spawn('bun', args, {
-      cwd: folder(),
+      cwd,
       env: environment(),
       detached: true,
-      stdio: 'ignore',
+      stdio: ['ignore', output, output],
     })
-    child.once('error', reject)
-    child.once('spawn', () => {
-      child.unref()
-      resolve()
+    closeSync(output)
+    child.unref()
+
+    // A launch that cannot run, like one in an old checkout, stops within a moment.
+    const started = setTimeout(resolve, EARLY_EXIT_MS)
+    child.once('error', (failure) => {
+      clearTimeout(started)
+      reject(failure)
+    })
+    child.once('exit', (code, signal) => {
+      clearTimeout(started)
+      if (code === 0) return resolve()
+      reject(new Error(readFileSync(log, 'utf8').trim() || `bun stopped with ${code ?? signal}`))
     })
   })
 }
