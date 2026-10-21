@@ -19,6 +19,13 @@ export type Pr = {
   commented?: boolean
 }
 
+export type Remark = { path: string; line: number; body: string; inDiff: boolean; posted?: string }
+
+export type Review =
+  | { url: string; state: 'running'; pid: number }
+  | { url: string; state: 'done'; commit: string; remarks: Remark[] }
+  | { url: string; state: 'failed'; error: string }
+
 type ExecFailure = Error & { stderr?: string }
 
 function folder(): string {
@@ -36,41 +43,52 @@ function environment(): NodeJS.ProcessEnv {
   return { ...process.env, PATH: PATH.join(':'), USER: process.env.USER ?? userInfo().username }
 }
 
-export async function listPrs(): Promise<Pr[]> {
+async function ask<T>(args: string[]): Promise<T> {
   try {
-    const { stdout } = await run('bun', ['src/cli.ts', 'prs'], { cwd: folder(), env: environment() })
+    const { stdout } = await run('bun', ['src/cli.ts', ...args], { cwd: folder(), env: environment() })
     return JSON.parse(stdout)
   } catch (failure) {
     throw new Error((failure as ExecFailure).stderr?.trim() || (failure as Error).message)
   }
 }
 
-// When Workbench is not running, this launch becomes the window, so it must outlive Raycast.
+export const listPrs = () => ask<Pr[]>(['prs'])
+
+export const listReviews = () => ask<Review[]>(['reviews'])
+
+export const postRemark = (url: string, commit: string, index: number) =>
+  ask<{ id: number; url: string }>(['post', url, commit, String(index)])
+
+// The launch must outlive Raycast: it becomes the Workbench window, or a review that takes minutes.
 // Its output goes to a file, since a pipe breaks once Raycast lets go of it.
-export function openInWorkbench(url: string): Promise<void> {
+function launch(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const cwd = folder()
     const log = join(tmpdir(), `workbench-raycast-${Date.now()}.log`)
     const output = openSync(log, 'w')
-    const launch = spawn('bun', ['src/app.tsx', '--pr', url], {
+    const child = spawn('bun', args, {
       cwd,
       env: environment(),
       detached: true,
       stdio: ['ignore', output, output],
     })
     closeSync(output)
-    launch.unref()
+    child.unref()
 
     // A launch that cannot run, like one in an old checkout, stops within a moment.
     const started = setTimeout(resolve, EARLY_EXIT_MS)
-    launch.once('error', (failure) => {
+    child.once('error', (failure) => {
       clearTimeout(started)
       reject(failure)
     })
-    launch.once('exit', (code, signal) => {
+    child.once('exit', (code, signal) => {
       clearTimeout(started)
       if (code === 0) return resolve()
       reject(new Error(readFileSync(log, 'utf8').trim() || `bun stopped with ${code ?? signal}`))
     })
   })
 }
+
+export const openInWorkbench = (url: string) => launch(['src/app.tsx', '--pr', url])
+
+export const startReview = (url: string) => launch(['src/cli.ts', 'review', url])
