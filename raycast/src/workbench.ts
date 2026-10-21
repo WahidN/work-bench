@@ -1,5 +1,6 @@
 import { getPreferenceValues } from '@raycast/api'
 import { execFile, spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -19,7 +20,11 @@ export type Pr = {
 type ExecFailure = Error & { stderr?: string }
 
 function folder(): string {
-  return getPreferenceValues<Preferences>().workbenchFolder || join(homedir(), 'Documents/Projecten/workbench')
+  const chosen = getPreferenceValues<Preferences>().workbenchFolder || join(homedir(), 'Documents/Projecten/workbench')
+  if (!existsSync(join(chosen, 'src', 'cli.ts'))) {
+    throw new Error(`No Workbench in ${chosen}. Pick it in the 'Workbench folder' preference.`)
+  }
+  return chosen
 }
 
 // Raycast starts an extension without PATH and USER: bun, gh and claude are not found, and claude misses its login.
