@@ -28,6 +28,18 @@ swift build -c release
 
 It runs Workbench from `~/Documents/Projecten/workbench`. Use another folder with `-workbenchFolder <path>`, or save one with `defaults write WorkbenchWidget workbenchFolder <path>`.
 
+## Raycast
+
+`raycast/` holds a Raycast extension with one command, Pull Requests. It lists the same pull requests as the window. Enter opens one on GitHub, Cmd+Enter opens it in Workbench, and Cmd+Shift+C copies its URL.
+
+```bash
+cd raycast
+npm install
+npm run dev
+```
+
+`npm run dev` loads the extension into Raycast. It runs Workbench from `~/Documents/Projecten/workbench`. Pick another folder in the extension's 'Workbench folder' preference.
+
 ## Requirements
 
 - macOS on Apple Silicon
