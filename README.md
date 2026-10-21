@@ -34,6 +34,8 @@ It runs Workbench from `~/Documents/Projecten/workbench`. Use another folder wit
 
 `raycast/` holds a Raycast extension with one command, Pull Requests. It lists the same pull requests as the window. Enter opens one on GitHub, Cmd+Enter opens it in Workbench, and Cmd+Shift+C copies its URL.
 
+Cmd+R reviews a pull request with Claude. The review goes on when you close Raycast, and the list shows 'Reviewing' and then the number of remarks. Cmd+Y shows the remarks, and Enter on a remark posts it as an inline comment.
+
 ```bash
 cd raycast
 npm install
