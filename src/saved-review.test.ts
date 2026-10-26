@@ -90,7 +90,7 @@ describe('runReview', () => {
       return REVIEWED
     })
 
-    await runReview(URL, { prs: async () => [PR], review, folder: reviews })
+    await runReview(URL, { lookup: async () => PR, review, folder: reviews })
 
     expect(review).toHaveBeenCalledWith(PR)
     expect(await loadReview(URL, reviews)).toEqual({ url: URL, state: 'done', ...REVIEWED })
@@ -102,7 +102,7 @@ describe('runReview', () => {
       throw new Error('Claude did not finish within 15 minutes')
     }
 
-    await runReview(URL, { prs: async () => [PR], review, folder: reviews })
+    await runReview(URL, { lookup: async () => PR, review, folder: reviews })
 
     expect(await loadReview(URL, reviews)).toEqual({
       url: URL,
@@ -111,15 +111,26 @@ describe('runReview', () => {
     })
   })
 
-  it('saves an error for a pull request that is not in the list', async () => {
-    const reviews = folder()
+  it('looks up only the reviewed pull request', async () => {
+    const lookup = vi.fn(async () => PR)
 
-    await runReview(URL, { prs: async () => [], review: async () => REVIEWED, folder: reviews })
+    await runReview(URL, { lookup, review: async () => REVIEWED, folder: folder() })
+
+    expect(lookup).toHaveBeenCalledWith(URL)
+  })
+
+  it('saves the error when the lookup fails', async () => {
+    const reviews = folder()
+    const lookup = async () => {
+      throw new Error('Could not resolve to a PullRequest with the number of 2.')
+    }
+
+    await runReview(URL, { lookup, review: async () => REVIEWED, folder: reviews })
 
     expect(await loadReview(URL, reviews)).toEqual({
       url: URL,
       state: 'failed',
-      error: 'This pull request is not in your list',
+      error: 'Could not resolve to a PullRequest with the number of 2.',
     })
   })
 
@@ -128,7 +139,7 @@ describe('runReview', () => {
     await saveReview({ url: URL, state: 'running', pid: process.pid }, reviews)
     const review = vi.fn(async () => REVIEWED)
 
-    await expect(runReview(URL, { prs: async () => [PR], review, folder: reviews })).rejects.toThrow(
+    await expect(runReview(URL, { lookup: async () => PR, review, folder: reviews })).rejects.toThrow(
       'A review of this pull request is still running',
     )
     expect(review).not.toHaveBeenCalled()

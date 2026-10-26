@@ -53,6 +53,11 @@ export async function loadDescription(pr: Pr): Promise<string> {
   return stdout.trim()
 }
 
+export async function fetchPr(url: string): Promise<Pick<Pr, 'url' | 'title'>> {
+  const { stdout } = await run('gh', ['pr', 'view', url, '--json=url,title'])
+  return JSON.parse(stdout)
+}
+
 export async function fetchMyPrs(): Promise<Pr[]> {
   const [assigned, review, commented] = await Promise.all([
     search('--assignee=@me'),

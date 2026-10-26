@@ -150,7 +150,7 @@ export function failedRunOutput(failure: ExecFailure): string {
   return failure.stdout
 }
 
-export async function reviewPr(pr: Pr): Promise<Reviewed> {
+export async function reviewPr(pr: Pick<Pr, 'url' | 'title'>): Promise<Reviewed> {
   const { stdout: commit } = await run('gh', ['pr', 'view', pr.url, '--json=headRefOid', '--jq=.headRefOid'])
   const { stdout: diff } = await run('gh', ['pr', 'diff', pr.url], { maxBuffer: DIFF_MAX_BYTES })
 
