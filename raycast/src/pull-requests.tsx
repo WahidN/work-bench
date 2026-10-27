@@ -29,6 +29,17 @@ function reviewAccessories(review?: Review): List.Item.Accessory[] {
   return []
 }
 
+function RefreshAction({ refresh }: { refresh: () => void }) {
+  return (
+    <Action
+      title="Refresh"
+      icon={Icon.ArrowClockwise}
+      shortcut={{ modifiers: ['cmd', 'shift'], key: 'r' }}
+      onAction={refresh}
+    />
+  )
+}
+
 type PrItemProps = { pr: Pr; review?: Review; revalidate: () => void; refresh: () => void }
 
 function PrItem({ pr, review, revalidate, refresh }: PrItemProps) {
@@ -57,12 +68,7 @@ function PrItem({ pr, review, revalidate, refresh }: PrItemProps) {
             />
           ) : null}
           <Action.CopyToClipboard title="Copy URL" content={pr.url} shortcut={Keyboard.Shortcut.Common.Copy} />
-          <Action
-            title="Refresh"
-            icon={Icon.ArrowClockwise}
-            shortcut={{ modifiers: ['cmd', 'shift'], key: 'r' }}
-            onAction={refresh}
-          />
+          <RefreshAction refresh={refresh} />
         </ActionPanel>
       }
     />
@@ -84,13 +90,25 @@ export default function PullRequests() {
   }
   const reviews = useReviews()
   const reviewByUrl = new Map(reviews.data?.map((review) => [review.url, review]))
+  const refreshActions = (
+    <ActionPanel>
+      <RefreshAction refresh={refresh} />
+    </ActionPanel>
+  )
 
   return (
     <List isLoading={isLoading} searchBarPlaceholder="Filter by title or repo">
       {error && !data ? (
-        <List.EmptyView icon={Icon.Warning} title="Could not load pull requests" description={error.message} />
+        <List.EmptyView
+          icon={Icon.Warning}
+          title="Could not load pull requests"
+          description={error.message}
+          actions={refreshActions}
+        />
+      ) : !data?.length ? (
+        <List.EmptyView title="No pull requests" actions={refreshActions} />
       ) : (
-        data?.map((pr) => (
+        data.map((pr) => (
           <PrItem
             key={pr.url}
             pr={pr}
