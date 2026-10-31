@@ -2,7 +2,7 @@ import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { fetchMyPrs, type Pr } from './github'
+import { fetchPr, type Pr } from './github'
 import { postRemark, type Posted } from './post'
 import { reviewPr, type Remark, type Reviewed } from './review'
 
@@ -70,14 +70,14 @@ export async function loadReviews(folder = REVIEWS_FOLDER): Promise<SavedReview[
 }
 
 type ReviewOptions = {
-  prs?: () => Promise<Pr[]>
-  review?: (pr: Pr) => Promise<Reviewed>
+  lookup?: (url: string) => Promise<Pick<Pr, 'url' | 'title'>>
+  review?: (pr: Pick<Pr, 'url' | 'title'>) => Promise<Reviewed>
   folder?: string
 }
 
 export async function runReview(
   url: string,
-  { prs = fetchMyPrs, review = reviewPr, folder = REVIEWS_FOLDER }: ReviewOptions = {},
+  { lookup = fetchPr, review = reviewPr, folder = REVIEWS_FOLDER }: ReviewOptions = {},
 ): Promise<SavedReview> {
   if ((await loadReview(url, folder))?.state === 'running') {
     throw new Error('A review of this pull request is still running')
@@ -86,9 +86,7 @@ export async function runReview(
 
   let result: SavedReview
   try {
-    const pr = (await prs()).find((listed) => listed.url === url)
-    if (!pr) throw new Error('This pull request is not in your list')
-    result = { url, state: 'done', ...(await review(pr)) }
+    result = { url, state: 'done', ...(await review(await lookup(url))) }
   } catch (failure) {
     result = { url, state: 'failed', error: failure instanceof Error ? failure.message : String(failure) }
   }
